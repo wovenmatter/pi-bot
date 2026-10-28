@@ -22,6 +22,8 @@ export class PiBotClient {
   #attempt = 0;
   #reconnect: ReturnType<typeof setTimeout> | undefined;
   #stopped = false;
+  /** Set by `expectRestart`: retry every 500 ms until the server is back. */
+  #restarting = false;
   #logins = new Map<string, (event: LoginEvent) => void>();
   /** Sign-in events that arrived before their `login.start` result. */
   #loginBacklog = new Map<string, LoginEvent[]>();
@@ -42,6 +44,7 @@ export class PiBotClient {
     this.#socket = socket;
     socket.addEventListener("open", () => {
       this.#attempt = 0;
+      this.#restarting = false;
       this.#setState("open");
     });
     socket.addEventListener("message", (event) => {
@@ -54,11 +57,17 @@ export class PiBotClient {
       this.#pending.clear();
       this.#setState("closed");
       if (!this.#stopped) {
-        const delay = Math.min(500 * 2 ** this.#attempt, 10_000);
+        const delay = this.#restarting ? 500 : Math.min(500 * 2 ** this.#attempt, 10_000);
         this.#attempt += 1;
         this.#reconnect = setTimeout(() => this.connect(), delay);
       }
     });
+  }
+
+  /** The server is restarting: reconnect quickly instead of backing off. */
+  expectRestart(): void {
+    this.#restarting = true;
+    this.#attempt = 0;
   }
 
   close(): void {

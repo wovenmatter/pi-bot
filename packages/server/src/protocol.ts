@@ -60,7 +60,12 @@ export const requestSchema = z.discriminatedUnion("type", [
     key: z.string().min(1).max(8192),
   }),
   z.strictObject({ id: requestId, type: z.literal("credentials.remove"), accountId }),
-  z.strictObject({ id: requestId, type: z.literal("login.start"), accountId }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("login.start"),
+    accountId,
+    method: z.string().min(1).max(64).optional(),
+  }),
   z.strictObject({
     id: requestId,
     type: z.literal("login.respond"),
@@ -118,6 +123,7 @@ export const requestSchema = z.discriminatedUnion("type", [
     name: z.string().trim().min(1).max(200),
     email: z.email().max(320),
   }),
+  z.strictObject({ id: requestId, type: z.literal("server.restart") }),
 ]);
 
 export type Request = z.infer<typeof requestSchema>;

@@ -7,7 +7,7 @@ import type { PiBotConfig } from "./config.ts";
 import { type OpenedCredentialStore, openCredentialStore } from "./credentials/index.ts";
 import type { BotEnvironmentAdapter } from "./env.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
-import { type PiBotServer, startServer } from "./server.ts";
+import { type PiBotServer, type RestartAccepted, startServer } from "./server.ts";
 import { SettingsService } from "./settings/service.ts";
 import { openSharedDatabase } from "./storage/database.ts";
 import { TitleGenerator } from "./titles.ts";
@@ -30,6 +30,8 @@ export type StartOptions = {
   readonly log?: (message: string) => void;
   /** Models behind Settings (sign-in flows, model list), over the opened store. Defaults to `models`. */
   readonly settingsModels?: (credentials: CredentialStore) => Models;
+  /** Backs `server.restart` (see `PiBotProcess`); without it Settings cannot restart the server. */
+  readonly restart?: () => Promise<RestartAccepted>;
 };
 
 /** Open the shared database, credential store, models and every bot, then listen. */
@@ -101,6 +103,7 @@ export async function startPiBot(
       host: config.server.host,
       port: options.port ?? config.server.port,
       ...(webDir ? { webDir } : {}),
+      ...(options.restart ? { restart: options.restart } : {}),
       log,
     });
     return {

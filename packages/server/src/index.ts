@@ -5,8 +5,19 @@ export * from "./config.ts";
 export * from "./credentials/index.ts";
 export { type BotEnvironmentAdapter, DockerEnvironmentAdapter } from "./env.ts";
 export { checkModelRoles, createPiBotModels } from "./models.ts";
+export {
+  PiBotProcess,
+  type PiBotProcessOptions,
+  RESTART_EXIT_CODE_ENV,
+  restartExitCode,
+} from "./process.ts";
 export type * from "./protocol.ts";
-export { type PiBotServer, type PiBotServerOptions, startServer } from "./server.ts";
+export {
+  type PiBotServer,
+  type PiBotServerOptions,
+  type RestartAccepted,
+  startServer,
+} from "./server.ts";
 export * from "./settings/catalog.ts";
 export * from "./settings/service.ts";
 export * from "./settings/ssh-key.ts";

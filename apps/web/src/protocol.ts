@@ -54,6 +54,8 @@ export type AccountStatus = {
   method: AccountMethod;
   help: string;
   link?: string;
+  /** Sign-in variants; the first is the default. */
+  loginMethods?: { id: string; label: string }[];
   configured: boolean;
   detail?: string;
   ambient?: boolean;
@@ -149,7 +151,10 @@ export type Requests = {
   };
   "credentials.set": { body: { accountId: string; key: string }; result: { saved: true } };
   "credentials.remove": { body: { accountId: string }; result: { removed: true } };
-  "login.start": { body: { accountId: string }; result: { loginId: string } };
+  "login.start": {
+    body: { accountId: string; method?: string };
+    result: { loginId: string };
+  };
   "login.respond": {
     body: { loginId: string; promptId: string; value: string };
     result: { ok: true };
@@ -189,5 +194,9 @@ export type Requests = {
   "github.setIdentity": {
     body: { name: string; email: string };
     result: { saved: true; restartRequired: true };
+  };
+  "server.restart": {
+    body: Record<never, never>;
+    result: { restarting: true; activeWork: number; mode: "reload" | "exit" };
   };
 };

@@ -37,6 +37,18 @@ export type PiBotServerOptions = {
   readonly log?: (message: string) => void;
   /** Settings backend; without it the settings requests fail. */
   readonly settings?: SettingsService;
+  /**
+   * Schedules a graceful restart (Settings → Restart and apply). Resolves once the restart is
+   * accepted, before this server closes; rejects (and nothing stops) when it cannot happen.
+   */
+  readonly restart?: () => Promise<RestartAccepted>;
+};
+
+export type RestartAccepted = {
+  /** Live runs the old process waits for (bounded); the rest resume in the new one. */
+  readonly activeWork: number;
+  /** "reload": this process starts again in place. "exit": it exits for its supervisor. */
+  readonly mode: "reload" | "exit";
 };
 
 export type PiBotServer = {
@@ -253,8 +265,11 @@ class Connection {
         return { removed: true };
       case "login.start": {
         // Events can precede this result; the client buffers them by loginId.
-        const loginId = this.#settings().startLogin(request.accountId, this, (id, event) =>
-          this.send({ type: "login", loginId: id, event }),
+        const loginId = this.#settings().startLogin(
+          request.accountId,
+          this,
+          (id, event) => this.send({ type: "login", loginId: id, event }),
+          request.method,
         );
         return { loginId };
       }
@@ -292,6 +307,11 @@ class Connection {
       case "github.setIdentity":
         await this.#settings().setGitIdentity(request);
         return { saved: true, restartRequired: true };
+      case "server.restart": {
+        const restart = this.#server.restart;
+        if (!restart) throw new Error("this server was not started with restart support");
+        return { restarting: true, ...(await restart()) };
+      }
       case "threads.list": {
         const target = await manager.get(request.botId);
         return { threads: (await target.threads(request.query)).map(thread) };
@@ -368,11 +388,17 @@ class Connection {
 class Server {
   readonly manager: BotManager;
   readonly settings: SettingsService | undefined;
+  readonly restart: (() => Promise<RestartAccepted>) | undefined;
   readonly connections = new Set<Connection>();
 
-  constructor(manager: BotManager, settings?: SettingsService) {
+  constructor(
+    manager: BotManager,
+    settings?: SettingsService,
+    restart?: () => Promise<RestartAccepted>,
+  ) {
     this.manager = manager;
     this.settings = settings;
+    this.restart = restart;
   }
 }
 
@@ -380,7 +406,7 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
   if (!isAllowedBindHost(options.host)) {
     throw new Error(`refusing to bind ${options.host}: use loopback or a tailnet address`);
   }
-  const state = new Server(options.manager, options.settings);
+  const state = new Server(options.manager, options.settings, options.restart);
   const log = options.log ?? (() => {});
 
   const http = createServer((request, response) => {

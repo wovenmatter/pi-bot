@@ -4,10 +4,10 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
-import { startPiBot } from "./app.ts";
 import { ConfigError, defaultConfigPath, loadConfig, type PiBotConfig } from "./config.ts";
 import { openCredentialStore } from "./credentials/index.ts";
 import { createPiBotModels } from "./models.ts";
+import { PiBotProcess, RESTART_EXIT_CODE_ENV, restartExitCode } from "./process.ts";
 import { openSharedDatabase } from "./storage/database.ts";
 import { VERSION } from "./version.ts";
 
@@ -19,11 +19,14 @@ Commands:
   serve                     Run the server (WebSocket at /ws, web client at /)
   set-key <provider>        Store an API key (openai, anthropic, openrouter, exa, ...) from hidden input or stdin;
                             claude-subscription takes the token printed by \`claude setup-token\`
-  login <provider>          pi-ai OAuth login (e.g. openai for ChatGPT, anthropic, openrouter)
+  login <provider>          Headless OAuth sign-in: openai-codex (ChatGPT), claude-subscription (Claude
+                            Pro/Max, paste code#state), xai (Grok device code)
   logout <provider>         Remove a stored credential
   credentials               List stored credentials (provider and type only)
 
-Config: --config, $PI_BOT_CONFIG, or ~/.config/pi-bot/config.toml`;
+Config: --config, $PI_BOT_CONFIG, or ~/.config/pi-bot/config.toml
+Restart: Settings → Restart and apply reloads in place; set PIBOT_RESTART_EXIT_CODE (e.g. 75)
+to exit with that status instead, for a supervisor that restarts on it.`;
 
 /** Read a line without echoing it. Piped stdin is read whole. Never logs the value. */
 async function readSecret(message: string): Promise<string> {
@@ -82,12 +85,20 @@ function defaultWebDir(): string | undefined {
   return existsSync(resolve(candidate, "index.html")) ? candidate : undefined;
 }
 
-async function serve(config: PiBotConfig): Promise<void> {
+async function serve(config: PiBotConfig, configPath: string): Promise<void> {
   const webDir = config.paths.webDir ?? defaultWebDir();
-  const app = await startPiBot(config, webDir ? { webDir } : {});
+  const exitCode = restartExitCode(process.env[RESTART_EXIT_CODE_ENV]);
+  // Settings → Restart and apply reloads in place, or exits with `exitCode` for a supervisor.
+  const server = new PiBotProcess({
+    configPath,
+    config,
+    startOptions: webDir ? { webDir } : {},
+    ...(exitCode === undefined ? {} : { exitCode }),
+  });
+  await server.start();
   if (!webDir) console.error("web client not built; run `pnpm build` to serve it at /");
   const stop = () => {
-    void app.close().then(() => process.exit(0));
+    void server.close().then(() => process.exit(0));
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
@@ -151,7 +162,8 @@ async function main(argv: string[]): Promise<void> {
   if (values.version) return void console.log(VERSION);
   if (values.help || !command) return void console.log(USAGE);
 
-  const config = await loadConfig(values.config ?? defaultConfigPath());
+  const configPath = values.config ?? defaultConfigPath();
+  const config = await loadConfig(configPath);
   const needProvider = () => {
     if (!provider) throw new Error(`usage: pi-bot ${command} <provider>`);
     return provider;
@@ -159,7 +171,7 @@ async function main(argv: string[]): Promise<void> {
 
   switch (command) {
     case "serve":
-      return serve(config);
+      return serve(config, configPath);
     case "set-key": {
       const id = needProvider();
       const key = await readSecret(`${id} API key: `);

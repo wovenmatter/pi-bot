@@ -410,6 +410,22 @@ export class BotManager {
     return bot.record;
   }
 
+  /**
+   * Live runs across every open bot: queued submissions plus running tasks, from Pi Durable's
+   * inspection. A graceful restart waits for this to reach zero (bounded), and Pi Durable resumes
+   * whatever is still live when the next process opens the bots.
+   */
+  async activeWork(): Promise<number> {
+    let count = 0;
+    for (const pending of [...this.#bots.values()]) {
+      const bot = await pending.catch(() => undefined);
+      if (!bot) continue;
+      const live = await bot.harness.inspect(ctx).catch(() => undefined);
+      if (live) count += live.submissions.length + live.tasks.length;
+    }
+    return count;
+  }
+
   async close(): Promise<void> {
     this.#closed = true;
     await this.titles?.close();
