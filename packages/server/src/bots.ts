@@ -230,6 +230,7 @@ export type BotManagerOptions = {
   /** Harness options for one bot (models, registry, default agent). */
   readonly harnessOptions: (bot: BotRecord) => BotHarnessOptions;
   readonly onBotClosed?: (bot: BotRecord, reason: string) => void;
+  /** After a soft delete: release runtime resources (containers). Never delete bot data. */
   readonly onBotDeleted?: (bot: BotRecord) => Promise<void>;
   /** Thread title generation (`[models.titles]`); threads stay untitled without it. */
   readonly titles?: TitleGenerator;
@@ -261,6 +262,7 @@ export class BotManager {
   static async open(options: BotManagerOptions): Promise<BotManager> {
     const manager = new BotManager(options);
     await manager.registry.migrate();
+    // Live bots only: soft-deleted bots are neither loaded nor recovered.
     for (const record of await manager.registry.list()) await manager.get(record.id);
     return manager;
   }
@@ -285,6 +287,7 @@ export class BotManager {
       const bot = await this.get(id);
       await bot.main();
     } catch (error) {
+      // A half-created bot is soft-deleted like any other; its tables stay until purging exists.
       await this.delete(id).catch(() => {});
       throw error;
     }
@@ -305,7 +308,11 @@ export class BotManager {
 
   async #open(id: string): Promise<Bot> {
     const record = await this.registry.get(id);
-    if (!record) throw new NotFoundError(`no bot ${id}`);
+    if (!record) {
+      // Soft-deleted bots are never opened, so never recovered or messaged.
+      if (await this.registry.deletedAt(id)) throw new NotFoundError(`bot ${id} was deleted`);
+      throw new NotFoundError(`no bot ${id}`);
+    }
     const storage = await SqliteStorage.open(sharedDatabaseView(this.#options.db), {
       prefix: record.prefix,
     });
@@ -337,6 +344,7 @@ export class BotManager {
    * open already reconciled interrupted invocations; `resume()` lets them run again.
    */
   async #recover(bot: Bot): Promise<RecoveryReport> {
+    // `#open` rejects soft-deleted bots before a harness exists, so they never reach recovery.
     const { harness } = bot;
     const threads = await bot.reconcileThreads();
     const live = await harness.inspect(ctx);
@@ -357,18 +365,24 @@ export class BotManager {
     return { ...threads, resumedConversations: [...resumed], retitledThreads };
   }
 
+  /**
+   * Soft-delete a bot. Only the user deletes bots (the WebSocket `bots.delete` request); no agent
+   * or orchestrator tool may call this. The registry row is marked deleted first, so no new open
+   * can start, then the in-memory harness is closed and evicted and the bot's runtime environment
+   * released. Its tables, threads and data stay in the database; purging is deferred.
+   */
   async delete(id: string): Promise<boolean> {
     const record = await this.registry.get(id);
     if (!record) return false;
+    if (!(await this.registry.markDeleted(id))) return false;
     const open = this.#bots.get(id);
     this.#bots.delete(id);
     if (open) {
       const bot = await open.catch(() => undefined);
       if (bot) await bot.harness.close(ctx);
     }
-    const removed = await this.registry.remove(id);
-    if (removed) await this.#options.onBotDeleted?.(record);
-    return removed;
+    await this.#options.onBotDeleted?.(record);
+    return true;
   }
 
   async close(): Promise<void> {

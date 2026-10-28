@@ -74,8 +74,6 @@ export async function prefixedObjects(
   );
 }
 
-const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
-
 /** The bots registry plus thread metadata, in the shared database. */
 export class BotRegistry {
   readonly #db: SqliteDatabase;
@@ -90,7 +88,8 @@ export class BotRegistry {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         schema_prefix TEXT NOT NULL UNIQUE,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        deleted_at TEXT
       ) STRICT;
       CREATE TABLE IF NOT EXISTS ${THREADS_TABLE} (
         bot_id TEXT NOT NULL REFERENCES ${BOTS_TABLE}(id) ON DELETE CASCADE,
@@ -102,21 +101,37 @@ export class BotRegistry {
         PRIMARY KEY (bot_id, conversation_id)
       ) STRICT;
     `);
+    // Databases from before soft delete lack `deleted_at`.
+    const columns = await this.#db.all<{ name: string }>(`PRAGMA table_info(${BOTS_TABLE})`);
+    if (!columns.some((column) => column.name === "deleted_at")) {
+      await this.#db.exec(`ALTER TABLE ${BOTS_TABLE} ADD COLUMN deleted_at TEXT`);
+    }
   }
 
+  /** Live bots only; soft-deleted bots are hidden. */
   async list(): Promise<BotRecord[]> {
     const rows = await this.#db.all<BotRow>(
-      `SELECT id, name, schema_prefix, created_at FROM ${BOTS_TABLE} ORDER BY created_at, id`,
+      `SELECT id, name, schema_prefix, created_at FROM ${BOTS_TABLE} WHERE deleted_at IS NULL ORDER BY created_at, id`,
     );
     return rows.map(toBot);
   }
 
+  /** A live bot; undefined for an unknown or soft-deleted one. */
   async get(id: string): Promise<BotRecord | undefined> {
     const row = await this.#db.get<BotRow>(
-      `SELECT id, name, schema_prefix, created_at FROM ${BOTS_TABLE} WHERE id = ?`,
+      `SELECT id, name, schema_prefix, created_at FROM ${BOTS_TABLE} WHERE id = ? AND deleted_at IS NULL`,
       id,
     );
     return row ? toBot(row) : undefined;
+  }
+
+  /** When the bot was soft-deleted, or undefined if it is live or unknown. */
+  async deletedAt(id: string): Promise<string | undefined> {
+    const row = await this.#db.get<{ deleted_at: string | null }>(
+      `SELECT deleted_at FROM ${BOTS_TABLE} WHERE id = ?`,
+      id,
+    );
+    return row?.deleted_at ?? undefined;
   }
 
   async insert(record: BotRecord): Promise<void> {
@@ -129,22 +144,18 @@ export class BotRegistry {
     );
   }
 
-  /** Drop every table, view and trigger under the bot's prefix, then its registry row. */
-  async remove(id: string): Promise<boolean> {
-    const record = await this.get(id);
-    if (!record) return false;
-    await this.#db.transaction(async (tx) => {
-      // Durable tables reference each other; check foreign keys at commit, when all are gone.
-      await tx.exec("PRAGMA defer_foreign_keys = ON");
-      const objects = await prefixedObjects(tx, record.prefix);
-      for (const kind of ["trigger", "view", "table"]) {
-        for (const object of objects.filter((o) => o.type === kind)) {
-          await tx.exec(`DROP ${kind.toUpperCase()} IF EXISTS ${quote(object.name)}`);
-        }
-      }
-      await tx.run(`DELETE FROM ${BOTS_TABLE} WHERE id = ?`, id);
-    });
-    return true;
+  /**
+   * Soft delete: stamp `deleted_at` and nothing else. The bot's prefixed Pi Durable tables, its
+   * thread rows and all its data stay in the database. Purging (and restoring) is deferred.
+   * Returns false for an unknown or already deleted bot.
+   */
+  async markDeleted(id: string, at = new Date().toISOString()): Promise<boolean> {
+    const row = await this.#db.get<{ id: string }>(
+      `UPDATE ${BOTS_TABLE} SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING id`,
+      at,
+      id,
+    );
+    return row !== undefined;
   }
 
   async addThread(thread: ThreadRecord): Promise<void> {

@@ -10,7 +10,10 @@ export interface BotEnvironmentAdapter {
   readonly kind: string;
   /** The `HarnessOptions.env` callback for one bot. */
   harnessEnv(botId: string): HarnessEnvFactory;
-  /** Release anything held for the bot (containers, volumes) when it is deleted. */
+  /**
+   * Release the bot's runtime (containers) when it is soft-deleted. Keep volumes and other data on
+   * disk: bot deletion never removes data, and purging is deferred.
+   */
   dispose(botId: string): Promise<void>;
 }
 
