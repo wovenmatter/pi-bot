@@ -17,6 +17,8 @@ export const requestSchema = z.discriminatedUnion("type", [
   // User-only, from Settings → Deleted bots. Never exposed to agent or orchestrator tools.
   z.object({ id: requestId, type: z.literal("bots.listDeleted") }),
   z.object({ id: requestId, type: z.literal("bots.restore"), botId }),
+  z.object({ id: requestId, type: z.literal("bots.orchestrator") }),
+  z.object({ id: requestId, type: z.literal("bots.setOrchestrator"), botId }),
   z.object({
     id: requestId,
     type: z.literal("conversation.open"),

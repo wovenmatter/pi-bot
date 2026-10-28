@@ -255,6 +255,10 @@ class Connection {
         const restored = await manager.restore(request.botId);
         return restored ? { restored: true, bot: bot(restored) } : { restored: false };
       }
+      case "bots.orchestrator":
+        return this.#settings().orchestrator(await manager.list());
+      case "bots.setOrchestrator":
+        return this.#settings().setOrchestrator(request.botId, await manager.list());
       case "settings.accounts":
         return this.#settings().accounts();
       case "credentials.set":

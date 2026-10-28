@@ -13,6 +13,13 @@ export type DisplayEntry = {
 export type BotSummary = { id: string; name: string; createdAt: string };
 export type DeletedBotSummary = BotSummary & { deletedAt: string };
 
+/** Which bot orchestrates the others; `default` (2+ bots, none chosen) asks the user to confirm. */
+export type OrchestratorStatus = {
+  botId?: string;
+  source: "none" | "single" | "configured" | "default";
+  needsConfirmation: boolean;
+};
+
 export type ThreadSummary = {
   conversationId: number;
   parentConversationId: number;
@@ -125,6 +132,8 @@ export type Requests = {
     body: { botId: string };
     result: { restored: true; bot: BotSummary } | { restored: false };
   };
+  "bots.orchestrator": { body: Record<never, never>; result: OrchestratorStatus };
+  "bots.setOrchestrator": { body: { botId: string }; result: OrchestratorStatus };
   "conversation.open": {
     body: { botId: string; conversationId?: number };
     result: ConversationSnapshot;

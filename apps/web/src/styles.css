@@ -1617,3 +1617,9 @@ input[type="file"] {
 .account-alternates .text-button {
   padding: 0 4px;
 }
+.orchestrator-prompt {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+}

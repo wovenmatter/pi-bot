@@ -180,7 +180,44 @@ export type SettingsOptions = {
   readonly models: Models;
   /** The config the server is running with; `source` is the file Settings edits. */
   readonly config: PiBotConfig;
+  /** The SSH key or git identity changed (bot containers rewrite theirs). */
+  readonly onGitChanged?: () => void;
 };
+
+/** Settings → Bots: which bot orchestrates the others. */
+export type OrchestratorStatus = {
+  /** Unset only when there are no bots. */
+  readonly botId?: string;
+  /**
+   * `single`: the only bot is its own orchestrator. `configured`: chosen in Settings.
+   * `default`: 2+ bots and none chosen, so the first-created bot is used until the user confirms.
+   */
+  readonly source: "none" | "single" | "configured" | "default";
+  /** True when Settings should ask the user to confirm (or change) the default. */
+  readonly needsConfirmation: boolean;
+};
+
+/** Resolve the orchestrator bot from the live bots (any order) and `[bots] orchestrator`. */
+export function resolveOrchestrator(
+  bots: readonly { readonly id: string; readonly createdAt: string }[],
+  configured: string | undefined,
+): OrchestratorStatus {
+  if (bots.length === 0) return { source: "none", needsConfirmation: false };
+  const [only] = bots;
+  if (bots.length === 1 && only)
+    return { botId: only.id, source: "single", needsConfirmation: false };
+  if (configured && bots.some((bot) => bot.id === configured)) {
+    return { botId: configured, source: "configured", needsConfirmation: false };
+  }
+  const first = [...bots].sort(
+    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+  )[0];
+  return {
+    ...(first ? { botId: first.id } : {}),
+    source: "default",
+    needsConfirmation: true,
+  };
+}
 
 /**
  * Backs Settings: credential status and writes, provider sign-in sessions, the model catalog,
@@ -194,7 +231,10 @@ export class SettingsService {
   readonly #logins = new Map<string, LoginSession>();
   #configChanged = false;
 
+  readonly #onGitChanged: (() => void) | undefined;
+
   constructor(options: SettingsOptions) {
+    this.#onGitChanged = options.onGitChanged;
     this.#credentials = options.credentials;
     this.#models = options.models;
     this.#config = options.config;
@@ -471,7 +511,7 @@ export class SettingsService {
     exists: boolean;
     restartRequired: boolean;
     /** Values the structured forms edit: from the file when it parses, else the running config. */
-    effective: Pick<PiBotConfig, "bot_to_bot" | "extraction" | "search" | "git">;
+    effective: Pick<PiBotConfig, "bot_to_bot" | "extraction" | "search" | "git" | "bots">;
   }> {
     const path = this.#config.source;
     const restartRequired = this.#configChanged;
@@ -480,6 +520,7 @@ export class SettingsService {
       extraction: config.extraction,
       search: config.search,
       git: config.git,
+      bots: config.bots,
     });
     if (!path)
       return { text: "", exists: false, restartRequired, effective: effective(this.#config) };
@@ -558,6 +599,7 @@ export class SettingsService {
       type: "api_key",
       key: parsed.pem,
     }));
+    this.#onGitChanged?.();
     return parsed.info;
   }
 
@@ -568,11 +610,63 @@ export class SettingsService {
       type: "api_key",
       key: generated.pem,
     }));
+    this.#onGitChanged?.();
     return generated.info;
   }
 
   async removeSshKey(): Promise<void> {
     await this.#credentials.delete(GITHUB_SSH_SLOT);
+    this.#onGitChanged?.();
+  }
+
+  /**
+   * Server-internal: the SSH private key and identity written into bot containers. Never sent to
+   * the UI (`github()` returns only the public half).
+   */
+  async gitMaterial(): Promise<{
+    privateKey?: string;
+    publicKey?: string;
+    name?: string;
+    email?: string;
+  }> {
+    const { effective } = await this.readConfig();
+    const stored = await this.#credentials.read(GITHUB_SSH_SLOT);
+    let key: { privateKey: string; publicKey: string } | undefined;
+    if (stored?.type === "api_key" && stored.key) {
+      try {
+        key = {
+          privateKey: stored.key,
+          publicKey: parseOpenSshPrivateKey(stored.key).info.publicKey,
+        };
+      } catch {
+        key = undefined;
+      }
+    }
+    return {
+      ...(key ?? {}),
+      ...(effective.git.user_name ? { name: effective.git.user_name } : {}),
+      ...(effective.git.user_email ? { email: effective.git.user_email } : {}),
+    };
+  }
+
+  async orchestrator(
+    bots: readonly { readonly id: string; readonly createdAt: string }[],
+  ): Promise<OrchestratorStatus> {
+    const { effective } = await this.readConfig();
+    return resolveOrchestrator(bots, effective.bots.orchestrator);
+  }
+
+  /** Confirm or change the orchestrator bot (`[bots] orchestrator`); applies immediately. */
+  async setOrchestrator(
+    botId: string,
+    bots: readonly { readonly id: string; readonly createdAt: string }[],
+  ): Promise<OrchestratorStatus> {
+    if (!bots.some((bot) => bot.id === botId)) throw new SettingsError(`unknown bot ${botId}`);
+    // Read live from config.toml, so this needs no restart.
+    const restartRequired = this.#configChanged;
+    await this.updateConfig([{ path: ["bots", "orchestrator"], value: botId }]);
+    this.#configChanged = restartRequired;
+    return resolveOrchestrator(bots, botId);
   }
 
   async setGitIdentity(identity: { name: string; email: string }): Promise<void> {
@@ -580,6 +674,7 @@ export class SettingsService {
       { path: ["git", "user_name"], value: identity.name.trim() },
       { path: ["git", "user_email"], value: identity.email.trim() },
     ]);
+    this.#onGitChanged?.();
   }
 
   async updateConfig(edits: readonly TomlEdit[]): Promise<void> {

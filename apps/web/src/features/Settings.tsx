@@ -8,6 +8,7 @@ import type {
   BotSummary,
   DeletedBotSummary,
   GitHubStatus,
+  OrchestratorStatus,
   Requests,
 } from "../protocol.ts";
 import { routeHref, type SettingsSection } from "../routes.ts";
@@ -16,6 +17,7 @@ import { ConfigEditor, LimitsForm, type ValidationState } from "./settings/Confi
 import { GitHubSettings } from "./settings/GitHub.tsx";
 import type { LoginState } from "./settings/Login.tsx";
 import { ModelSettings } from "./settings/Models.tsx";
+import { OrchestratorPanel } from "./settings/Orchestrator.tsx";
 import { SearchSettings } from "./settings/Search.tsx";
 import { RESTART_TIMEOUT_MS, RestartNotice, type RestartState } from "./settings/shared.tsx";
 
@@ -331,11 +333,21 @@ function BotsSection({
 }: SectionProps & { onRestored: (bot: BotSummary) => void }) {
   const [deleted, setDeleted] = useState<DeletedBotSummary[]>();
   const [restoring, setRestoring] = useState<string>();
+  const [live, setLive] = useState<BotSummary[]>();
+  const [orchestrator, setOrchestrator] = useState<OrchestratorStatus>();
+  const [savingOrchestrator, setSavingOrchestrator] = useState(false);
   const refresh = useCallback(
     () =>
-      client
-        .request("bots.listDeleted", {})
-        .then(({ bots }) => setDeleted(bots))
+      Promise.all([
+        client.request("bots.listDeleted", {}),
+        client.request("bots.list", {}),
+        client.request("bots.orchestrator", {}),
+      ])
+        .then(([removed, active, status]) => {
+          setDeleted(removed.bots);
+          setLive(active.bots);
+          setOrchestrator(status);
+        })
         .catch((e: unknown) => onError(errorMessage(e))),
     [client, onError],
   );
@@ -356,13 +368,33 @@ function BotsSection({
       setRestoring(undefined);
     }
   }
+  async function confirmOrchestrator(botId: string) {
+    onError(undefined);
+    setSavingOrchestrator(true);
+    try {
+      setOrchestrator(await client.request("bots.setOrchestrator", { botId }));
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setSavingOrchestrator(false);
+    }
+  }
   return (
-    <DeletedBotsList
-      bots={deleted}
-      restoring={restoring}
-      disabled={!connected}
-      onRestore={(bot) => void restore(bot)}
-    />
+    <>
+      <OrchestratorPanel
+        bots={live}
+        status={orchestrator}
+        saving={savingOrchestrator}
+        disabled={!connected}
+        onConfirm={(botId) => void confirmOrchestrator(botId)}
+      />
+      <DeletedBotsList
+        bots={deleted}
+        restoring={restoring}
+        disabled={!connected}
+        onRestore={(bot) => void restore(bot)}
+      />
+    </>
   );
 }
 
