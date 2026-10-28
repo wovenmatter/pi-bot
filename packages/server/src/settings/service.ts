@@ -118,14 +118,31 @@ class LoginSession {
   readonly accountId: string;
   readonly owner: object;
   readonly emit: (event: LoginEvent) => void;
+  /** Answer for the provider's method picker, chosen up front (see `AccountSpec.loginMethods`). */
+  method: string | undefined;
 
-  constructor(accountId: string, owner: object, emit: (event: LoginEvent) => void) {
+  constructor(
+    accountId: string,
+    owner: object,
+    emit: (event: LoginEvent) => void,
+    method: string | undefined,
+  ) {
     this.accountId = accountId;
     this.owner = owner;
     this.emit = emit;
+    this.method = method;
   }
 
   prompt(prompt: AuthPrompt): Promise<string> {
+    const method = this.method;
+    if (
+      method &&
+      prompt.type === "select" &&
+      prompt.options.some((option) => option.id === method)
+    ) {
+      this.method = undefined;
+      return Promise.resolve(method);
+    }
     const promptId = randomUUID();
     return new Promise<string>((resolve, reject) => {
       const close = () => {
@@ -259,14 +276,22 @@ export class SettingsService {
     if (current && current.type === wantType) await this.#credentials.delete(spec.provider);
   }
 
-  /** Start a provider sign-in. Events (URL, device code, prompts) go to `emit`. */
+  /**
+   * Start a provider sign-in. Events (URL, device code, prompts) go to `emit`. `method` picks one
+   * of the entry's `loginMethods` (default: the first), so no picker is shown.
+   */
   startLogin(
     accountId: string,
     owner: object,
     emit: (loginId: string, event: LoginEvent) => void,
+    method?: string,
   ): string {
     const spec = findAccount(accountId);
     if (spec?.method !== "oauth") throw new SettingsError(`no sign-in for "${accountId}"`);
+    const methods = spec.loginMethods ?? [];
+    if (method !== undefined && !methods.some((entry) => entry.id === method)) {
+      throw new SettingsError(`unknown sign-in method "${method}"`);
+    }
     if (!this.#models.getProvider(spec.provider)) {
       throw new SettingsError(`provider "${spec.provider}" is not available`);
     }
@@ -274,7 +299,12 @@ export class SettingsService {
       if (session.accountId === accountId)
         this.#finish(session, { kind: "error", message: "Replaced by a new sign-in" });
     }
-    const session = new LoginSession(accountId, owner, (event) => emit(session.id, event));
+    const session = new LoginSession(
+      accountId,
+      owner,
+      (event) => emit(session.id, event),
+      method ?? methods[0]?.id,
+    );
     this.#logins.set(session.id, session);
     void this.#models
       .login(

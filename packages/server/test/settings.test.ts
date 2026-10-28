@@ -105,10 +105,10 @@ function oauthProvider(): Provider {
             message: "How do you want to sign in?",
             options: [
               { id: "browser", label: "Browser" },
-              { id: "device", label: "Device code" },
+              { id: "device_code", label: "Device code" },
             ],
           });
-          if (method === "device") {
+          if (method === "device_code") {
             interaction.notify({
               type: "device_code",
               userCode: "ABCD-EFGH",
@@ -270,19 +270,17 @@ describe("settings over the websocket", () => {
     >;
   };
 
-  it("runs a remote OAuth sign-in: choice, auth URL, pasted redirect", async () => {
+  it("runs a remote OAuth sign-in: chosen method, auth URL, pasted redirect", async () => {
+    await expect(
+      client.request("login.start", { accountId: "openai-codex", method: "nope" }),
+    ).rejects.toThrow(/unknown sign-in method/);
     const { loginId } = await client.request<{ loginId: string }>("login.start", {
       accountId: "openai-codex",
+      method: "browser",
     });
-    const choice = await promptAt(loginId, 0);
-    expect(choice.prompt).toMatchObject({ type: "select" });
-    await expect(
-      client.request("login.respond", { loginId, promptId: choice.promptId, value: "nope" }),
-    ).rejects.toThrow(/listed options/);
-    await client.request("login.respond", { loginId, promptId: choice.promptId, value: "browser" });
-
     expect((await waitLogin(loginId, "auth_url")).url).toBe("https://auth.example/authorize?s=1");
-    const paste = await promptAt(loginId, 1);
+    // The method was picked up front: the provider's picker never reaches the browser.
+    const paste = await promptAt(loginId, 0);
     expect(paste.prompt.type).toBe("manual_code");
     await client.request("login.respond", {
       loginId,
@@ -298,14 +296,9 @@ describe("settings over the websocket", () => {
   it("reports failed and cancelled sign-ins", async () => {
     const first = await client.request<{ loginId: string }>("login.start", {
       accountId: "openai-codex",
+      method: "browser",
     });
-    const choice = await promptAt(first.loginId, 0);
-    await client.request("login.respond", {
-      loginId: first.loginId,
-      promptId: choice.promptId,
-      value: "browser",
-    });
-    const paste = await promptAt(first.loginId, 1);
+    const paste = await promptAt(first.loginId, 0);
     await client.request("login.respond", {
       loginId: first.loginId,
       promptId: paste.promptId,
@@ -313,14 +306,9 @@ describe("settings over the websocket", () => {
     });
     expect((await waitLogin(first.loginId, "error")).message).toBe("state mismatch");
 
+    // Default method for ChatGPT is the device code (as in Woven Matter).
     const second = await client.request<{ loginId: string }>("login.start", {
       accountId: "openai-codex",
-    });
-    const choice2 = await promptAt(second.loginId, 0);
-    await client.request("login.respond", {
-      loginId: second.loginId,
-      promptId: choice2.promptId,
-      value: "device",
     });
     expect(await waitLogin(second.loginId, "device_code")).toMatchObject({ userCode: "ABCD-EFGH" });
     await client.request("login.cancel", { loginId: second.loginId });

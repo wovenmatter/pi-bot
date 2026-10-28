@@ -14,6 +14,11 @@ export type AccountSpec = {
   readonly prefix?: string;
   /** Docs or key page. */
   readonly link?: string;
+  /**
+   * Sign-in variants for an oauth entry whose provider asks to choose one. The first is used
+   * unless the user picks another; every variant must work from a browser on another device.
+   */
+  readonly loginMethods?: readonly { readonly id: string; readonly label: string }[];
 };
 
 export const ACCOUNTS: readonly AccountSpec[] = [
@@ -23,7 +28,11 @@ export const ACCOUNTS: readonly AccountSpec[] = [
     group: "OpenAI",
     label: "ChatGPT subscription (Plus/Pro)",
     method: "oauth",
-    help: "Choose device-code login, or browser login and paste the final redirect URL back here (it points at localhost:1455, which fails to load on a remote browser; copy it from the address bar).",
+    help: "Device code: open auth.openai.com/codex/device on any device, enter the code shown here, and approve. If your ChatGPT account has device-code sign-in turned off (Settings → Security), use the browser method: sign in, then copy the localhost:1455 address the browser ends on (it will not load) and paste it here.",
+    loginMethods: [
+      { id: "device_code", label: "Device code" },
+      { id: "browser", label: "Browser, then paste the redirect URL" },
+    ],
   },
   {
     id: "openai",
@@ -35,13 +44,21 @@ export const ACCOUNTS: readonly AccountSpec[] = [
     link: "https://platform.openai.com/api-keys",
   },
   {
+    id: "claude-oauth",
+    provider: "claude-subscription",
+    group: "Claude",
+    label: "Claude account (Pro/Max)",
+    method: "oauth",
+    help: "Open the sign-in page on any device, approve, then copy the code Claude shows (code#state) and paste it here. Pi Bot keeps the tokens and refreshes them. Shares one slot with the setup-token below.",
+  },
+  {
     id: "claude-subscription",
     provider: "claude-subscription",
     group: "Claude",
-    label: "Claude subscription (Claude Agent SDK)",
+    label: "Claude long-lived token (claude setup-token)",
     method: "token",
     prefix: "sk-ant-oat",
-    help: "On any computer with Claude Code, run `claude setup-token`, sign in with your Claude Pro/Max account, and paste the long-lived token (sk-ant-oat…) here.",
+    help: "Fallback: on any computer with Claude Code, run `claude setup-token`, sign in with your Claude Pro/Max account, and paste the token (sk-ant-oat…) here. Replaces a Claude account sign-in.",
   },
   {
     id: "anthropic",
