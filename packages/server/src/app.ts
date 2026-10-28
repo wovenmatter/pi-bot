@@ -52,6 +52,7 @@ export async function startPiBot(
           botName: bot.name,
           models,
           orchestrator: config.roles.orchestrator,
+          compaction: config.compaction,
           ...(env ? { env } : {}),
           onReport: (error) => log(`bot ${bot.id}: ${String(error)}`),
         }),

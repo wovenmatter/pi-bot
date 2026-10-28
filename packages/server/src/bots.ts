@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { type Conversation, Harness, type HarnessOptions } from "@earendil-works/pi-durable";
+import { type Conversation, Harness } from "@earendil-works/pi-durable";
 import { type SqliteDatabase, SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+import type { BotHarnessOptions } from "./agent.ts";
 import { conversationId as toConversationId, entryId as toEntryId } from "./ids.ts";
 import { sharedDatabaseView } from "./storage/database.ts";
 import { type BotRecord, BotRegistry, botPrefix, type ThreadRecord } from "./storage/registry.ts";
@@ -80,7 +81,7 @@ export type BotManagerOptions = {
   /** The shared database. The manager never closes it. */
   readonly db: SqliteDatabase;
   /** Harness options for one bot (models, registry, default agent). */
-  readonly harnessOptions: (bot: BotRecord) => HarnessOptions;
+  readonly harnessOptions: (bot: BotRecord) => BotHarnessOptions;
   readonly onBotClosed?: (bot: BotRecord, reason: string) => void;
   readonly onBotDeleted?: (bot: BotRecord) => Promise<void>;
 };
@@ -152,7 +153,9 @@ export class BotManager {
     const storage = await SqliteStorage.open(sharedDatabaseView(this.#options.db), {
       prefix: record.prefix,
     });
-    const harness = await Harness.open(storage, this.#options.harnessOptions(record), ctx);
+    const { attach, ...options } = this.#options.harnessOptions(record);
+    const harness = await Harness.open(storage, options, ctx);
+    attach?.(harness);
     harness.resume();
     void harness.closed.then((end) => {
       const current = this.#bots.get(id);
