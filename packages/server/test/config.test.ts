@@ -15,6 +15,8 @@ describe("config", () => {
     const config = parseConfig(await readFile(path, "utf8"), "/tmp/cfg", path);
     expect(config.server).toMatchObject({ host: "127.0.0.1", port: 4317 });
     expect(config.roles.orchestrator).toEqual({ provider: "openai", modelId: "gpt-6-sol" });
+    expect(config.roles.titles).toEqual({ provider: "openai-codex", modelId: "gpt-6-luna" });
+    expect(config.models.titles.reasoning).toBe("high");
     expect(config.extraction.timezone).toBe("America/New_York");
     expect(config.bot_to_bot).toEqual({
       max_rounds_per_request: 5,

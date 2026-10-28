@@ -144,10 +144,12 @@ describe("websocket server", () => {
     // Fork off the first reply: the thread inherits context up to it, not after.
     const firstReply = reloaded.entries[1];
     if (!firstReply) throw new Error("missing first reply");
-    const { thread } = await other.request<{ thread: { conversationId: number; title: string } }>(
+    const { thread } = await other.request<{ thread: { conversationId: number; title?: string } }>(
       "thread.fork",
-      { botId: bot.id, entryId: firstReply.id, title: "Side quest" },
+      { botId: bot.id, entryId: firstReply.id },
     );
+    // Threads have no name of their own; a title is generated later as metadata.
+    expect(thread.title).toBeUndefined();
     expect(thread.conversationId).not.toBe(main.conversationId);
 
     const opened = await other.request<ConversationSnapshot>("conversation.open", {
@@ -168,11 +170,19 @@ describe("websocket server", () => {
     await other.waitFor(isFinalEntry(thread.conversationId, "echo: branch (n2)"));
 
     const { threads } = await other.request<{
-      threads: { conversationId: number; title: string }[];
+      threads: { conversationId: number; title?: string }[];
     }>("threads.list", { botId: bot.id });
     expect(threads).toEqual([
-      expect.objectContaining({ conversationId: thread.conversationId, title: "Side quest" }),
+      expect.objectContaining({
+        conversationId: thread.conversationId,
+        parentConversationId: main.conversationId,
+        forkedAt: firstReply.id,
+      }),
     ]);
+    // Renaming is not part of the protocol.
+    await expect(
+      other.request("thread.fork", { botId: bot.id, entryId: firstReply.id, title: "Side quest" }),
+    ).rejects.toThrow();
 
     // Main is untouched by the thread.
     const mainAgain = await other.request<ConversationSnapshot>("conversation.open", {

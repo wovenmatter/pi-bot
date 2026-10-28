@@ -11,6 +11,7 @@ import {
 import { createBotHarnessOptions } from "../src/agent.ts";
 import { BotManager } from "../src/bots.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
+import type { TitleGenerator } from "../src/titles.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
 
@@ -49,11 +50,15 @@ export function echoModels(tokensPerSecond = 2000) {
   return { faux, models };
 }
 
-export async function openTestManager(dbPath: string) {
+export async function openTestManager(
+  dbPath: string,
+  options: { titles?: TitleGenerator; onReport?: (error: unknown) => void } = {},
+) {
   const db = await openSharedDatabase(dbPath);
   const { faux, models } = echoModels();
   const manager = await BotManager.open({
     db,
+    ...options,
     harnessOptions: (bot) =>
       createBotHarnessOptions({
         botId: bot.id,
