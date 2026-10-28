@@ -4,6 +4,7 @@ import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
 import type { ModelRef } from "./config.ts";
 
 /**
@@ -16,6 +17,7 @@ export function createPiBotModels(credentials: CredentialStore): MutableModels {
   models.setProvider(openaiCodexProvider());
   models.setProvider(anthropicProvider());
   models.setProvider(openrouterProvider());
+  models.setProvider(xaiProvider());
   return models;
 }
 

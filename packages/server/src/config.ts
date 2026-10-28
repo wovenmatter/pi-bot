@@ -102,6 +102,32 @@ export const configSchema = z.strictObject({
       max_messages_per_hour_per_pair: z.number().int().min(1).max(10_000).default(30),
     })
     .prefault({}),
+  /** Automatic compaction of the main channel and every thread (one implementation for both). */
+  compaction: z
+    .strictObject({
+      enabled: z.boolean().default(true),
+      /** Tokens kept free for the reply; compaction starts when the context exceeds window - reserve. */
+      reserve_tokens: z.number().int().min(0).default(16_384),
+      /** Recent context kept verbatim after the head marker. */
+      keep_recent_tokens: z.number().int().min(0).default(20_000),
+      /** Compact in the background once the context passes this size; 0 disables (as Woven does). */
+      background_tokens: z.number().int().min(0).default(0),
+      /** `auto`: provider-native compaction where the provider has it, Pi Durable otherwise. */
+      native: z.enum(["auto", "off"]).default("auto"),
+      /** Per-model overrides keyed `provider/model-id`. */
+      models: z
+        .record(
+          modelRef,
+          z.strictObject({
+            enabled: z.boolean().optional(),
+            reserve_tokens: z.number().int().min(0).optional(),
+            keep_recent_tokens: z.number().int().min(0).optional(),
+            background_tokens: z.number().int().min(0).optional(),
+          }),
+        )
+        .default({}),
+    })
+    .prefault({}),
   credentials: z
     .strictObject({
       /** `auto`: Keychain on macOS, encrypted SQLite elsewhere. */

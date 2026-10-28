@@ -25,6 +25,19 @@ timezone = "America/New_York"       # IANA zone the schedule is evaluated in
 max_rounds_per_request = 5
 max_messages_per_hour_per_pair = 30
 
+# Automatic compaction, identical for the main channel and every thread. Covered turns stay in
+# SQLite (search and read_thread see everything); only the model context gets shorter.
+[compaction]
+enabled = true
+reserve_tokens = 16384        # compact once the context exceeds the model window minus this
+keep_recent_tokens = 20000    # newest context kept verbatim
+background_tokens = 0         # 0 = never compact in the background (Woven's setting)
+# auto = provider-native compaction for OpenAI, xAI, ChatGPT/Codex and Anthropic;
+#        Pi Durable's summarizer for everything else. off = always Pi Durable.
+native = "auto"
+# [compaction.models."openai/gpt-6-sol"]
+# reserve_tokens = 32768
+
 [credentials]
 # auto = macOS Keychain on a Mac (stubbed in milestone 1, falls back), encrypted SQLite elsewhere.
 backend = "auto"
