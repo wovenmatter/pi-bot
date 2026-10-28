@@ -8,6 +8,8 @@ export type LoginState = {
   loginId: string;
   accountId: string;
   label: string;
+  /** Sign-in variant requested, if not the account's default. */
+  method?: string;
   events: LoginEvent[];
 };
 
@@ -105,16 +107,24 @@ function copy(text: string) {
 /** A sign-in in progress: auth URL or device code, the open prompt, and the outcome. */
 export function LoginPanel({
   login,
+  alternates = [],
   onRespond,
   onCancel,
   onClose,
+  onRetry,
 }: {
   login: LoginState;
+  /** Other sign-in variants, offered when this one fails. */
+  alternates?: readonly { id: string; label: string }[];
   onRespond: (promptId: string, value: string) => void;
   onCancel: () => void;
   onClose: () => void;
+  onRetry?: (method: string) => void;
 }) {
   const view = loginView(login.events);
+  const placeholder = view.prompt?.prompt.type === "select" ? "" : view.prompt?.prompt.placeholder;
+  // Only a localhost redirect needs copying from the address bar; copy-code pages show the code.
+  const localhostRedirect = /\/\/(localhost|127\.0\.0\.1)[:/]/.test(placeholder ?? "");
   return (
     <section className="login-panel" aria-label={`Sign in: ${login.label}`}>
       <div className="login-panel-header">
@@ -167,10 +177,12 @@ export function LoginPanel({
               Copy link
             </button>
           </div>
-          <p className="muted">
-            If the page ends on a localhost address that doesn't load, copy that whole URL from the
-            address bar and paste it below.
-          </p>
+          {localhostRedirect ? (
+            <p className="muted">
+              The page ends on a localhost address that won't load on this device. Copy that whole
+              URL from the address bar and paste it below.
+            </p>
+          ) : null}
         </div>
       ) : null}
       {view.prompt ? (
@@ -192,6 +204,21 @@ export function LoginPanel({
         <div className="notice error" role="alert">
           <span>{view.error}</span>
         </div>
+      ) : null}
+      {view.status === "error" && onRetry && alternates.length ? (
+        <p className="account-alternates muted">
+          Try instead:{" "}
+          {alternates.map((method) => (
+            <button
+              key={method.id}
+              type="button"
+              className="text-button"
+              onClick={() => onRetry(method.id)}
+            >
+              {method.label}
+            </button>
+          ))}
+        </p>
       ) : null}
     </section>
   );

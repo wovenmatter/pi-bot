@@ -49,6 +49,12 @@ native = "auto"
 # (stored in the credential store, never in this file).
 provider = "exa"
 
+[git]
+# Commit identity for the bots' git work (also editable in Settings → GitHub). The SSH key lives in
+# the credential store, never in this file.
+# user_name = "Trey Moore"
+# user_email = "trey@example.com"
+
 [credentials]
 # auto = macOS Keychain on a Mac (stubbed in milestone 1, falls back), encrypted SQLite elsewhere.
 backend = "auto"

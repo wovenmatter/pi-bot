@@ -1601,3 +1601,19 @@ input[type="file"] {
     flex-wrap: wrap;
   }
 }
+
+/* Settings → Restart and apply */
+.restart-notice {
+  align-items: center;
+}
+.restart-notice > button {
+  flex: none;
+  margin: -4px -4px -4px auto;
+}
+.account-alternates {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.account-alternates .text-button {
+  padding: 0 4px;
+}

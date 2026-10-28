@@ -17,7 +17,7 @@ import { GitHubSettings } from "./settings/GitHub.tsx";
 import type { LoginState } from "./settings/Login.tsx";
 import { ModelSettings } from "./settings/Models.tsx";
 import { SearchSettings } from "./settings/Search.tsx";
-import { RestartNotice } from "./settings/shared.tsx";
+import { RESTART_TIMEOUT_MS, RestartNotice, type RestartState } from "./settings/shared.tsx";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
@@ -139,12 +139,18 @@ function AccountsSection({ client, connected, onError }: SectionProps) {
         .then(refresh)
         .catch((e: unknown) => onError(errorMessage(e)));
     },
-    onSignIn(account) {
+    onSignIn(account, method) {
       onError(undefined);
       client
-        .request("login.start", { accountId: account.id })
+        .request("login.start", { accountId: account.id, ...(method ? { method } : {}) })
         .then(({ loginId }) =>
-          setLogin({ loginId, accountId: account.id, label: account.label, events: [] }),
+          setLogin({
+            loginId,
+            accountId: account.id,
+            label: account.label,
+            ...(method ? { method } : {}),
+            events: [],
+          }),
         )
         .catch((e: unknown) => onError(errorMessage(e)));
     },
@@ -447,6 +453,48 @@ export function Settings({
   const [restartRequired, setRestartRequired] = useState(false);
   const onError = useCallback((message: string | undefined) => setError(message), []);
   const onConfigSaved = useCallback(() => setRestartRequired(true), []);
+  const [restart, setRestart] = useState<RestartState>({ phase: "idle" });
+
+  const onRestart = useCallback(() => {
+    setError(undefined);
+    client
+      .request("server.restart", {})
+      .then(({ activeWork, mode }) => {
+        client.expectRestart();
+        setRestart({ phase: "restarting", activeWork, mode, dropped: false });
+      })
+      .catch((e: unknown) => setError(errorMessage(e)));
+  }, [client]);
+
+  // Restarting → the socket drops → it reconnects: the server is back with the saved config.
+  useEffect(() => {
+    if (restart.phase !== "restarting") return;
+    if (!connected && !restart.dropped) setRestart({ ...restart, dropped: true });
+    if (connected && restart.dropped) {
+      setRestart({ phase: "back" });
+      setRestartRequired(false);
+    }
+  }, [connected, restart]);
+
+  useEffect(() => {
+    if (restart.phase !== "restarting") return;
+    const timer = setTimeout(
+      () =>
+        setRestart({
+          phase: "failed",
+          message:
+            "Pi Bot has not come back yet. Check the server log; this page keeps reconnecting.",
+        }),
+      RESTART_TIMEOUT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [restart.phase]);
+
+  useEffect(() => {
+    if (restart.phase !== "back") return;
+    const timer = setTimeout(() => setRestart({ phase: "idle" }), 10_000);
+    return () => clearTimeout(timer);
+  }, [restart.phase]);
 
   useEffect(() => {
     if (!connected) return;
@@ -464,7 +512,13 @@ export function Settings({
       <h2>Settings</h2>
       <SettingsNav section={section} />
       <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
-      <RestartNotice show={restartRequired} />
+      <RestartNotice
+        show={restartRequired}
+        offer={section === "config"}
+        state={restart}
+        disabled={!connected}
+        onRestart={onRestart}
+      />
       {section === "accounts" ? <AccountsSection {...props} /> : null}
       {section === "models" ? <ModelsSection {...props} /> : null}
       {section === "search" ? <SearchSection {...props} /> : null}

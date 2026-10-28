@@ -2,14 +2,74 @@ import { RotateCcw } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Icon } from "../../components/Icon.tsx";
 
-/** Shown after any config.toml write: the running server keeps its startup config. */
-export function RestartNotice({ show }: { show: boolean }) {
-  return show ? (
-    <div className="notice warning" role="status">
+/** The running server keeps its startup config until it restarts. */
+export type RestartState =
+  | { phase: "idle" }
+  | { phase: "restarting"; activeWork: number; mode: "reload" | "exit"; dropped: boolean }
+  | { phase: "back" }
+  | { phase: "failed"; message: string };
+
+/** How long the page waits for the server to come back before reporting it. */
+export const RESTART_TIMEOUT_MS = 90_000;
+
+/**
+ * Restart status and the "Restart and apply" button. Shown when config.toml changed (`show`) or
+ * on the Config tab (`offer`), and while a restart is running or just finished.
+ */
+export function RestartNotice({
+  show,
+  offer = false,
+  state,
+  disabled,
+  onRestart,
+}: {
+  show: boolean;
+  offer?: boolean;
+  state: RestartState;
+  disabled?: boolean;
+  onRestart: () => void;
+}) {
+  if (state.phase === "restarting") {
+    const waiting = state.activeWork
+      ? ` Letting ${state.activeWork} running turn${state.activeWork === 1 ? "" : "s"} finish (up to 15 s); anything still running resumes after the restart.`
+      : "";
+    return (
+      <div className="notice info restart-notice" role="status">
+        <Icon icon={RotateCcw} size={16} className="spin" />
+        <span>
+          Restarting Pi Bot…{waiting} This page reconnects on its own.
+          {state.mode === "exit" ? " Waiting for the service manager to start it again." : ""}
+        </span>
+      </div>
+    );
+  }
+  if (state.phase === "back") {
+    return (
+      <div className="notice success restart-notice" role="status">
+        <Icon icon={RotateCcw} size={16} />
+        <span>Pi Bot is back and running with the saved config.</span>
+      </div>
+    );
+  }
+  if (!show && !offer && state.phase !== "failed") return null;
+  return (
+    <div
+      className={`notice ${state.phase === "failed" ? "error" : show ? "warning" : "info"} restart-notice`}
+      role="status"
+    >
       <Icon icon={RotateCcw} size={16} />
-      <span>Saved to config.toml. Restart Pi Bot to apply.</span>
+      <span>
+        {state.phase === "failed"
+          ? state.message
+          : show
+            ? "Saved to config.toml. Restart Pi Bot to apply."
+            : "Config changes apply when Pi Bot restarts."}
+      </span>
+      <button type="button" className="secondary" disabled={disabled} onClick={onRestart}>
+        Restart and apply
+      </button>
     </div>
-  ) : null;
+  );
 }
 
 /** Write-only secret field: the stored value is never shown or prefilled. */

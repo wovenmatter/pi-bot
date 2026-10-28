@@ -190,6 +190,30 @@ comments (field edits change single lines in place). **Config changes need a res
 says so after each save. There is **no app-level auth**: anyone who can reach the server's
 loopback/tailnet port can change settings, so never bind it anywhere public.
 
+### Signing in (headless)
+
+Every sign-in works from a browser on any other device: the server never opens a browser and
+nothing has to reach a localhost callback on the workstation. The flows are Woven Matter's.
+
+| Provider | What you see and do |
+| --- | --- |
+| ChatGPT (`openai-codex`) | Settings → Accounts → ChatGPT → **Sign in** shows a code and a link to `auth.openai.com/codex/device`. Open it anywhere, enter the code, approve; Pi Bot polls and finishes on its own (15 min limit). Same as Woven (`default-agent/src/sign-in-interaction.mjs` picks `device_code`). If your account has device-code sign-in turned off, use **Browser, then paste the redirect URL**: approve in the browser, and when it lands on a `localhost:1455` page that won't load, paste that whole URL back. |
+| Claude (`claude-oauth`, Pro/Max) | **Sign in** shows a claude.ai link. Open it anywhere, approve, and claude.ai shows a code (`code#state`); paste it back. Pi Bot stores the tokens, refreshes them itself and hands the access token to Claude Code as `CLAUDE_CODE_OAUTH_TOKEN`. Fallbacks: paste a `claude setup-token` token (same slot) or an Anthropic API key. |
+| xAI (Grok) | **Sign in** shows a code and an auth.x.ai link; approve there and Pi Bot finishes. API key fallback in the same slot. |
+
+Refreshes run inside the credential store's per-slot lock, so the one server process has one
+serialized refresher per provider (xAI and Anthropic rotate refresh tokens).
+
+### Restart and apply
+
+Config saves go to config.toml at once; **Restart and apply** (shown after a save, and always on
+the Config tab) applies them. Pi Bot re-reads config.toml first (an invalid file is refused and
+nothing stops), lets running turns finish for up to 15 s, closes, and starts again: in the same
+process and on the same port by default (works under `pnpm dev`'s `node --watch`, a terminal, or
+a service), or, with `PIBOT_RESTART_EXIT_CODE=75`, by exiting with that status for a supervisor
+(systemd: `Restart=always` or `RestartForceExitStatus=75`). Turns still running at close resume via
+Pi Durable. The page reconnects every 500 ms and says when Pi Bot is back.
+
 ## Crash recovery
 
 Pi Durable's store is the source of truth, as in Woven Matter. Every bot is opened at startup, and

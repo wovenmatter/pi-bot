@@ -8,7 +8,8 @@ import { KeyForm } from "./shared.tsx";
 export type AccountActions = {
   onSaveKey: (account: AccountStatus, key: string) => Promise<boolean>;
   onRemove: (account: AccountStatus) => void;
-  onSignIn: (account: AccountStatus) => void;
+  /** `method`: one of `account.loginMethods`; omitted means the default (first). */
+  onSignIn: (account: AccountStatus, method?: string) => void;
   onRespond: (promptId: string, value: string) => void;
   onCancelLogin: () => void;
   onCloseLogin: () => void;
@@ -33,6 +34,7 @@ export function AccountRow({
   actions: AccountActions;
 }) {
   const keyed = account.method !== "oauth";
+  const alternates = account.loginMethods?.slice(1) ?? [];
   return (
     <li className="settings-row account-row">
       <div className="account-row-main">
@@ -93,12 +95,32 @@ export function AccountRow({
           onSave={(key) => actions.onSaveKey(account, key)}
         />
       ) : null}
+      {!keyed && !login && alternates.length ? (
+        <p className="account-alternates muted">
+          Other way to sign in:{" "}
+          {alternates.map((method) => (
+            <button
+              key={method.id}
+              type="button"
+              className="text-button"
+              disabled={disabled}
+              onClick={() => actions.onSignIn(account, method.id)}
+            >
+              {method.label}
+            </button>
+          ))}
+        </p>
+      ) : null}
       {login ? (
         <LoginPanel
           login={login}
+          alternates={(account.loginMethods ?? []).filter(
+            (method) => method.id !== (login.method ?? account.loginMethods?.[0]?.id),
+          )}
           onRespond={actions.onRespond}
           onCancel={actions.onCancelLogin}
           onClose={actions.onCloseLogin}
+          onRetry={(method) => actions.onSignIn(account, method)}
         />
       ) : null}
     </li>

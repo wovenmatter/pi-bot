@@ -276,7 +276,107 @@ describe("Settings sections", () => {
     );
     expect(editor).toContain("models.orchestrator: expected provider/model");
     expect(editor).toContain('role="alert"');
-    expect(renderToStaticMarkup(<RestartNotice show />)).toContain("Restart Pi Bot to apply");
-    expect(renderToStaticMarkup(<RestartNotice show={false} />)).toBe("");
+    const idle = { phase: "idle" } as const;
+    const pending = renderToStaticMarkup(<RestartNotice show state={idle} onRestart={noop} />);
+    expect(pending).toContain("Restart Pi Bot to apply");
+    expect(pending).toContain("Restart and apply");
+    expect(renderToStaticMarkup(<RestartNotice show={false} state={idle} onRestart={noop} />)).toBe(
+      "",
+    );
+    expect(
+      renderToStaticMarkup(<RestartNotice show={false} offer state={idle} onRestart={noop} />),
+    ).toContain("Restart and apply");
+  });
+
+  it("shows restart progress, the server coming back and a stuck restart", () => {
+    const restarting = renderToStaticMarkup(
+      <RestartNotice
+        show
+        state={{ phase: "restarting", activeWork: 2, mode: "reload", dropped: false }}
+        onRestart={noop}
+      />,
+    );
+    expect(restarting).toContain("Restarting Pi Bot");
+    expect(restarting).toContain("2 running turns finish");
+    expect(restarting).not.toContain("Restart and apply");
+    expect(
+      renderToStaticMarkup(
+        <RestartNotice
+          show={false}
+          state={{ phase: "restarting", activeWork: 0, mode: "exit", dropped: true }}
+          onRestart={noop}
+        />,
+      ),
+    ).toContain("service manager");
+    expect(
+      renderToStaticMarkup(
+        <RestartNotice show={false} state={{ phase: "back" }} onRestart={noop} />,
+      ),
+    ).toContain("Pi Bot is back");
+    const failed = renderToStaticMarkup(
+      <RestartNotice
+        show
+        state={{ phase: "failed", message: "Pi Bot has not come back yet." }}
+        onRestart={noop}
+      />,
+    );
+    expect(failed).toContain("has not come back");
+    expect(failed).toContain("Restart and apply");
+  });
+
+  it("offers the other sign-in methods and only explains localhost for redirect pastes", () => {
+    const chatgpt: AccountStatus = {
+      ...(accounts[0] as AccountStatus),
+      loginMethods: [
+        { id: "device_code", label: "Device code" },
+        { id: "browser", label: "Browser, then paste the redirect URL" },
+      ],
+    };
+    const row = renderToStaticMarkup(<AccountsList accounts={[chatgpt]} actions={actions} />);
+    expect(row).toContain("Other way to sign in");
+    expect(row).toContain("Browser, then paste the redirect URL");
+    expect(row).not.toContain(">Device code<");
+
+    const claude = (placeholder: string) =>
+      renderToStaticMarkup(
+        <LoginPanel
+          login={{
+            loginId: "l2",
+            accountId: "claude-oauth",
+            label: "Claude",
+            events: [
+              { kind: "auth_url", url: "https://claude.ai/oauth/authorize?x=1" },
+              {
+                kind: "prompt",
+                promptId: "p1",
+                prompt: { type: "manual_code", message: "Paste the code", placeholder },
+              },
+            ],
+          }}
+          onRespond={noop}
+          onCancel={noop}
+          onClose={noop}
+        />,
+      );
+    expect(claude("code#state")).not.toContain("localhost");
+    expect(claude("http://localhost:1455/auth/callback")).toContain("localhost address");
+
+    const failed = renderToStaticMarkup(
+      <LoginPanel
+        login={{
+          loginId: "l3",
+          accountId: "openai-codex",
+          label: "ChatGPT",
+          events: [{ kind: "error", message: "Device code login is not enabled" }],
+        }}
+        alternates={[{ id: "browser", label: "Browser, then paste the redirect URL" }]}
+        onRespond={noop}
+        onCancel={noop}
+        onClose={noop}
+        onRetry={noop}
+      />,
+    );
+    expect(failed).toContain("Try instead");
+    expect(failed).toContain("Browser, then paste the redirect URL");
   });
 });
