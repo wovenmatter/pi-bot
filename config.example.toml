@@ -1,0 +1,31 @@
+# Pi Bot configuration (Codex-style TOML). Copy to ~/.config/pi-bot/config.toml
+# or point PI_BOT_CONFIG / `pi-bot serve --config <path>` at it.
+# Unknown keys are rejected.
+
+[server]
+# Loopback or tailnet (100.64.0.0/10, fd7a:115c:a1e0::/48) only. Public addresses are rejected.
+host = "127.0.0.1"
+port = 4317
+# web_dir = "../apps/web/dist"   # defaults to the built apps/web next to the server package
+
+[storage]
+# Shared SQLite database (pi-bot.sqlite, mode 0600) lives here; the directory is created 0700.
+data_dir = "~/.local/share/pi-bot"
+
+# Model roles: provider/model-id from the pi-ai catalog. There is no model picker.
+[models]
+orchestrator = "openai/gpt-6-sol"   # main channel and threads
+background = "openai/gpt-6-luna"    # extraction and other background work
+
+[extraction]
+schedule = "0 3 * * *"              # 5-field cron
+timezone = "America/New_York"       # IANA zone the schedule is evaluated in
+
+[bot_to_bot]
+max_rounds_per_request = 5
+max_messages_per_hour_per_pair = 30
+
+[credentials]
+# auto = macOS Keychain on a Mac (stubbed in milestone 1, falls back), encrypted SQLite elsewhere.
+backend = "auto"
+# key_file = "~/.local/share/pi-bot/credentials.key"   # AES-256-GCM key, mode 0600
