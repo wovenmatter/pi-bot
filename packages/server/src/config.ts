@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
+import { TITLE_REASONING } from "./titles.ts";
 
 /** `provider/model-id`, e.g. `openai/gpt-6-sol`. The model id may contain further slashes. */
 export type ModelRef = { readonly provider: string; readonly modelId: string };
@@ -86,6 +87,13 @@ export const configSchema = z.strictObject({
   models: z.strictObject({
     orchestrator: modelRef,
     background: modelRef,
+    /** Thread titles (metadata for listing and search), generated from a thread's first message. */
+    titles: z
+      .strictObject({
+        model: modelRef.default("openai-codex/gpt-6-luna"),
+        reasoning: z.enum(TITLE_REASONING).default("high"),
+      })
+      .prefault({}),
   }),
   extraction: z
     .strictObject({
@@ -149,7 +157,11 @@ export type PiBotConfig = RawConfig & {
     readonly keyFile: string;
     readonly webDir?: string;
   };
-  readonly roles: { readonly orchestrator: ModelRef; readonly background: ModelRef };
+  readonly roles: {
+    readonly orchestrator: ModelRef;
+    readonly background: ModelRef;
+    readonly titles: ModelRef;
+  };
 };
 
 export class ConfigError extends Error {
@@ -189,6 +201,7 @@ export function validateConfig(
     roles: {
       orchestrator: parseModelRef(raw.models.orchestrator),
       background: parseModelRef(raw.models.background),
+      titles: parseModelRef(raw.models.titles.model),
     },
   };
 }

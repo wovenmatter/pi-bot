@@ -9,6 +9,7 @@ import type { BotEnvironmentAdapter } from "./env.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
 import { type PiBotServer, startServer } from "./server.ts";
 import { openSharedDatabase } from "./storage/database.ts";
+import { TitleGenerator } from "./titles.ts";
 
 export type PiBotApp = {
   readonly db: SqliteDatabase;
@@ -65,6 +66,12 @@ export async function startPiBot(
         if (reason !== "closed") log(`bot ${bot.id} harness ${reason}`);
       },
       ...(env ? { onBotDeleted: (bot) => env.dispose(bot.id) } : {}),
+      titles: new TitleGenerator({
+        models,
+        model: config.roles.titles,
+        reasoning: config.models.titles.reasoning,
+      }),
+      onReport: (error) => log(`thread title: ${String(error)}`),
     });
     const webDir = options.webDir ?? config.paths.webDir;
     const server = await startServer({

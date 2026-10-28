@@ -17,6 +17,12 @@ data_dir = "~/.local/share/pi-bot"
 orchestrator = "openai/gpt-6-sol"   # main channel and threads
 background = "openai/gpt-6-luna"    # extraction and other background work
 
+# Thread titles: generated once from a thread's first message with Woven Matter's title prompt.
+# Metadata only (thread listing and search); the UI shows no thread names and threads can't be renamed.
+[models.titles]
+model = "openai-codex/gpt-6-luna"
+reasoning = "high"                  # minimal | low | medium | high | xhigh
+
 [extraction]
 schedule = "0 3 * * *"              # 5-field cron
 timezone = "America/New_York"       # IANA zone the schedule is evaluated in
