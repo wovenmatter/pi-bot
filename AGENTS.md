@@ -29,6 +29,13 @@ the working agreement for every human or agent who changes this repository.
   `0600` outside the database.
 - `config.toml`, data directories, `*.key` and SQLite files are git-ignored.
 
+## Bot management
+
+- Deleting a bot is a soft delete (`pibot_bots.deleted_at`). Never drop or delete a bot's tables,
+  threads or data; purging is deferred and needs its own decision.
+- Only the user deletes bots (WebSocket `bots.delete`). Agent or orchestrator tooling may create
+  bots but must never get a delete tool.
+
 ## Layout
 
 - `packages/server` — `@wovenmatter/pi-bot`: storage, bot registry, Pi Durable harnesses,

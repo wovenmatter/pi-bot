@@ -132,6 +132,17 @@ the way Woven Matter titles conversations (`CodexConversationTitleGenerator.swif
   thread is still untitled. The main channel is never titled.
 - A failed request is logged and leaves the thread untitled.
 
+## Deleting bots
+
+Only the user deletes bots, through the WebSocket `bots.delete` request. Deletion is a **soft
+delete**: the registry row in `pibot_bots` gets a `deleted_at` stamp and nothing else changes. The
+bot's prefixed Pi Durable tables, its thread rows and all its data stay in the database (no
+`DROP`, no `DELETE`). A deleted bot is hidden from `bots.list`, is not loaded or recovered at
+startup, and can't be opened or messaged (`bot <id> was deleted`). Its in-memory harness is closed
+and its runtime environment (container) released; volumes and data on disk are kept. Purging and
+restoring deleted bots are deferred. Future orchestrator tooling may create bots but must never
+get a delete tool. Stale thread registry rows are logged at startup, not pruned.
+
 ## Crash recovery
 
 Pi Durable's store is the source of truth, as in Woven Matter. Every bot is opened at startup, and
