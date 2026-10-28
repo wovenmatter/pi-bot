@@ -280,6 +280,18 @@ class Connection {
       case "config.update":
         await this.#settings().updateConfig(request.edits);
         return { saved: true, restartRequired: true };
+      case "github.get":
+        return this.#settings().github();
+      case "github.setSshKey":
+        return { sshKey: await this.#settings().setSshKey(request.privateKey) };
+      case "github.generateSshKey":
+        return { sshKey: await this.#settings().generateSshKey(request.comment) };
+      case "github.removeSshKey":
+        await this.#settings().removeSshKey();
+        return { removed: true };
+      case "github.setIdentity":
+        await this.#settings().setGitIdentity(request);
+        return { saved: true, restartRequired: true };
       case "threads.list": {
         const target = await manager.get(request.botId);
         return { threads: (await target.threads(request.query)).map(thread) };

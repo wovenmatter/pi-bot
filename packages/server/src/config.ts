@@ -142,6 +142,13 @@ export const configSchema = z.strictObject({
       provider: z.enum(["exa", "brave", "firecrawl"]).default("exa"),
     })
     .prefault({}),
+  /** Git identity for commits a bot makes. The GitHub SSH key lives in the credential store. */
+  git: z
+    .strictObject({
+      user_name: z.string().trim().min(1).max(200).optional(),
+      user_email: z.email().max(320).optional(),
+    })
+    .prefault({}),
   credentials: z
     .strictObject({
       /** `auto`: Keychain on macOS, encrypted SQLite elsewhere. */

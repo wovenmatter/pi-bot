@@ -5,7 +5,21 @@ import type { AuthPrompt, CredentialStore, Models } from "@earendil-works/pi-ai"
 import { ConfigError, type PiBotConfig, parseConfig, parseModelRef } from "../config.ts";
 import { TITLE_REASONING } from "../titles.ts";
 import { ACCOUNTS, type AccountSpec, findAccount, SEARCH_PROVIDERS } from "./catalog.ts";
+import {
+  generateEd25519Key,
+  parseOpenSshPrivateKey,
+  SshKeyError,
+  type SshPublicKey,
+} from "./ssh-key.ts";
 import { setTomlValues, type TomlEdit } from "./toml-edit.ts";
+
+/** Credential-store slot for the GitHub SSH private key (stored as an api_key credential). */
+export const GITHUB_SSH_SLOT = "github-ssh";
+
+export type GitHubStatus = {
+  sshKey?: SshPublicKey;
+  identity: { name?: string; email?: string };
+};
 
 export type AccountStatus = Omit<AccountSpec, "prefix"> & {
   readonly configured: boolean;
@@ -426,20 +440,33 @@ export class SettingsService {
     text: string;
     exists: boolean;
     restartRequired: boolean;
+    /** Values the structured forms edit: from the file when it parses, else the running config. */
+    effective: Pick<PiBotConfig, "bot_to_bot" | "extraction" | "search" | "git">;
   }> {
     const path = this.#config.source;
-    if (!path) return { text: "", exists: false, restartRequired: this.#configChanged };
+    const restartRequired = this.#configChanged;
+    const effective = (config: PiBotConfig) => ({
+      bot_to_bot: config.bot_to_bot,
+      extraction: config.extraction,
+      search: config.search,
+      git: config.git,
+    });
+    if (!path)
+      return { text: "", exists: false, restartRequired, effective: effective(this.#config) };
+    let text: string;
     try {
-      return {
-        path,
-        text: await readFile(path, "utf8"),
-        exists: true,
-        restartRequired: this.#configChanged,
-      };
+      text = await readFile(path, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      return { path, text: "", exists: false, restartRequired: this.#configChanged };
+      return { path, text: "", exists: false, restartRequired, effective: effective(this.#config) };
     }
+    let parsed = this.#config;
+    try {
+      parsed = parseConfig(text, dirname(path), path);
+    } catch {
+      parsed = this.#config;
+    }
+    return { path, text, exists: true, restartRequired, effective: effective(parsed) };
   }
 
   /** Validate config text with the same parser the server starts with. */
@@ -473,6 +500,58 @@ export class SettingsService {
   }
 
   /** Apply scalar edits to config.toml (comments kept where possible), validate, save. */
+  /** GitHub SSH key (public half only) and git identity. */
+  async github(): Promise<GitHubStatus> {
+    const { effective } = await this.readConfig();
+    const identity = {
+      ...(effective.git.user_name ? { name: effective.git.user_name } : {}),
+      ...(effective.git.user_email ? { email: effective.git.user_email } : {}),
+    };
+    const stored = await this.#credentials.read(GITHUB_SSH_SLOT);
+    if (stored?.type !== "api_key" || !stored.key) return { identity };
+    try {
+      return { sshKey: parseOpenSshPrivateKey(stored.key).info, identity };
+    } catch {
+      return { identity };
+    }
+  }
+
+  async setSshKey(privateKey: string): Promise<SshPublicKey> {
+    let parsed: ReturnType<typeof parseOpenSshPrivateKey>;
+    try {
+      parsed = parseOpenSshPrivateKey(privateKey);
+    } catch (error) {
+      if (error instanceof SshKeyError) throw new SettingsError(error.message);
+      throw error;
+    }
+    await this.#credentials.modify(GITHUB_SSH_SLOT, async () => ({
+      type: "api_key",
+      key: parsed.pem,
+    }));
+    return parsed.info;
+  }
+
+  /** Generate a key here so the private half never crosses the network. */
+  async generateSshKey(comment: string): Promise<SshPublicKey> {
+    const generated = generateEd25519Key(comment);
+    await this.#credentials.modify(GITHUB_SSH_SLOT, async () => ({
+      type: "api_key",
+      key: generated.pem,
+    }));
+    return generated.info;
+  }
+
+  async removeSshKey(): Promise<void> {
+    await this.#credentials.delete(GITHUB_SSH_SLOT);
+  }
+
+  async setGitIdentity(identity: { name: string; email: string }): Promise<void> {
+    await this.updateConfig([
+      { path: ["git", "user_name"], value: identity.name.trim() },
+      { path: ["git", "user_email"], value: identity.email.trim() },
+    ]);
+  }
+
   async updateConfig(edits: readonly TomlEdit[]): Promise<void> {
     if (edits.length === 0) return;
     const { text } = await this.readConfig();

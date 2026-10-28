@@ -9,6 +9,7 @@ export type * from "./protocol.ts";
 export { type PiBotServer, type PiBotServerOptions, startServer } from "./server.ts";
 export * from "./settings/catalog.ts";
 export * from "./settings/service.ts";
+export * from "./settings/ssh-key.ts";
 export { setTomlValues, type TomlEdit } from "./settings/toml-edit.ts";
 export type { BotRecord, ThreadRecord } from "./storage/registry.ts";
 export type { DisplayEntry } from "./transcript.ts";

@@ -97,6 +97,27 @@ export const requestSchema = z.discriminatedUnion("type", [
       .min(1)
       .max(20),
   }),
+  z.strictObject({ id: requestId, type: z.literal("github.get") }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("github.setSshKey"),
+    privateKey: z.string().min(1).max(16_384),
+  }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("github.generateSshKey"),
+    comment: z
+      .string()
+      .regex(/^[\x21-\x7e]{1,100}$/)
+      .default("pi-bot"),
+  }),
+  z.strictObject({ id: requestId, type: z.literal("github.removeSshKey") }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("github.setIdentity"),
+    name: z.string().trim().min(1).max(200),
+    email: z.email().max(320),
+  }),
 ]);
 
 export type Request = z.infer<typeof requestSchema>;

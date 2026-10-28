@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AuthResult, CredentialStore, Provider } from "@earendil-works/pi-ai";
@@ -9,6 +10,7 @@ import { type PiBotApp, startPiBot } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
 import type { ServerMessage } from "../src/protocol.ts";
 import type { AccountStatus, LoginEvent } from "../src/settings/service.ts";
+import type { SshPublicKey } from "../src/settings/ssh-key.ts";
 import { setTomlValues } from "../src/settings/toml-edit.ts";
 import { echoModels, tempDir } from "./helpers.ts";
 import { Client } from "./ws-client.ts";
@@ -413,6 +415,13 @@ describe("settings over the websocket", () => {
     expect(updated.bot_to_bot?.max_rounds_per_request).toBe(9);
     expect(updated.extraction?.timezone).toBe("America/New_York");
     expect(updated.search?.provider).toBe("brave");
+    expect(await client.request("config.get")).toMatchObject({
+      effective: {
+        bot_to_bot: { max_rounds_per_request: 9, max_messages_per_hour_per_pair: 30 },
+        extraction: { timezone: "America/New_York" },
+        search: { provider: "brave" },
+      },
+    });
     await expect(
       client.request("config.update", { edits: [{ path: ["search", "provider"], value: "bing" }] }),
     ).rejects.toThrow(/search/);
@@ -431,5 +440,82 @@ describe("settings over the websocket", () => {
       text: saved,
       restartRequired: true,
     });
+  });
+
+  it("stores a GitHub SSH key write-only and the git identity in config.toml", async () => {
+    expect(await client.request("github.get")).toEqual({ identity: {} });
+
+    const { sshKey } = await client.request<{ sshKey: SshPublicKey }>("github.generateSshKey", {
+      comment: "pi-bot@test",
+    });
+    expect(sshKey.type).toBe("ssh-ed25519");
+    expect(sshKey.publicKey).toMatch(/^ssh-ed25519 AAAA[A-Za-z0-9+/=]+ pi-bot@test$/);
+    expect(sshKey.fingerprint).toMatch(/^SHA256:[A-Za-z0-9+/]{43}$/);
+    const stored = await credentials.read("github-ssh");
+    if (stored?.type !== "api_key" || !stored.key) throw new Error("expected a stored key");
+    expect(stored.key).toContain("-----BEGIN OPENSSH PRIVATE KEY-----");
+    // The private half never goes back over the socket.
+    expect(JSON.stringify(client.messages)).not.toContain("PRIVATE KEY");
+
+    // ssh-keygen agrees on the format and fingerprint, when it is installed.
+    const file = join(dir.path, "id_test");
+    await writeFile(file, stored.key, { mode: 0o600 });
+    let keygen: string | undefined;
+    try {
+      keygen = execFileSync("ssh-keygen", ["-lf", file], { encoding: "utf8" });
+    } catch {
+      keygen = undefined;
+    }
+    if (keygen !== undefined) expect(keygen).toContain(sshKey.fingerprint);
+
+    // Pasting the same key back reads the same public half.
+    await client.request("github.removeSshKey");
+    expect(await client.request("github.get")).toEqual({ identity: {} });
+    const pasted = await client.request<{ sshKey: SshPublicKey }>("github.setSshKey", {
+      privateKey: `\r\n${stored.key.replace(/\n/g, "\r\n")}  `,
+    });
+    expect(pasted.sshKey).toEqual(sshKey);
+    expect(await client.request("github.get")).toMatchObject({ sshKey });
+
+    await expect(
+      client.request("github.setSshKey", { privateKey: sshKey.publicKey }),
+    ).rejects.toThrow(/public key/);
+    await expect(
+      client.request("github.setSshKey", { privateKey: "-----BEGIN RSA PRIVATE KEY-----\nAA" }),
+    ).rejects.toThrow(/OpenSSH private key/);
+    // Same key, re-labelled as encrypted: passphrase-protected keys are refused.
+    const body = stored.key
+      .replace("-----BEGIN OPENSSH PRIVATE KEY-----", "")
+      .replace("-----END OPENSSH PRIVATE KEY-----", "")
+      .replace(/\s+/g, "");
+    const raw = Buffer.from(body, "base64");
+    const magic = "openssh-key-v1\0".length;
+    const cipher = Buffer.from("aes256-ctr");
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(cipher.length);
+    const encrypted = Buffer.concat([
+      raw.subarray(0, magic),
+      length,
+      cipher,
+      raw.subarray(magic + 8),
+    ]);
+    await expect(
+      client.request("github.setSshKey", {
+        privateKey: `-----BEGIN OPENSSH PRIVATE KEY-----\n${encrypted.toString("base64")}\n-----END OPENSSH PRIVATE KEY-----`,
+      }),
+    ).rejects.toThrow(/passphrase/);
+
+    expect(
+      await client.request("github.setIdentity", { name: "Pi Bot", email: "bot@example.com" }),
+    ).toEqual({ saved: true, restartRequired: true });
+    const toml = await readFile(configPath, "utf8");
+    expect(toml).toContain("# my settings");
+    expect(parseToml(toml).git).toEqual({ user_name: "Pi Bot", user_email: "bot@example.com" });
+    expect(await client.request("github.get")).toMatchObject({
+      identity: { name: "Pi Bot", email: "bot@example.com" },
+    });
+    await expect(
+      client.request("github.setIdentity", { name: "Pi Bot", email: "not-an-email" }),
+    ).rejects.toThrow();
   });
 });
