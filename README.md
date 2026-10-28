@@ -214,6 +214,61 @@ a service), or, with `PIBOT_RESTART_EXIT_CODE=75`, by exiting with that status f
 (systemd: `Restart=always` or `RestartForceExitStatus=75`). Turns still running at close resume via
 Pi Durable. The page reconnects every 500 ms and says when Pi Bot is back.
 
+## Per-bot environment
+
+With `[environment] backend = "docker"` every bot gets its own Docker container, and all of its
+tools run there (also for Claude via the Agent SDK: Claude Code runs on the server with no
+built-in tools, and Pi Bot's tool calls execute in the container).
+
+- **Image** (`packages/server/docker`): Ubuntu 24.04 LTS with git, Node 24, Python 3, build tools,
+  ripgrep, and Playwright with Chromium. Built on first use as `pi-bot-env:<hash>`; a changed
+  Dockerfile gives a new tag for new containers (existing containers keep their image).
+- **Container** `pi-bot-<bot id>`: non-root user `bot` with passwordless sudo, its own named volume
+  `pi-bot-<bot id>-workspace` at `/workspace`, full internet, no resource limits. Nothing from the
+  host is mounted and there is no Docker socket. Started with `--restart unless-stopped`.
+- **Lifecycle**: created on first tool use; stopped (volume kept) on soft delete; started on
+  restore. At startup the server makes sure every active bot's container exists and runs (retrying
+  while Docker starts) and stops containers of deleted bots. Containers and volumes are never
+  removed.
+- **Bridge**: the server runs `docker exec -i -u bot … node /opt/pibot-env/agent.mjs`, a small
+  agent that serves Pi Durable's `NodeExecutionEnv` over JSON lines on stdio. `docker exec` does
+  not pass the server's environment, so model and search credentials stay on the host.
+- **Git**: the Settings → GitHub SSH key and identity are written to `~/.ssh/id_pibot_github`
+  (0600, with `~/.ssh/config` and GitHub's pinned host keys) and `git config --global` in every
+  container on start and whenever they change in Settings.
+
+### Orchestrator
+
+One bot is its own orchestrator. With two or more, the first-created bot is the default and
+Settings → Bots asks you to confirm it or pick another (stored as `[bots] orchestrator`).
+
+### Running as a service
+
+On a Linux workstation, run the server as a systemd user service with lingering on, so it starts
+at boot without a login (and Docker enabled at boot):
+
+```ini
+# ~/.config/systemd/user/pi-bot.service
+[Unit]
+Description=Pi Bot
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Projects/pi-bot
+ExecStart=/usr/bin/node packages/server/dist/cli.js serve
+Environment=PIBOT_RESTART_EXIT_CODE=75
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target
+```
+
+`systemctl --user enable --now pi-bot`, `loginctl enable-linger $USER`,
+`sudo systemctl enable docker`. Restart and apply exits with 75 and systemd starts it again. For a
+private preview on your tailnet only: `tailscale serve --bg --https=10443 http://127.0.0.1:4317`
+(never `tailscale funnel`).
+
 ## Crash recovery
 
 Pi Durable's store is the source of truth, as in Woven Matter. Every bot is opened at startup, and
@@ -246,6 +301,5 @@ are at the end of the file.
 ## Not in milestone 1
 
 - macOS Keychain backend. It is a stub, so encrypted SQLite is used everywhere.
-- Per-bot Docker environment. The adapter is a stub.
 - Scheduled extraction and bot-to-bot messaging. Both are configured and validated, but neither is run yet.
 - Stop/abort in the UI.
