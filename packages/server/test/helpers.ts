@@ -35,8 +35,9 @@ function lastUserText(context: ContextLike): string {
 }
 
 /** Faux models that answer `echo: <last user text>` (n<user messages seen>) forever. */
-export function echoModels() {
-  const faux = fauxProvider({ tokensPerSecond: 2000 });
+export function echoModels(tokensPerSecond = 2000) {
+  // One-token (4 char) chunks; pi-durable publishes partial messages every 100 ms.
+  const faux = fauxProvider({ tokensPerSecond, tokenSize: { min: 1, max: 1 } });
   const echo: FauxResponseStep = (context) => {
     const ctx = context as unknown as ContextLike;
     const seen = (ctx.messages ?? []).filter((message) => message.role === "user").length;
