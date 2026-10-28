@@ -1,4 +1,4 @@
-import type { EventMessage, Requests, ServerMessage } from "./protocol.ts";
+import type { EventMessage, LoginEvent, Requests, ServerMessage } from "./protocol.ts";
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
@@ -22,6 +22,9 @@ export class PiBotClient {
   #attempt = 0;
   #reconnect: ReturnType<typeof setTimeout> | undefined;
   #stopped = false;
+  #logins = new Map<string, (event: LoginEvent) => void>();
+  /** Sign-in events that arrived before their `login.start` result. */
+  #loginBacklog = new Map<string, LoginEvent[]>();
 
   constructor(url: string) {
     this.#url = url;
@@ -98,6 +101,17 @@ export class PiBotClient {
     return () => this.#events.delete(listener);
   }
 
+  /** Follow one sign-in; replays events that arrived before the listener. */
+  onLogin(loginId: string, listener: (event: LoginEvent) => void): () => void {
+    this.#logins.set(loginId, listener);
+    const backlog = this.#loginBacklog.get(loginId) ?? [];
+    this.#loginBacklog.delete(loginId);
+    for (const event of backlog) listener(event);
+    return () => {
+      if (this.#logins.get(loginId) === listener) this.#logins.delete(loginId);
+    };
+  }
+
   onState(listener: (state: ConnectionState) => void): () => void {
     this.#states.add(listener);
     return () => this.#states.delete(listener);
@@ -114,6 +128,21 @@ export class PiBotClient {
     try {
       message = JSON.parse(raw) as ServerMessage;
     } catch {
+      return;
+    }
+    if (message.type === "login") {
+      const listener = this.#logins.get(message.loginId);
+      if (listener) listener(message.event);
+      else {
+        const backlog = this.#loginBacklog.get(message.loginId) ?? [];
+        backlog.push(message.event);
+        this.#loginBacklog.set(message.loginId, backlog);
+        // Bound memory if a client never subscribes.
+        if (this.#loginBacklog.size > 20) {
+          const oldest = this.#loginBacklog.keys().next().value;
+          if (oldest !== undefined) this.#loginBacklog.delete(oldest);
+        }
+      }
       return;
     }
     if (message.type === "event") {

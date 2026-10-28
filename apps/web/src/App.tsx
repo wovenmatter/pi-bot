@@ -131,7 +131,12 @@ export function App() {
         >
           <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
           {route.settings ? (
-            <Settings client={client} connected={connection === "open"} onRestored={onRestored} />
+            <Settings
+              client={client}
+              connected={connection === "open"}
+              section={route.section ?? "accounts"}
+              onRestored={onRestored}
+            />
           ) : bot ? (
             <Conversation
               key={bot.id}

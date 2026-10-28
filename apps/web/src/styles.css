@@ -1402,3 +1402,202 @@ input[type="file"] {
   margin: 4px 0 0;
   font-size: 12.5px;
 }
+.settings-tabs {
+  display: flex;
+  margin: 0 0 20px;
+}
+.settings-tabs > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-intro {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+}
+.settings-section + .settings-section {
+  margin-top: 20px;
+}
+.settings-section .muted code,
+.account-status code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.account-row {
+  display: grid;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 12px;
+}
+.account-row:hover {
+  background: transparent;
+}
+.account-row + .account-row {
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.account-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.account-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.account-status {
+  color: var(--muted);
+}
+.account-status.configured {
+  color: var(--success-ink);
+}
+.account-help {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-inline-form {
+  display: flex;
+  gap: 8px;
+}
+.settings-inline-form > input {
+  flex: 1;
+  font-family: var(--mono);
+}
+.settings-fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+.settings-field {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.settings-field > span {
+  display: grid;
+  gap: 2px;
+}
+.settings-field small {
+  font-size: 11.5px;
+}
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.model-group > summary {
+  padding: 6px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.login-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--whisper);
+}
+.login-panel .notice {
+  margin: 0;
+}
+.login-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.login-step {
+  display: grid;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.login-step p {
+  margin: 0;
+}
+.login-options {
+  display: grid;
+  gap: 6px;
+}
+.login-option {
+  flex-direction: column;
+  align-items: flex-start;
+  height: auto;
+  padding-block: 8px;
+  white-space: normal;
+  text-align: left;
+}
+.login-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.login-code code {
+  padding: 6px 12px;
+  border-radius: var(--control-radius);
+  background: var(--input);
+  font-family: var(--mono);
+  font-size: 18px;
+  letter-spacing: 0.12em;
+}
+.login-url {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.config-editor,
+.ssh-public-key,
+.ssh-paste textarea {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.config-editor {
+  min-height: 420px;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 2;
+}
+.ssh-public-key {
+  min-height: 0;
+  word-break: break-all;
+}
+.ssh-key,
+.ssh-paste {
+  display: grid;
+  gap: 8px;
+}
+.config-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  color: var(--danger-ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.config-ok {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--success-ink);
+  font-size: 12.5px;
+}
+@media (max-width: 640px) {
+  .settings-field {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .account-row-main {
+    flex-wrap: wrap;
+  }
+}
