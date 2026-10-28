@@ -17,7 +17,8 @@ Usage: pi-bot <command> [--config <path>]
 
 Commands:
   serve                     Run the server (WebSocket at /ws, web client at /)
-  set-key <provider>        Store an API key (openai, anthropic, openrouter, exa, ...) from hidden input or stdin
+  set-key <provider>        Store an API key (openai, anthropic, openrouter, exa, ...) from hidden input or stdin;
+                            claude-subscription takes the token printed by \`claude setup-token\`
   login <provider>          pi-ai OAuth login (e.g. openai for ChatGPT, anthropic, openrouter)
   logout <provider>         Remove a stored credential
   credentials               List stored credentials (provider and type only)

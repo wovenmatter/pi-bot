@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
 import { createBotHarnessOptions } from "./agent.ts";
@@ -38,7 +39,11 @@ export async function startPiBot(
   try {
     const credentials = await openCredentialStore(config, db);
     if (credentials.note) log(credentials.note);
-    const models = options.models ?? createPiBotModels(credentials.store);
+    const models =
+      options.models ??
+      createPiBotModels(credentials.store, {
+        claude: { directory: join(config.paths.dataDir, "claude-agent") },
+      });
     if (!options.models) {
       for (const problem of checkModelRoles(createPiBotModels(credentials.store), config.roles)) {
         log(`warning: ${problem}`);
