@@ -59,13 +59,14 @@ compact (`[compaction]` thresholds, context overflow, or a manual `compact()`) a
 covered prefix, keeping tool calls with their results. Then, mirroring Woven Matter's
 `default-agent` (`provider-compaction.mjs`, `native-context.mjs`, `native-compaction-registry.mjs`):
 
-| Provider (pi-ai api)                               | Native API used                                                                                                                                                |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `openai` (`openai-responses`)                      | `POST https://api.openai.com/v1/responses/compact`; the returned `output` is prepended to later `input`                                                        |
-| `xai` (`openai-responses`)                         | `POST https://api.x.ai/v1/responses/compact`, same contract                                                                                                    |
-| `openai-codex` (`openai-codex-responses`)          | `POST https://chatgpt.com/backend-api/codex/responses` with a trailing `{"type":"compaction_trigger"}` input item (SSE, `OpenAI-Beta: responses=experimental`) |
-| `anthropic` (`anthropic-messages`)                 | `POST /v1/messages?beta=true`, `anthropic-beta: compact-2026-09-04`, `compaction: {type: "summarize"}`; the signed `compaction` block leads later requests     |
-| anything else (OpenRouter, faux, Claude Agent SDK) | Pi Durable's built-in summarizer                                                                                                                               |
+| Provider (pi-ai api)                      | Native API used                                                                                                                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `openai` (`openai-responses`)             | `POST https://api.openai.com/v1/responses/compact`; the returned `output` is prepended to later `input`                                                                  |
+| `xai` (`openai-responses`)                | `POST https://api.x.ai/v1/responses/compact`, same contract                                                                                                              |
+| `openai-codex` (`openai-codex-responses`) | `POST https://chatgpt.com/backend-api/codex/responses` with a trailing `{"type":"compaction_trigger"}` input item (SSE, `OpenAI-Beta: responses=experimental`)           |
+| `anthropic` (`anthropic-messages`)        | `POST /v1/messages?beta=true`, `anthropic-beta: compact-2026-09-04`, `compaction: {type: "summarize"}`; the signed `compaction` block leads later requests               |
+| `claude-subscription` (Claude Agent SDK)  | SDK `/compact` over the replayed transcript; the `PostCompact` hook's `compact_summary` (with `compact_boundary`) becomes the window, sent as a `<summary>` user message |
+| anything else (OpenRouter, faux)          | Pi Durable's built-in summarizer                                                                                                                                         |
 
 The compaction request is built by capturing the exact payload pi-ai would send (same system
 prompt, tools and auth), so the native window matches what later requests carry. The window lives
@@ -78,6 +79,43 @@ between compactions, so prompt caching is only reset by compaction itself.
 
 `beforeCompact` first calls the memory-extraction hook (`src/memory.ts`), a no-op in milestone 2.
 Tests use fake provider endpoints and placeholder credentials; no real model key was used.
+
+## Claude via the Claude Agent SDK
+
+The `claude-subscription` provider (`packages/server/src/claude/`) runs Claude through
+`@anthropic-ai/claude-agent-sdk`, so a Claude Pro/Max subscription works as well as an API key.
+It follows Woven Matter's `default-agent/src/claude-provider.mjs`, `claude-runtime.mjs` and
+`claude-inventory.mjs`.
+
+```sh
+claude setup-token                                            # prints a long-lived OAuth token
+node packages/server/dist/cli.js set-key claude-subscription  # paste it (stored encrypted)
+# then use e.g. orchestrator = "claude-subscription/claude-sonnet-4-5" in config.toml
+```
+
+An `sk-ant-oat…` token is passed to Claude Code as `CLAUDE_CODE_OAUTH_TOKEN`; any other key is
+passed as `ANTHROPIC_API_KEY`. Each turn runs Claude Code with:
+
+- a private `CLAUDE_CONFIG_DIR` under `<dataDir>/claude-agent` (mode 0700);
+- a filtered environment (inherited `ANTHROPIC_*`/`CLAUDE_*` variables removed; telemetry,
+  error reporting, nonessential traffic and retries off);
+- no built-in tools, skills, settings sources or session persistence;
+- `maxTurns: 1`.
+
+Pi Bot's tools are listed to Claude through a list-only MCP server (`inventory.ts`). Calls come
+back as tool calls that Pi Bot executes, and are never run inside Claude Code. Earlier turns are
+replayed as `shouldQuery: false` frames.
+
+Limits:
+
+- The SDK is proprietary (Anthropic Commercial Terms). It is pinned to `0.3.312`. Subscription
+  use is subject to Anthropic's consumer terms.
+- Every turn starts a Claude Code process and replays the whole transcript. There is no SDK session
+  resume, no admission gate that captures raw HTTP responses, and no account fencing; Woven has
+  all three.
+- Sampling options other than reasoning effort are ignored. The context window and costs come from
+  pi-ai's Anthropic catalog.
+- Tested only against a fake `query()`. No real Claude token or Claude Code process was used.
 
 ## Web client styling
 
