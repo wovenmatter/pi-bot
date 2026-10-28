@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Models, MutableModels } from "@earendil-works/pi-ai";
 import type { Conversation, EntryRecord } from "@earendil-works/pi-durable";
@@ -11,7 +11,13 @@ import { configSchema, type ModelRef } from "../src/config.ts";
 import { type BeforeCompactInput, noopBeforeCompact } from "../src/memory.ts";
 import { createPiBotModels } from "../src/models.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
-import { FakeProviders, fakeCredentials, type RecordedRequest } from "./fake-providers.ts";
+import {
+  CLAUDE_QUERY_URL,
+  FakeProviders,
+  fakeCredentials,
+  frameText,
+  type RecordedRequest,
+} from "./fake-providers.ts";
 import { echoModels, FAUX_MODEL, tempDir } from "./helpers.ts";
 
 /**
@@ -35,8 +41,10 @@ type Setup = {
   close(): Promise<void>;
 };
 
-function combinedModels(): MutableModels {
-  const models = createPiBotModels(fakeCredentials());
+function combinedModels(fake: FakeProviders, directory: string): MutableModels {
+  const models = createPiBotModels(fakeCredentials(), {
+    claude: { directory, query: fake.claudeQuery },
+  });
   models.setProvider(echoModels().faux.provider);
   return models;
 }
@@ -50,7 +58,7 @@ async function open(
   const db = await openSharedDatabase(path);
   const memory: BeforeCompactInput[] = [];
   const reports: unknown[] = [];
-  const shared = models ?? combinedModels();
+  const shared = models ?? combinedModels(fake, join(dirname(path), "claude-agent"));
   const manager = await BotManager.open({
     db,
     harnessOptions: (bot) =>
@@ -196,6 +204,31 @@ const providers: readonly ProviderCase[] = [
         signature: expect.stringMatching(/^anthropic-signature-/),
       });
       expect(r.headers.get("anthropic-beta")).toContain(ANTHROPIC_COMPACTION_BETA);
+    },
+  },
+  {
+    name: "Claude Agent SDK (/compact, PostCompact compact_summary)",
+    model: { provider: "claude-subscription", modelId: "claude-haiku-4-5" },
+    isCompact: (r) =>
+      r.url === CLAUDE_QUERY_URL && frameText(r.body.frames.at(-1)).startsWith("/compact"),
+    compactBody: (r) => {
+      expect(r.body.env.CLAUDE_CODE_OAUTH_TOKEN).toBe("sk-ant-oat01-test-claude");
+      expect(r.body.options).toMatchObject({
+        model: "claude-haiku-4-5",
+        maxTurns: 1,
+        persistSession: false,
+        tools: [],
+        settingSources: [],
+      });
+      // Every covered user frame is replayed into the transcript without a model turn.
+      const replayed = r.body.frames.slice(0, -1);
+      // biome-ignore lint/suspicious/noExplicitAny: SDK frames.
+      for (const frame of replayed.filter((f: any) => f.type === "user"))
+        expect(frame.shouldQuery).toBe(false);
+    },
+    windowed: (r) => {
+      expect(r.url).toBe(CLAUDE_QUERY_URL);
+      expect(frameText(r.body.frames[0])).toMatch(/<summary>\nclaude-sdk summary \d+\n<\/summary>/);
     },
   },
 ];
@@ -373,9 +406,9 @@ describe.each(variants)("compaction: $name", ({ thread }) => {
 
   it("compacts natively on its own once the context passes the configured threshold", async () => {
     const model = { provider: "openai", modelId: "gpt-4.1" } as const;
-    const models = combinedModels();
-    const window = models.getModel(model.provider, model.modelId)?.contextWindow ?? 0;
     const fake = new FakeProviders();
+    const models = combinedModels(fake, join(dir.path, "claude-agent"));
+    const window = models.getModel(model.provider, model.modelId)?.contextWindow ?? 0;
     const db = await openSharedDatabase(join(dir.path, "pi-bot.sqlite"));
     const reports: unknown[] = [];
     const manager = await BotManager.open({
@@ -457,7 +490,7 @@ describe("beforeCompact memory hook", () => {
         createBotHarnessOptions({
           botId: bot.id,
           botName: bot.name,
-          models: combinedModels(),
+          models: combinedModels(new FakeProviders(), join(dir.path, "claude-agent")),
           orchestrator: FAUX_MODEL,
           compaction,
           onBeforeCompact: () => {

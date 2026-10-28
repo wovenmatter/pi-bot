@@ -1,10 +1,27 @@
 import { zstdDecompressSync } from "node:zlib";
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
+import type { ClaudeSdkEvent, ClaudeSdkFrame, ClaudeSdkQuery } from "../src/claude/runtime.ts";
 
 /**
  * Fake OpenAI, xAI, ChatGPT (Codex) and Anthropic HTTP endpoints behind an injected fetch. No
- * request leaves the process and no real key is needed: the credentials are placeholders.
+ * request leaves the process and no real key is needed: the credentials are placeholders. The
+ * Claude Agent SDK is faked at its `query()` boundary: no Claude Code process starts.
  */
+
+/** The URL a fake Claude Agent SDK `query()` is recorded under. */
+export const CLAUDE_QUERY_URL = "process://claude-agent-sdk/query";
+
+/** The text of an SDK input frame. */
+export function frameText(frame: ClaudeSdkFrame | undefined): string {
+  return (
+    (frame?.message.content ?? [])
+      // biome-ignore lint/suspicious/noExplicitAny: Anthropic content blocks.
+      .filter((block: any) => block.type === "text")
+      // biome-ignore lint/suspicious/noExplicitAny: Anthropic content blocks.
+      .map((block: any) => block.text)
+      .join("\n")
+  );
+}
 
 export type RecordedRequest = {
   readonly url: string;
@@ -56,6 +73,7 @@ export function fakeCredentials(): MemoryCredentials {
     openai: { type: "api_key", key: "test-openai-key" },
     xai: { type: "api_key", key: "test-xai-key" },
     anthropic: { type: "api_key", key: "test-anthropic-key" },
+    "claude-subscription": { type: "api_key", key: "sk-ant-oat01-test-claude" },
     "openai-codex": {
       type: "oauth",
       access: jwt,
@@ -181,6 +199,9 @@ function lastUserText(items: any[] | undefined): string {
 export type FakeProviderOptions = {
   /** Answer native compaction with "unsupported" (404 / a 400 the provider documents). */
   readonly unsupported?: boolean;
+  /** Content blocks for a fake Claude Code turn; default: text echoing the last user frame. */
+  // biome-ignore lint/suspicious/noExplicitAny: Anthropic content blocks.
+  readonly claudeReply?: (frames: readonly ClaudeSdkFrame[]) => any[] | undefined;
 };
 
 /** One fake for all four providers; `requests` records every call, in order. */
@@ -315,6 +336,108 @@ export class FakeProviders {
     }
     return json({ error: { message: `fake provider has no ${url}` } }, 404);
   }
+
+  /**
+   * A fake Claude Agent SDK `query()`: acknowledges `shouldQuery: false` replay frames with a
+   * zero-turn result, answers `/compact` through the PostCompact hook and a `compact_boundary`,
+   * and streams one assistant message for a live user frame. Recorded like an HTTP request.
+   */
+  readonly claudeQuery: ClaudeSdkQuery = ({ prompt, options }) => {
+    const frames: ClaudeSdkFrame[] = [];
+    // biome-ignore lint/suspicious/noExplicitAny: SDK options.
+    const { env, hooks, abortController: _abort, stderr: _stderr, ...rest } = options as any;
+    this.requests.push({
+      url: CLAUDE_QUERY_URL,
+      path: "/query",
+      headers: new Headers(),
+      body: { frames, options: rest, env },
+    });
+    const id = String(++this.#counter);
+    const fake = this;
+    async function* run(): AsyncGenerator<ClaudeSdkEvent> {
+      for await (const frame of prompt) {
+        frames.push(frame);
+        if (frame.type === "assistant") continue;
+        if (frame.shouldQuery === false) {
+          yield { type: "result", subtype: "success", is_error: false, num_turns: 0 };
+          continue;
+        }
+        const text = frameText(frame);
+        if (text.startsWith("/compact")) {
+          if (!fake.options.unsupported) {
+            await hooks.PostCompact[0].hooks[0]({
+              hook_event_name: "PostCompact",
+              trigger: "manual",
+              compact_summary: `claude-sdk summary ${id}`,
+            });
+            yield {
+              type: "system",
+              subtype: "compact_boundary",
+              compact_metadata: { trigger: "manual", pre_tokens: 500 },
+            };
+          }
+          yield { type: "result", subtype: "success", is_error: false, num_turns: 0 };
+          return;
+        }
+        const content = fake.options.claudeReply?.(frames) ?? [
+          { type: "text", text: `claude: ${text}` },
+        ];
+        const message = `msg_claude_${id}`;
+        yield {
+          type: "stream_event",
+          parent_tool_use_id: null,
+          event: { type: "message_start", message: { id: message } },
+        };
+        for (const [index, block] of content.entries()) {
+          if (block.type !== "text") continue;
+          yield {
+            type: "stream_event",
+            parent_tool_use_id: null,
+            event: {
+              type: "content_block_start",
+              index,
+              content_block: { type: "text", text: "" },
+            },
+          };
+          yield {
+            type: "stream_event",
+            parent_tool_use_id: null,
+            event: {
+              type: "content_block_delta",
+              index,
+              delta: { type: "text_delta", text: block.text },
+            },
+          };
+          yield {
+            type: "stream_event",
+            parent_tool_use_id: null,
+            event: { type: "content_block_stop", index },
+          };
+        }
+        for (const block of content) {
+          yield {
+            type: "assistant",
+            parent_tool_use_id: null,
+            message: {
+              id: message,
+              content: [block],
+              stop_reason: null,
+              usage: { input_tokens: 10, output_tokens: 5 },
+            },
+          };
+        }
+        const tool = content.some((block) => block.type === "tool_use");
+        yield {
+          type: "result",
+          subtype: tool ? "error_max_turns" : "success",
+          is_error: tool,
+          num_turns: 1,
+        };
+        return;
+      }
+    }
+    return run();
+  };
 
   /** Requests to one path suffix, e.g. `/responses/compact`. */
   to(suffix: string): RecordedRequest[] {
