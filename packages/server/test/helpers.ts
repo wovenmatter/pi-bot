@@ -9,7 +9,7 @@ import {
   fauxText,
 } from "@earendil-works/pi-ai/providers/faux";
 import { createBotHarnessOptions } from "../src/agent.ts";
-import { BotManager } from "../src/bots.ts";
+import { BotManager, type BotManagerOptions } from "../src/bots.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
 import type { TitleGenerator } from "../src/titles.ts";
 
@@ -52,13 +52,19 @@ export function echoModels(tokensPerSecond = 2000) {
 
 export async function openTestManager(
   dbPath: string,
-  options: { titles?: TitleGenerator; onReport?: (error: unknown) => void } = {},
+  options: {
+    titles?: TitleGenerator;
+    onReport?: (error: unknown) => void;
+    onRecovered?: BotManagerOptions["onRecovered"];
+    tokensPerSecond?: number;
+  } = {},
 ) {
+  const { tokensPerSecond, ...managerOptions } = options;
   const db = await openSharedDatabase(dbPath);
-  const { faux, models } = echoModels();
+  const { faux, models } = echoModels(tokensPerSecond);
   const manager = await BotManager.open({
     db,
-    ...options,
+    ...managerOptions,
     harnessOptions: (bot) =>
       createBotHarnessOptions({
         botId: bot.id,
