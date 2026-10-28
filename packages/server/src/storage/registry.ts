@@ -19,6 +19,10 @@ export type ThreadRecord = {
   readonly parentConversationId: number;
   /** Entry the thread was forked at; the thread inherits context up to and including it. */
   readonly forkedAt: number;
+  /**
+   * Generated from the thread's first message (`[models.titles]`); "" until then. Metadata only:
+   * thread listing and search use it, the UI never shows it, and nothing renames a thread.
+   */
   readonly title: string;
   readonly createdAt: string;
 };
@@ -159,6 +163,38 @@ export class BotRegistry {
     const rows = await this.#db.all<ThreadRow>(
       `SELECT * FROM ${THREADS_TABLE} WHERE bot_id = ? ORDER BY created_at DESC, conversation_id`,
       botId,
+    );
+    return rows.map(toThread);
+  }
+
+  /** Woven's `updateConversationTitleIfCurrent`: set the title only while it is still empty. */
+  async setThreadTitleIfUntitled(
+    botId: string,
+    conversationId: number,
+    title: string,
+  ): Promise<boolean> {
+    const clean = title.trim();
+    if (!clean) return false;
+    const updated = await this.#db.get<{ conversation_id: number }>(
+      `UPDATE ${THREADS_TABLE} SET title = ? WHERE bot_id = ? AND conversation_id = ? AND title = '' RETURNING conversation_id`,
+      clean,
+      botId,
+      conversationId,
+    );
+    return updated !== undefined;
+  }
+
+  /** Threads whose title contains every whitespace-separated term (case-insensitive). */
+  async searchThreads(botId: string, query: string): Promise<ThreadRecord[]> {
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return this.listThreads(botId);
+    const likeEscape = (term: string) => term.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const rows = await this.#db.all<ThreadRow>(
+      `SELECT * FROM ${THREADS_TABLE} WHERE bot_id = ? ${terms
+        .map(() => "AND lower(title) LIKE ? ESCAPE '\\'")
+        .join(" ")} ORDER BY created_at DESC, conversation_id`,
+      botId,
+      ...terms.map((term) => `%${likeEscape(term)}%`),
     );
     return rows.map(toThread);
   }

@@ -29,15 +29,21 @@ export const requestSchema = z.discriminatedUnion("type", [
     conversationId: conversationId.optional(),
     text: z.string().min(1).max(100_000),
   }),
-  z.object({
+  z.strictObject({
     id: requestId,
     type: z.literal("thread.fork"),
     botId,
     conversationId: conversationId.optional(),
     entryId: z.number().int().nonnegative(),
-    title: z.string().max(120).optional(),
+    // Strict: threads cannot be named or renamed (`title` is rejected).
   }),
-  z.object({ id: requestId, type: z.literal("threads.list"), botId }),
+  z.object({
+    id: requestId,
+    type: z.literal("threads.list"),
+    botId,
+    /** Search thread titles (every term must match). */
+    query: z.string().max(200).optional(),
+  }),
 ]);
 
 export type Request = z.infer<typeof requestSchema>;
@@ -48,7 +54,8 @@ export type ThreadSummary = {
   conversationId: number;
   parentConversationId: number;
   forkedAt: number;
-  title: string;
+  /** Generated metadata for listing and search; absent until generated. Never shown in the UI. */
+  title?: string;
   createdAt: string;
 };
 

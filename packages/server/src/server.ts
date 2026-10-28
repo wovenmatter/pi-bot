@@ -52,7 +52,7 @@ const thread = (record: ThreadRecord): ThreadSummary => ({
   conversationId: record.conversationId,
   parentConversationId: record.parentConversationId,
   forkedAt: record.forkedAt,
-  title: record.title,
+  ...(record.title ? { title: record.title } : {}),
   createdAt: record.createdAt,
 });
 
@@ -224,7 +224,7 @@ class Connection {
       }
       case "threads.list": {
         const target = await manager.get(request.botId);
-        return { threads: (await target.threads()).map(thread) };
+        return { threads: (await target.threads(request.query)).map(thread) };
       }
       case "thread.fork": {
         const target = await manager.get(request.botId);
@@ -233,16 +233,14 @@ class Connection {
             ? {}
             : { fromConversationId: request.conversationId }),
           entryId: request.entryId,
-          ...(request.title === undefined ? {} : { title: request.title }),
         });
         return { thread: thread(record) };
       }
       case "message.send": {
         const target = await manager.get(request.botId);
-        const conversation = await target.conversation(request.conversationId);
-        const submission = await conversation.submit(
-          { type: "input", content: request.text, whenBusy: "followUp" },
-          ctx,
+        const { conversation, submission } = await target.send(
+          request.text,
+          request.conversationId,
         );
         return { conversationId: conversation.id, submissionId: submission.id };
       }

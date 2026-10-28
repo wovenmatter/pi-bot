@@ -6,6 +6,7 @@ import type { BotHarnessOptions } from "./agent.ts";
 import { conversationId as toConversationId, entryId as toEntryId } from "./ids.ts";
 import { sharedDatabaseView } from "./storage/database.ts";
 import { type BotRecord, BotRegistry, botPrefix, type ThreadRecord } from "./storage/registry.ts";
+import type { TitleGenerator } from "./titles.ts";
 
 const ctx = BACKGROUND_CONTEXT;
 
@@ -18,11 +19,13 @@ export class Bot {
   readonly record: BotRecord;
   readonly harness: Harness;
   readonly #registry: BotRegistry;
+  readonly #titles: ThreadTitles | undefined;
 
-  constructor(record: BotRecord, harness: Harness, registry: BotRegistry) {
+  constructor(record: BotRecord, harness: Harness, registry: BotRegistry, titles?: ThreadTitles) {
     this.record = record;
     this.harness = harness;
     this.#registry = registry;
+    this.#titles = titles;
   }
 
   get id(): string {
@@ -46,13 +49,28 @@ export class Bot {
   }
 
   /**
+   * Send a user message to the main channel or a thread. The first message of an untitled thread
+   * also starts its title generation, as Woven titles a conversation from its first prompt.
+   */
+  async send(text: string, conversationId?: number) {
+    const conversation = await this.conversation(conversationId);
+    const submission = await conversation.submit(
+      { type: "input", content: text, whenBusy: "followUp" },
+      ctx,
+    );
+    const main = await this.main();
+    if (conversation.id !== main.id) this.#titles?.request(this.id, conversation.id, text);
+    return { conversation, submission };
+  }
+
+  /**
    * Fork a thread off any message of the main channel or another thread. The fork inherits the
-   * context up to and including `entryId` as is: no compaction, no rewriting.
+   * context up to and including `entryId` as is: no compaction, no rewriting. Threads have no
+   * user-visible name and cannot be renamed; a title is generated later from the first message.
    */
   async fork(options: {
     readonly fromConversationId?: number;
     readonly entryId: number;
-    readonly title?: string;
   }): Promise<ThreadRecord> {
     const parent = await this.conversation(options.fromConversationId);
     const thread = await parent.fork(
@@ -65,15 +83,67 @@ export class Bot {
       conversationId: thread.id,
       parentConversationId: parent.id,
       forkedAt: options.entryId,
-      title: options.title?.trim() || "Thread",
+      title: "",
       createdAt: new Date().toISOString(),
     };
     await this.#registry.addThread(record);
     return record;
   }
 
-  threads(): Promise<ThreadRecord[]> {
-    return this.#registry.listThreads(this.id);
+  /** Every thread, newest first; with `query`, only threads whose title matches every term. */
+  threads(query?: string): Promise<ThreadRecord[]> {
+    return query?.trim()
+      ? this.#registry.searchThreads(this.id, query)
+      : this.#registry.listThreads(this.id);
+  }
+}
+
+/**
+ * Background thread titling. At most one request per thread at a time; the title is written only
+ * while the thread is still untitled, so a late or repeated request never overwrites one.
+ */
+export class ThreadTitles {
+  readonly #generator: TitleGenerator;
+  readonly #registry: BotRegistry;
+  readonly #onReport: (error: unknown) => void;
+  readonly #inFlight = new Map<string, Promise<void>>();
+  readonly #abort = new AbortController();
+
+  constructor(
+    generator: TitleGenerator,
+    registry: BotRegistry,
+    onReport: (error: unknown) => void = () => {},
+  ) {
+    this.#generator = generator;
+    this.#registry = registry;
+    this.#onReport = onReport;
+  }
+
+  /** Title the thread from `firstPrompt` unless it already has a title or a request running. */
+  request(botId: string, conversationId: number, firstPrompt: string): void {
+    const key = `${botId}:${conversationId}`;
+    if (this.#abort.signal.aborted || this.#inFlight.has(key) || !firstPrompt.trim()) return;
+    const run = (async () => {
+      const thread = await this.#registry.getThread(botId, conversationId);
+      if (!thread || thread.title) return;
+      const title = await this.#generator.generate(firstPrompt, this.#abort.signal);
+      await this.#registry.setThreadTitleIfUntitled(botId, conversationId, title);
+    })()
+      .catch((error: unknown) => {
+        if (!this.#abort.signal.aborted) this.#onReport(error);
+      })
+      .finally(() => this.#inFlight.delete(key));
+    this.#inFlight.set(key, run);
+  }
+
+  /** Resolves once every running title request has settled (tests, shutdown). */
+  async idle(): Promise<void> {
+    while (this.#inFlight.size) await Promise.all(this.#inFlight.values());
+  }
+
+  async close(): Promise<void> {
+    this.#abort.abort();
+    await this.idle();
   }
 }
 
@@ -84,6 +154,9 @@ export type BotManagerOptions = {
   readonly harnessOptions: (bot: BotRecord) => BotHarnessOptions;
   readonly onBotClosed?: (bot: BotRecord, reason: string) => void;
   readonly onBotDeleted?: (bot: BotRecord) => Promise<void>;
+  /** Thread title generation (`[models.titles]`); threads stay untitled without it. */
+  readonly titles?: TitleGenerator;
+  readonly onReport?: (error: unknown) => void;
 };
 
 /**
@@ -92,6 +165,7 @@ export type BotManagerOptions = {
  */
 export class BotManager {
   readonly registry: BotRegistry;
+  readonly titles: ThreadTitles | undefined;
   readonly #bots = new Map<string, Promise<Bot>>();
   #closed = false;
 
@@ -100,6 +174,9 @@ export class BotManager {
   private constructor(options: BotManagerOptions) {
     this.#options = options;
     this.registry = new BotRegistry(options.db);
+    this.titles = options.titles
+      ? new ThreadTitles(options.titles, this.registry, options.onReport)
+      : undefined;
   }
 
   static async open(options: BotManagerOptions): Promise<BotManager> {
@@ -164,7 +241,7 @@ export class BotManager {
       });
       this.#options.onBotClosed?.(record, end.reason);
     });
-    return new Bot(record, harness, this.registry);
+    return new Bot(record, harness, this.registry, this.titles);
   }
 
   async delete(id: string): Promise<boolean> {
@@ -183,6 +260,7 @@ export class BotManager {
 
   async close(): Promise<void> {
     this.#closed = true;
+    await this.titles?.close();
     const bots = [...this.#bots.values()];
     this.#bots.clear();
     for (const pending of bots) {
