@@ -1,0 +1,9 @@
+{
+  "name": "pi-bot-env-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0"
+  }
+}
