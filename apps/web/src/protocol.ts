@@ -16,7 +16,6 @@ export type ThreadSummary = {
   conversationId: number;
   parentConversationId: number;
   forkedAt: number;
-  title: string;
   createdAt: string;
 };
 
@@ -67,7 +66,7 @@ export type Requests = {
     result: { conversationId: number; submissionId: number };
   };
   "thread.fork": {
-    body: { botId: string; conversationId?: number; entryId: number; title?: string };
+    body: { botId: string; conversationId?: number; entryId: number };
     result: { thread: ThreadSummary };
   };
   "threads.list": { body: { botId: string }; result: { threads: ThreadSummary[] } };

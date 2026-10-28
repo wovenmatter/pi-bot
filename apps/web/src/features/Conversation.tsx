@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CornerUpLeft, GitBranch } from "lucide-react";
+import { ArrowDown, ArrowUp, CornerUpLeft, GitBranch, MessageSquareReply } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
@@ -12,11 +12,6 @@ import {
   emptyConversation,
   mergeEntries,
 } from "./conversation-state.ts";
-
-function threadTitle(text: string): string {
-  const line = text.replace(/\s+/g, " ").trim();
-  return line.length > 60 ? `${line.slice(0, 57)}…` : line || "Thread";
-}
 
 export function Conversation({
   client,
@@ -137,7 +132,6 @@ export function Conversation({
         botId: bot.id,
         conversationId: viewed,
         entryId: entry.id,
-        title: threadTitle(entry.text),
       });
       onForked(thread);
     } catch (e) {
@@ -147,10 +141,15 @@ export function Conversation({
 
   const isThread = viewed !== undefined && mainId !== undefined && viewed !== mainId;
   const thread = threads.find((item) => item.conversationId === viewed);
-  const parentTitle =
-    thread && thread.parentConversationId !== mainId
-      ? threads.find((item) => item.conversationId === thread.parentConversationId)?.title
-      : undefined;
+  const fromThread = thread !== undefined && thread.parentConversationId !== mainId;
+  // Threads hang off the message they were forked from, like replies; they have no names.
+  const repliesTo = (entry: DisplayEntry) =>
+    threads.filter(
+      (item) =>
+        item.parentConversationId === entry.conversationId &&
+        item.forkedAt === entry.id &&
+        item.conversationId !== viewed,
+    );
   let lastInherited = -1;
   if (isThread) {
     state.entries.forEach((entry, index) => {
@@ -163,10 +162,12 @@ export function Conversation({
     <div className="conversation-layout">
       <div className="conversation-main">
         <header className="thread-header">
-          <h2 title={isThread ? thread?.title : bot.name}>
-            {isThread ? (thread?.title ?? "Thread") : bot.name}
-          </h2>
-          {isThread ? <span className="thread-subtitle">from {parentTitle ?? "Main"}</span> : null}
+          <h2>{isThread ? "Thread" : bot.name}</h2>
+          {isThread ? (
+            <span className="thread-subtitle">
+              {fromThread ? "reply in a thread" : `reply in ${bot.name}`}
+            </span>
+          ) : null}
           <div className="thread-header-actions">
             {isThread ? (
               <a className="text-button" href={routeHref({ botId: bot.id })}>
@@ -204,6 +205,8 @@ export function Conversation({
                   botName={bot.name}
                   inherited={index <= lastInherited}
                   divider={index === lastInherited}
+                  replies={repliesTo(entry)}
+                  botId={bot.id}
                   onFork={ready ? () => void fork(entry) : undefined}
                 />
               ))}
@@ -287,12 +290,16 @@ function Message({
   botName,
   inherited,
   divider,
+  replies,
+  botId,
   onFork,
 }: {
   entry: DisplayEntry;
   botName: string;
   inherited: boolean;
   divider: boolean;
+  replies: ThreadSummary[];
+  botId: string;
   onFork?: () => void;
 }) {
   return (
@@ -307,6 +314,20 @@ function Message({
           {entry.role === "assistant" ? <RichText>{entry.text}</RichText> : entry.text}
         </div>
         {entry.error ? <small className="danger">{entry.error}</small> : null}
+        {replies.length > 0 ? (
+          <div className="thread-replies">
+            {replies.map((reply, index) => (
+              <a
+                key={reply.conversationId}
+                className="thread-reply-link"
+                href={routeHref({ botId, conversationId: reply.conversationId })}
+              >
+                <Icon icon={MessageSquareReply} size={12} weight="control" />
+                <span>{replies.length === 1 ? "Thread" : `Thread ${index + 1}`}</span>
+              </a>
+            ))}
+          </div>
+        ) : null}
         {onFork ? (
           <div className="response-actions">
             <button type="button" className="utility-button" onClick={onFork}>

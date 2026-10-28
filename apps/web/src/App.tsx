@@ -106,7 +106,6 @@ export function App() {
       <div className="shell-body">
         <Sidebar
           bots={bots ?? []}
-          threads={threads}
           botId={route.botId}
           conversationId={route.conversationId}
           mainConversationId={mainConversationId}

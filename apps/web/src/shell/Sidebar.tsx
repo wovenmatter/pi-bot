@@ -1,15 +1,14 @@
-import { Bot, GitBranch, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { Bot, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import type { ConnectionState } from "../api.ts";
 import { Brand } from "../components/Brand.tsx";
 import { Icon } from "../components/Icon.tsx";
-import type { BotSummary, ThreadSummary } from "../protocol.ts";
+import type { BotSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
 import { THEMES, type Theme } from "../theme.ts";
 
 export function Sidebar({
   bots,
-  threads,
   botId,
   conversationId,
   mainConversationId,
@@ -20,7 +19,6 @@ export function Sidebar({
   onDelete,
 }: {
   bots: BotSummary[];
-  threads: ThreadSummary[];
   botId?: string;
   conversationId?: number;
   mainConversationId?: number;
@@ -127,24 +125,6 @@ export function Sidebar({
                 <Icon icon={MessageSquare} />
                 <span className="rail-title">Main</span>
               </a>
-              {threads.map((thread) => {
-                const active = thread.conversationId === conversationId;
-                return (
-                  <a
-                    key={thread.conversationId}
-                    href={routeHref({ botId: selected.id, conversationId: thread.conversationId })}
-                    className={`nav-link${thread.parentConversationId === mainConversationId ? "" : " child"}${active ? " active" : ""}`}
-                    aria-current={active ? "page" : undefined}
-                    title={thread.title}
-                  >
-                    <Icon icon={GitBranch} />
-                    <span className="rail-title">{thread.title}</span>
-                  </a>
-                );
-              })}
-              {threads.length === 0 ? (
-                <p className="rail-empty muted">Start a thread from any message.</p>
-              ) : null}
             </div>
           </>
         ) : null}
