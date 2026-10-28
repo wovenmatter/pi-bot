@@ -1,4 +1,11 @@
-import type { Api, FetchFunction, Message, Model, Models } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  FetchFunction,
+  Message,
+  Model,
+  Models,
+  UserMessage,
+} from "@earendil-works/pi-ai";
 
 /**
  * Provider-native context compaction, ported from Woven Matter's
@@ -15,12 +22,15 @@ export type NativeStrategy =
   | "openai-responses-compact"
   | "xai-responses-compact"
   | "codex-compaction-trigger"
-  | "anthropic-compaction";
+  | "anthropic-compaction"
+  | "claude-agent-sdk-compact";
 
 /** The opaque provider window that replaces the covered messages in later requests. */
 export type NativeWindow =
   | { readonly kind: "responses"; readonly output: readonly Json[] }
-  | { readonly kind: "anthropic"; readonly block: Json };
+  | { readonly kind: "anthropic"; readonly block: Json }
+  /** Claude Code's `/compact` summary (the SDK's PostCompact `compact_summary`). */
+  | { readonly kind: "summary"; readonly text: string };
 
 /** The route a window is valid for. A window is never replayed to a different route. */
 export type NativeRoute = {
@@ -50,8 +60,23 @@ export class NativeCompactionError extends Error {
   }
 }
 
-/** The API the Claude Agent SDK provider registers; compacted by the SDK, not here. */
+/** The API the Claude Agent SDK provider registers; compacted by Claude Code's `/compact`. */
 export const CLAUDE_AGENT_API = "pibot-claude-agent";
+const CLAUDE_AGENT_ENDPOINT = "process://claude-agent-sdk/compact";
+
+/** A compaction summary as the user message that replaces the covered turns. */
+export function summaryMessage(text: string): UserMessage {
+  return {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: `The conversation history before this point was compacted into the following summary:\n\n<summary>\n${text}\n</summary>`,
+      },
+    ],
+    timestamp: 0,
+  };
+}
 
 const OPENAI_RESPONSES = "https://api.openai.com/v1/responses";
 const XAI_RESPONSES = "https://api.x.ai/v1/responses";
@@ -69,6 +94,7 @@ export function nativeStrategy(model: Model<Api>): NativeStrategy | undefined {
   if (model.api === "anthropic-messages" && model.provider === "anthropic") {
     return "anthropic-compaction";
   }
+  if (model.api === CLAUDE_AGENT_API) return "claude-agent-sdk-compact";
   return undefined;
 }
 
@@ -248,6 +274,7 @@ export type CompactRequest = {
 export async function compactNative(request: CompactRequest): Promise<NativeOutcome> {
   const strategy = nativeStrategy(request.model);
   if (!strategy) return { unsupported: `no native compaction for ${request.model.api}` };
+  if (strategy === "claude-agent-sdk-compact") return claudeAgentCompact(request);
   const captured = await captureRequest(request.models, request.model, request.messages, {
     ...(request.fetch ? { fetch: request.fetch } : {}),
     ...(request.signal ? { signal: request.signal } : {}),
@@ -278,7 +305,51 @@ export async function compactNative(request: CompactRequest): Promise<NativeOutc
       if (endpoint !== ANTHROPIC_MESSAGES)
         return { unsupported: `no native compaction at ${endpoint}` };
       return anthropicCompact(route, captured, request, fetch);
+    default:
+      return { unsupported: `no captured-request compaction for ${strategy}` };
   }
+}
+
+/**
+ * Claude Agent SDK (Woven's `compactClaudeContext`): replay the covered history into Claude Code
+ * and run its own `/compact`; the window is the summary its PostCompact hook reports. Requests go
+ * through `Models`, so the credential comes from the shared store like any generation.
+ */
+async function claudeAgentCompact(request: CompactRequest): Promise<NativeOutcome> {
+  const { model } = request;
+  const messages = [...request.messages];
+  if (request.prior?.kind === "summary") {
+    const at = messages[0]?.role === "system" ? 1 : 0;
+    messages.splice(at, 0, summaryMessage(request.prior.text));
+  }
+  const options = {
+    ...(request.signal ? { signal: request.signal } : {}),
+    pibotCompact: request.instructions ? { instructions: request.instructions } : {},
+  };
+  const result = (await request.models.stream(model, { messages }, options).result()) as {
+    stopReason: string;
+    errorMessage?: string;
+    usage?: unknown;
+    pibotCompaction?: { summary?: string };
+  };
+  const summary = result.pibotCompaction?.summary;
+  if (result.stopReason === "error" || result.stopReason === "aborted" || !summary) {
+    throw new NativeCompactionError(
+      "claude_agent_sdk",
+      result.errorMessage ?? "Claude Code did not compact this conversation.",
+    );
+  }
+  return {
+    route: {
+      provider: model.provider,
+      modelId: model.id,
+      api: model.api,
+      strategy: "claude-agent-sdk-compact",
+      endpoint: CLAUDE_AGENT_ENDPOINT,
+    },
+    window: { kind: "summary", text: summary },
+    usage: result.usage,
+  };
 }
 
 /** `POST /v1/responses/compact` (OpenAI and xAI): `{model, input}` → `{output: [...window]}`. */
@@ -552,7 +623,7 @@ async function anthropicCompact(
  * Anthropic block becomes the first message, with the beta on the request.
  */
 export function applyWindow(payload: Json, window: NativeWindow | undefined): Json {
-  if (!window) return payload;
+  if (!window || window.kind === "summary") return payload;
   if (window.kind === "responses") {
     const input = Array.isArray(payload.input) ? payload.input : [];
     return { ...payload, input: [...window.output, ...input] };

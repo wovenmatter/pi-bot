@@ -1,12 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type {
-  Api,
-  FetchFunction,
-  Message,
-  Model,
-  Models,
-  UserMessage,
-} from "@earendil-works/pi-ai";
+import type { Api, FetchFunction, Message, Model, Models } from "@earendil-works/pi-ai";
 import {
   AgentDoc,
   type ContextView,
@@ -22,12 +15,12 @@ import {
 import { type BeforeCompactHook, noopBeforeCompact } from "../memory.ts";
 import {
   applyWindow,
-  CLAUDE_AGENT_API,
   compactNative,
   type NativeRoute,
   type NativeWindow,
   nativeStrategy,
   sameRoute,
+  summaryMessage,
 } from "./native.ts";
 
 /**
@@ -116,19 +109,6 @@ function withoutSystem(messages: readonly Message[]): Message[] {
   return messages.filter((message) => message.role !== "system");
 }
 
-function summaryMessage(text: string): UserMessage {
-  return {
-    role: "user",
-    content: [
-      {
-        type: "text",
-        text: `The conversation history before this point was compacted into the following summary:\n\n<summary>\n${text}\n</summary>`,
-      },
-    ],
-    timestamp: 0,
-  };
-}
-
 function previousId(id: EntryId): EntryId {
   return ((id as unknown as number) - 1) as unknown as EntryId;
 }
@@ -205,11 +185,7 @@ export class NativeCompaction {
   }
 
   #native(model: Model<Api>): boolean {
-    return (
-      this.#options.native !== "off" &&
-      model.api !== CLAUDE_AGENT_API &&
-      nativeStrategy(model) !== undefined
-    );
+    return this.#options.native !== "off" && nativeStrategy(model) !== undefined;
   }
 
   /**
@@ -462,10 +438,12 @@ export class NativeCompaction {
       current = await this.#reproject(conversation, view.head.head, model, active, ctx);
     }
     const [first, ...rest] = request.messages;
-    if (current.summary) {
+    const summary =
+      current.summary ?? (current.window?.kind === "summary" ? current.window.text : undefined);
+    if (summary !== undefined) {
       const system = first?.role === "system" ? [first] : [];
       const others = first?.role === "system" ? rest : request.messages;
-      return { messages: [...system, summaryMessage(current.summary), ...others] };
+      return { messages: [...system, summaryMessage(summary), ...others] };
     }
     if (!first || !current.window) return undefined;
     // A fresh object identifies this request's message list to the models proxy.
