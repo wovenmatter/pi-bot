@@ -136,6 +136,12 @@ export const configSchema = z.strictObject({
         .default({}),
     })
     .prefault({}),
+  search: z
+    .strictObject({
+      /** Default web search provider; its API key lives in the credential store. */
+      provider: z.enum(["exa", "brave", "firecrawl"]).default("exa"),
+    })
+    .prefault({}),
   credentials: z
     .strictObject({
       /** `auto`: Keychain on macOS, encrypted SQLite elsewhere. */

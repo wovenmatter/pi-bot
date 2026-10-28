@@ -5,6 +5,7 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
+import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
 import { claudeAgentProvider } from "./claude/provider.ts";
@@ -31,6 +32,7 @@ export function createPiBotModels(
   models.setProvider(anthropicProvider());
   models.setProvider(openrouterProvider());
   models.setProvider(xaiProvider());
+  models.setProvider(opencodeGoProvider());
   models.setProvider(
     claudeAgentProvider({
       ...options.claude,

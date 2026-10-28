@@ -1,8 +1,12 @@
 import { z } from "zod";
+import type { LoginEvent } from "./settings/service.ts";
 import type { DisplayEntry } from "./transcript.ts";
 
 const botId = z.string().uuid();
 const conversationId = z.number().int().nonnegative();
+const accountId = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
+const modelRefText = z.string().min(3).max(200);
+const configText = z.string().max(256 * 1024);
 const requestId = z.union([z.string().max(64), z.number().int()]);
 
 /** Client → server requests. Every request carries an `id` echoed in its result or error. */
@@ -47,6 +51,52 @@ export const requestSchema = z.discriminatedUnion("type", [
     /** Search thread titles (every term must match). */
     query: z.string().max(200).optional(),
   }),
+  // Settings (user-only, from the Settings page). Secrets are write-only: nothing returns a key.
+  z.strictObject({ id: requestId, type: z.literal("settings.accounts") }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("credentials.set"),
+    accountId,
+    key: z.string().min(1).max(8192),
+  }),
+  z.strictObject({ id: requestId, type: z.literal("credentials.remove"), accountId }),
+  z.strictObject({ id: requestId, type: z.literal("login.start"), accountId }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("login.respond"),
+    loginId: z.string().uuid(),
+    promptId: z.string().uuid(),
+    value: z.string().max(8192),
+  }),
+  z.strictObject({ id: requestId, type: z.literal("login.cancel"), loginId: z.string().uuid() }),
+  z.strictObject({ id: requestId, type: z.literal("models.catalog") }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("models.setRoles"),
+    orchestrator: modelRefText.optional(),
+    background: modelRefText.optional(),
+    titles: modelRefText.optional(),
+    titlesReasoning: z.string().max(16).optional(),
+  }),
+  z.strictObject({ id: requestId, type: z.literal("config.get") }),
+  z.strictObject({ id: requestId, type: z.literal("config.validate"), text: configText }),
+  z.strictObject({ id: requestId, type: z.literal("config.save"), text: configText }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("config.update"),
+    edits: z
+      .array(
+        z.strictObject({
+          path: z
+            .array(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/))
+            .min(1)
+            .max(4),
+          value: z.union([z.string().max(1000), z.number().finite(), z.boolean()]),
+        }),
+      )
+      .min(1)
+      .max(20),
+  }),
 ]);
 
 export type Request = z.infer<typeof requestSchema>;
@@ -86,4 +136,6 @@ export type ServerMessage =
   | { type: "hello"; version: string }
   | { type: "result"; id: string | number; data: unknown }
   | { type: "error"; id?: string | number; message: string }
-  | { type: "event"; botId: string; conversationId: number; event: StreamEvent };
+  | { type: "event"; botId: string; conversationId: number; event: StreamEvent }
+  /** Progress of a sign-in started by this connection (`login.start`). */
+  | { type: "login"; loginId: string; event: LoginEvent };

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { Models } from "@earendil-works/pi-ai";
+import type { CredentialStore, Models } from "@earendil-works/pi-ai";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
 import { createBotHarnessOptions } from "./agent.ts";
 import { BotManager } from "./bots.ts";
@@ -8,6 +8,7 @@ import { type OpenedCredentialStore, openCredentialStore } from "./credentials/i
 import type { BotEnvironmentAdapter } from "./env.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
 import { type PiBotServer, startServer } from "./server.ts";
+import { SettingsService } from "./settings/service.ts";
 import { openSharedDatabase } from "./storage/database.ts";
 import { TitleGenerator } from "./titles.ts";
 
@@ -27,6 +28,8 @@ export type StartOptions = {
   readonly port?: number;
   readonly webDir?: string;
   readonly log?: (message: string) => void;
+  /** Models behind Settings (sign-in flows, model list), over the opened store. Defaults to `models`. */
+  readonly settingsModels?: (credentials: CredentialStore) => Models;
 };
 
 /** Open the shared database, credential store, models and every bot, then listen. */
@@ -86,9 +89,15 @@ export async function startPiBot(
         if (parts.length) log(`bot ${bot.id} recovery: ${parts.join("; ")}`);
       },
     });
+    const settings = new SettingsService({
+      credentials: credentials.store,
+      models: options.settingsModels?.(credentials.store) ?? models,
+      config,
+    });
     const webDir = options.webDir ?? config.paths.webDir;
     const server = await startServer({
       manager,
+      settings,
       host: config.server.host,
       port: options.port ?? config.server.port,
       ...(webDir ? { webDir } : {}),

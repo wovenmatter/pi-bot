@@ -44,6 +44,11 @@ native = "auto"
 # [compaction.models."openai/gpt-6-sol"]
 # reserve_tokens = 32768
 
+[search]
+# Default web search provider: exa | brave | firecrawl. Keys are set in Settings → Search
+# (stored in the credential store, never in this file).
+provider = "exa"
+
 [credentials]
 # auto = macOS Keychain on a Mac (stubbed in milestone 1, falls back), encrypted SQLite elsewhere.
 backend = "auto"

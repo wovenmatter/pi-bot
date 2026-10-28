@@ -19,6 +19,7 @@ import {
   type StreamEvent,
   type ThreadSummary,
 } from "./protocol.ts";
+import type { SettingsService } from "./settings/service.ts";
 import type { BotRecord, ThreadRecord } from "./storage/registry.ts";
 import { assistantText, type DisplayEntry, displayEntry } from "./transcript.ts";
 import { VERSION } from "./version.ts";
@@ -34,6 +35,8 @@ export type PiBotServerOptions = {
   /** Built web client to serve at `/`, if any. */
   readonly webDir?: string;
   readonly log?: (message: string) => void;
+  /** Settings backend; without it the settings requests fail. */
+  readonly settings?: SettingsService;
 };
 
 export type PiBotServer = {
@@ -176,6 +179,7 @@ class Connection {
     const streams = [...this.#subscriptions.values()];
     this.#subscriptions.clear();
     this.#server.connections.delete(this);
+    this.#server.settings?.dropOwner(this);
     await Promise.all(streams.map((stream) => stream.stop().catch(() => {})));
   }
 
@@ -209,6 +213,12 @@ class Connection {
     }
   }
 
+  #settings(): SettingsService {
+    const settings = this.#server.settings;
+    if (!settings) throw new Error("settings are not available on this server");
+    return settings;
+  }
+
   async #handle(request: Request): Promise<unknown> {
     const manager = this.#server.manager;
     switch (request.type) {
@@ -233,6 +243,43 @@ class Connection {
         const restored = await manager.restore(request.botId);
         return restored ? { restored: true, bot: bot(restored) } : { restored: false };
       }
+      case "settings.accounts":
+        return this.#settings().accounts();
+      case "credentials.set":
+        await this.#settings().setKey(request.accountId, request.key);
+        return { saved: true };
+      case "credentials.remove":
+        await this.#settings().remove(request.accountId);
+        return { removed: true };
+      case "login.start": {
+        // Events can precede this result; the client buffers them by loginId.
+        const loginId = this.#settings().startLogin(request.accountId, this, (id, event) =>
+          this.send({ type: "login", loginId: id, event }),
+        );
+        return { loginId };
+      }
+      case "login.respond":
+        this.#settings().respondLogin(request.loginId, this, request.promptId, request.value);
+        return { ok: true };
+      case "login.cancel":
+        this.#settings().cancelLogin(request.loginId, this);
+        return { ok: true };
+      case "models.catalog":
+        return this.#settings().modelCatalog();
+      case "models.setRoles": {
+        const { id: _id, type: _type, ...roles } = request;
+        return { roles: await this.#settings().setRoles(roles), restartRequired: true };
+      }
+      case "config.get":
+        return this.#settings().readConfig();
+      case "config.validate":
+        return this.#settings().validateConfig(request.text);
+      case "config.save":
+        await this.#settings().saveConfig(request.text);
+        return { saved: true, restartRequired: true };
+      case "config.update":
+        await this.#settings().updateConfig(request.edits);
+        return { saved: true, restartRequired: true };
       case "threads.list": {
         const target = await manager.get(request.botId);
         return { threads: (await target.threads(request.query)).map(thread) };
@@ -308,10 +355,12 @@ class Connection {
 
 class Server {
   readonly manager: BotManager;
+  readonly settings: SettingsService | undefined;
   readonly connections = new Set<Connection>();
 
-  constructor(manager: BotManager) {
+  constructor(manager: BotManager, settings?: SettingsService) {
     this.manager = manager;
+    this.settings = settings;
   }
 }
 
@@ -319,7 +368,7 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
   if (!isAllowedBindHost(options.host)) {
     throw new Error(`refusing to bind ${options.host}: use loopback or a tailnet address`);
   }
-  const state = new Server(options.manager);
+  const state = new Server(options.manager, options.settings);
   const log = options.log ?? (() => {});
 
   const http = createServer((request, response) => {
