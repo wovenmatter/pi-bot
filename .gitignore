@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+# Local runtime state and secrets: never commit.
+config.toml
+data/
+*.sqlite
+*.sqlite-*
+*.db
+*.key
+.env
+.env.*

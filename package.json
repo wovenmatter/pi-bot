@@ -1,0 +1,27 @@
+{
+  "name": "pi-bot-monorepo",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "pnpm -r run test",
+    "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
+    "dev:server": "pnpm --filter @wovenmatter/pi-bot dev",
+    "dev:web": "pnpm --filter @wovenmatter/pi-bot-web dev",
+    "start": "pnpm --filter @wovenmatter/pi-bot start"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.3",
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

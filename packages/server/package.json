@@ -1,0 +1,32 @@
+{
+  "name": "@wovenmatter/pi-bot",
+  "version": "0.1.0",
+  "description": "Self-hosted multi-bot service on Pi Durable",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "pi-bot": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "node --watch src/cli.ts serve",
+    "start": "node dist/cli.js serve"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}
