@@ -33,8 +33,11 @@ the working agreement for every human or agent who changes this repository.
 
 - Deleting a bot is a soft delete (`pibot_bots.deleted_at`). Never drop or delete a bot's tables,
   threads or data; purging is deferred and needs its own decision.
-- Only the user deletes bots (WebSocket `bots.delete`). Agent or orchestrator tooling may create
-  bots but must never get a delete tool.
+- Only the user deletes or restores bots (WebSocket `bots.delete`, `bots.listDeleted`,
+  `bots.restore`). Agent or orchestrator tooling may create bots but must never get a delete or
+  restore tool.
+- Deleted bots are listed and restored only in the web app's Settings → Deleted bots section,
+  never in the sidebar or main bot list. Restore clears `deleted_at`; the bot reloads normally.
 
 ## Layout
 

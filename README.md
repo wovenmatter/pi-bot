@@ -139,9 +139,24 @@ delete**: the registry row in `pibot_bots` gets a `deleted_at` stamp and nothing
 bot's prefixed Pi Durable tables, its thread rows and all its data stay in the database (no
 `DROP`, no `DELETE`). A deleted bot is hidden from `bots.list`, is not loaded or recovered at
 startup, and can't be opened or messaged (`bot <id> was deleted`). Its in-memory harness is closed
-and its runtime environment (container) released; volumes and data on disk are kept. Purging and
-restoring deleted bots are deferred. Future orchestrator tooling may create bots but must never
-get a delete tool. Stale thread registry rows are logged at startup, not pruned.
+and its runtime environment (container) released; volumes and data on disk are kept. Purging is
+deferred. Stale thread registry rows are logged at startup, not pruned.
+
+### Restoring deleted bots
+
+Deleted bots are recoverable, but only from one dedicated place: **Settings → Deleted bots** in the
+web app (the Settings link at the bottom of the sidebar, `#/settings`). They never appear in the
+sidebar or the main bot list. The section lists each deleted bot with its deletion date and a
+**Restore** button. Restoring clears `deleted_at`; the bot then loads like any other, with all of
+its conversations, threads and history, reappears in the bot list and can be messaged again. Its
+runtime environment is re-acquired lazily on the next run, as on a normal load. Bot names are not
+unique, so a restore never collides with an existing bot.
+
+Over WebSocket this is `bots.listDeleted` (`{id, name, createdAt, deletedAt}` for each deleted
+bot, newest deletion first) and `bots.restore {botId}`, which returns `{restored: true, bot}`, or
+`{restored: false}` when the bot is unknown or not deleted. Delete, list-deleted and restore are
+user-only paths: future orchestrator tooling may create bots but must never get a delete or
+restore tool.
 
 ## Crash recovery
 
