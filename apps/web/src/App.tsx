@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { type ConnectionState, defaultSocketUrl, errorMessage, PiBotClient } from "./api.ts";
 import { Empty, ErrorNotice } from "./components/ui.tsx";
 import { Conversation } from "./features/Conversation.tsx";
+import { Settings } from "./features/Settings.tsx";
 import type { BotSummary, ThreadSummary } from "./protocol.ts";
 import { parseRoute, type Route, routeHref } from "./routes.ts";
 import { Sidebar } from "./shell/Sidebar.tsx";
@@ -51,10 +52,10 @@ export function App() {
 
   // Default to the first bot; drop routes to bots that no longer exist.
   useEffect(() => {
-    if (!bots) return;
+    if (!bots || route.settings) return;
     if (route.botId && !bots.some((item) => item.id === route.botId)) navigate({});
     else if (!route.botId && bots[0]) navigate({ botId: bots[0].id });
-  }, [bots, route.botId]);
+  }, [bots, route.botId, route.settings]);
 
   const refreshThreads = useCallback(
     (botId: string) =>
@@ -83,7 +84,7 @@ export function App() {
   }
 
   async function deleteBot(target: BotSummary) {
-    if (!window.confirm(`Delete ${target.name} and all of its conversations?`)) return;
+    if (!window.confirm(`Delete ${target.name}? You can restore it from Settings.`)) return;
     setError(undefined);
     try {
       await client.request("bots.delete", { botId: target.id });
@@ -92,6 +93,14 @@ export function App() {
       setError(errorMessage(e));
     }
   }
+
+  const onRestored = useCallback((restored: BotSummary) => {
+    setBots((current) =>
+      [...(current ?? []).filter((item) => item.id !== restored.id), restored].sort(
+        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+      ),
+    );
+  }, []);
 
   const onForked = useCallback(
     (thread: ThreadSummary) => {
@@ -109,15 +118,21 @@ export function App() {
           botId={route.botId}
           conversationId={route.conversationId}
           mainConversationId={mainConversationId}
+          settings={route.settings}
           connection={connection}
           theme={theme}
           onTheme={setTheme}
           onCreate={createBot}
           onDelete={(target) => void deleteBot(target)}
         />
-        <main id="main" className="main-content conversation-page">
+        <main
+          id="main"
+          className={route.settings ? "main-content" : "main-content conversation-page"}
+        >
           <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
-          {bot ? (
+          {route.settings ? (
+            <Settings client={client} connected={connection === "open"} onRestored={onRestored} />
+          ) : bot ? (
             <Conversation
               key={bot.id}
               client={client}

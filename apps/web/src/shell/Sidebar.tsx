@@ -1,4 +1,4 @@
-import { Bot, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { Bot, MessageSquare, Plus, Settings, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import type { ConnectionState } from "../api.ts";
 import { Brand } from "../components/Brand.tsx";
@@ -12,6 +12,7 @@ export function Sidebar({
   botId,
   conversationId,
   mainConversationId,
+  settings,
   connection,
   theme,
   onTheme,
@@ -22,6 +23,7 @@ export function Sidebar({
   botId?: string;
   conversationId?: number;
   mainConversationId?: number;
+  settings?: boolean;
   connection: ConnectionState;
   theme: Theme;
   onTheme: (theme: Theme) => void;
@@ -32,7 +34,7 @@ export function Sidebar({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const creating = creatingOpen || bots.length === 0;
-  const selected = bots.find((bot) => bot.id === botId);
+  const selected = settings ? undefined : bots.find((bot) => bot.id === botId);
   const onMain = conversationId === undefined || conversationId === mainConversationId;
 
   async function submit(event: FormEvent) {
@@ -92,8 +94,8 @@ export function Sidebar({
             <div key={bot.id} className="rail-row">
               <a
                 href={routeHref({ botId: bot.id })}
-                className={`nav-link${bot.id === botId ? " active" : ""}`}
-                aria-current={bot.id === botId ? "page" : undefined}
+                className={`nav-link${!settings && bot.id === botId ? " active" : ""}`}
+                aria-current={!settings && bot.id === botId ? "page" : undefined}
               >
                 <Icon icon={Bot} />
                 <span className="rail-title">{bot.name}</span>
@@ -135,6 +137,14 @@ export function Sidebar({
         </div>
       ) : null}
       <div className="sidebar-footer">
+        <a
+          href={routeHref({ settings: true })}
+          className={`nav-link${settings ? " active" : ""}`}
+          aria-current={settings ? "page" : undefined}
+        >
+          <Icon icon={Settings} />
+          <span className="rail-title">Settings</span>
+        </a>
         <div className="tabs" role="radiogroup" aria-label="Theme">
           {THEMES.map((option) => (
             // biome-ignore lint/a11y/useSemanticElements: segmented control, as in Enterprise

@@ -11,6 +11,7 @@ export type DisplayEntry = {
 };
 
 export type BotSummary = { id: string; name: string; createdAt: string };
+export type DeletedBotSummary = BotSummary & { deletedAt: string };
 
 export type ThreadSummary = {
   conversationId: number;
@@ -53,6 +54,11 @@ export type Requests = {
   "bots.list": { body: Record<never, never>; result: { bots: BotSummary[] } };
   "bots.create": { body: { name: string }; result: { bot: BotSummary } };
   "bots.delete": { body: { botId: string }; result: { deleted: boolean } };
+  "bots.listDeleted": { body: Record<never, never>; result: { bots: DeletedBotSummary[] } };
+  "bots.restore": {
+    body: { botId: string };
+    result: { restored: true; bot: BotSummary } | { restored: false };
+  };
   "conversation.open": {
     body: { botId: string; conversationId?: number };
     result: ConversationSnapshot;
