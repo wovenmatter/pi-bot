@@ -132,6 +132,24 @@ the way Woven Matter titles conversations (`CodexConversationTitleGenerator.swif
   thread is still untitled. The main channel is never titled.
 - A failed request is logged and leaves the thread untitled.
 
+## Crash recovery
+
+Pi Durable's store is the source of truth, as in Woven Matter. Every bot is opened at startup, and
+before scheduling resumes the server reconciles it:
+
+- **Interrupted runs.** Pi Durable keeps a run's task and the queued input in SQLite, and its open
+  already reconciles an invocation that died mid-request. The server inspects the live work,
+  reports it, and calls `resume()`, so an interrupted run finishes without a new message (Woven's
+  `engine.mjs` `create`: inspect, then `resumeNative()`).
+- **Unrecorded forks.** A fork is committed with its parent edge in one Pi Durable transaction;
+  only the thread registry row comes after. An ownerless fork the registry lacks is registered as
+  an untitled thread. Task-owned conversations (subagents) are never threads. Registered threads
+  whose conversation is missing are reported and left alone.
+- **Lost titles.** An untitled thread that already has its own first message gets its title
+  generation restarted.
+
+Each finding is logged as `bot <id> recovery: …`.
+
 ## Web client styling
 
 The client uses the Woven Matter Enterprise web stack (React 19, Vite, lucide-react,
