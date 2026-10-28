@@ -51,6 +51,34 @@ faux provider, so no API keys are needed.
 The server only binds to loopback or tailnet addresses (100.64.0.0/10,
 fd7a:115c:a1e0::/48). It rejects public addresses.
 
+## Compaction
+
+The main channel and every thread run the same code (`packages/server/src/compaction/`) and the
+same test suite (`test/compaction.test.ts`, parametrized over both). Pi Durable decides when to
+compact (`[compaction]` thresholds, context overflow, or a manual `compact()`) and picks the
+covered prefix, keeping tool calls with their results. Then, mirroring Woven Matter's
+`default-agent` (`provider-compaction.mjs`, `native-context.mjs`, `native-compaction-registry.mjs`):
+
+| Provider (pi-ai api)                               | Native API used                                                                                                                                                |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openai` (`openai-responses`)                      | `POST https://api.openai.com/v1/responses/compact`; the returned `output` is prepended to later `input`                                                        |
+| `xai` (`openai-responses`)                         | `POST https://api.x.ai/v1/responses/compact`, same contract                                                                                                    |
+| `openai-codex` (`openai-codex-responses`)          | `POST https://chatgpt.com/backend-api/codex/responses` with a trailing `{"type":"compaction_trigger"}` input item (SSE, `OpenAI-Beta: responses=experimental`) |
+| `anthropic` (`anthropic-messages`)                 | `POST /v1/messages?beta=true`, `anthropic-beta: compact-2026-09-04`, `compaction: {type: "summarize"}`; the signed `compaction` block leads later requests     |
+| anything else (OpenRouter, faux, Claude Agent SDK) | Pi Durable's built-in summarizer                                                                                                                               |
+
+The compaction request is built by capturing the exact payload pi-ai would send (same system
+prompt, tools and auth), so the native window matches what later requests carry. The window lives
+in a rewindable conversation doc (`pibot.native-context`, inherited by forks), and a
+`pibot.native-compaction` head-marker entry moves the start of the model context. Nothing is
+deleted. A model change re-projects the covered history from SQLite: natively when the new route
+supports it, otherwise as a readable summary. An unsupported or failed native call is reported and
+falls back to Pi Durable's summarizer (Woven fails closed instead). Requests stay prefix-stable
+between compactions, so prompt caching is only reset by compaction itself.
+
+`beforeCompact` first calls the memory-extraction hook (`src/memory.ts`), a no-op in milestone 2.
+Tests use fake provider endpoints and placeholder credentials; no real model key was used.
+
 ## Web client styling
 
 The client uses the Woven Matter Enterprise web stack (React 19, Vite, lucide-react,
