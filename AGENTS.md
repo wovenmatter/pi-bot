@@ -29,6 +29,12 @@ the working agreement for every human or agent who changes this repository.
   `0600` outside the database.
 - `config.toml`, data directories, `*.key` and SQLite files are git-ignored.
 
+- Settings never send a stored secret back: keys show at most the last 4 characters, the GitHub
+  SSH key only its public half and fingerprint. Credential slots live in `settings/catalog.ts`;
+  sign-ins must be real provider flows that work from a remote browser (URL/device code plus
+  pasted redirect or code). Config writes go through `SettingsService` (validate, atomic write,
+  keep mode/comments) and need a restart.
+
 ## Bot management
 
 - Deleting a bot is a soft delete (`pibot_bots.deleted_at`). Never drop or delete a bot's tables,
@@ -36,7 +42,7 @@ the working agreement for every human or agent who changes this repository.
 - Only the user deletes or restores bots (WebSocket `bots.delete`, `bots.listDeleted`,
   `bots.restore`). Agent or orchestrator tooling may create bots but must never get a delete or
   restore tool.
-- Deleted bots are listed and restored only in the web app's Settings → Deleted bots section,
+- Deleted bots are listed and restored only in the web app's Settings → Bots section,
   never in the sidebar or main bot list. Restore clears `deleted_at`; the bot reloads normally.
 
 ## Layout

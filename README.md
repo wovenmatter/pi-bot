@@ -144,8 +144,8 @@ deferred. Stale thread registry rows are logged at startup, not pruned.
 
 ### Restoring deleted bots
 
-Deleted bots are recoverable, but only from one dedicated place: **Settings → Deleted bots** in the
-web app (the Settings link at the bottom of the sidebar, `#/settings`). They never appear in the
+Deleted bots are recoverable, but only from one dedicated place: **Settings → Bots → Deleted bots** in the
+web app (the Settings link at the bottom of the sidebar, `#/settings/bots`). They never appear in the
 sidebar or the main bot list. The section lists each deleted bot with its deletion date and a
 **Restore** button. Restoring clears `deleted_at`; the bot then loads like any other, with all of
 its conversations, threads and history, reappears in the bot list and can be messaged again. Its
@@ -157,6 +157,38 @@ bot, newest deletion first) and `bots.restore {botId}`, which returns `{restored
 `{restored: false}` when the bot is unknown or not deleted. Delete, list-deleted and restore are
 user-only paths: future orchestrator tooling may create bots but must never get a delete or
 restore tool.
+
+## Settings
+
+The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
+
+- **Account & sign-ins** — keys and subscription sign-ins, stored in the credential store
+  (Keychain on macOS, otherwise encrypted SQLite with a 0600 key file). Keys are write-only: the
+  UI shows at most the last four characters, and no response ever carries a stored secret.
+  Credential changes apply immediately (models read the store per request).
+  - OpenAI: **ChatGPT subscription** sign-in (OAuth — device code, or open the link in any
+    browser and paste back the `localhost:1455` redirect URL it ends on) and an **API key**.
+  - Claude: **subscription token** from `claude setup-token` (`sk-ant-oat…`, used by the Claude
+    Agent SDK path; there is no in-app Claude OAuth) and an **Anthropic API key**.
+  - Grok / xAI: **SuperGrok or X Premium** sign-in (real device-code OAuth; some tiers are
+    refused by xAI with a 403) or an **API key**. Both share one credential slot.
+  - **OpenRouter** and **OpenCode Go** API keys.
+    Variables from the environment show as "From …" and can't be removed here.
+- **Models** — models from each signed-in provider and the orchestrator / background / titles
+  roles plus title reasoning, validated and written to `config.toml`.
+- **Search** — Exa (default), Brave and Firecrawl keys, and `[search] provider`.
+- **GitHub** — an SSH key for git over SSH (generate an ed25519 key server-side, or paste an
+  unencrypted OpenSSH private key; only the public key and SHA256 fingerprint are shown back) and
+  the git identity (`[git] user_name`, `user_email`). The key is stored only; it is not yet
+  injected into any bot environment.
+- **Bots** — deleted bots and Restore.
+- **Config** — bot-to-bot limits and the extraction schedule / time zone as fields, plus the raw
+  `config.toml` with validation against the startup schema (errors shown inline).
+
+Every `config.toml` write is validated first, written atomically and keeps the file's mode and
+comments (field edits change single lines in place). **Config changes need a restart**; the page
+says so after each save. There is **no app-level auth**: anyone who can reach the server's
+loopback/tailnet port can change settings, so never bind it anywhere public.
 
 ## Crash recovery
 
