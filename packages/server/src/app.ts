@@ -72,6 +72,19 @@ export async function startPiBot(
         reasoning: config.models.titles.reasoning,
       }),
       onReport: (error) => log(`thread title: ${String(error)}`),
+      onRecovered: (bot, report) => {
+        const parts = [
+          report.resumedConversations.length &&
+            `resumed live work in conversations ${report.resumedConversations.join(", ")}`,
+          report.adoptedThreads.length &&
+            `registered unrecorded forks ${report.adoptedThreads.join(", ")} as threads`,
+          report.missingThreads.length &&
+            `threads ${report.missingThreads.join(", ")} have no stored conversation`,
+          report.retitledThreads.length &&
+            `restarted titles for threads ${report.retitledThreads.join(", ")}`,
+        ].filter(Boolean);
+        if (parts.length) log(`bot ${bot.id} recovery: ${parts.join("; ")}`);
+      },
     });
     const webDir = options.webDir ?? config.paths.webDir;
     const server = await startServer({
