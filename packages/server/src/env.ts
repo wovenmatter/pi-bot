@@ -3,8 +3,8 @@ import type { HarnessOptions } from "@earendil-works/pi-durable";
 export type HarnessEnvFactory = NonNullable<HarnessOptions["env"]>;
 
 /**
- * Builds the execution environment (filesystem, shell) a bot's tools run in. Milestone 1 has no
- * tools, so no adapter is wired by default; the Docker adapter below is the planned shape.
+ * Builds the execution environment (filesystem, shell) a bot's tools run in. With an adapter the
+ * bot gets Pi Durable's coding tools (bash, read, write, edit), all executing in that environment.
  */
 export interface BotEnvironmentAdapter {
   readonly kind: string;
@@ -15,24 +15,18 @@ export interface BotEnvironmentAdapter {
    * disk: bot deletion never removes data, and purging is deferred.
    */
   dispose(botId: string): Promise<void>;
+  /** A soft-deleted bot came back: bring its runtime back up. */
+  restore?(botId: string): Promise<void>;
+  /** Server startup: every active bot's runtime exists and runs; others are stopped. */
+  reconcile?(activeBotIds: readonly string[]): Promise<void>;
+  /** The GitHub SSH key or git identity changed in Settings. */
+  gitChanged?(): Promise<void>;
+  /** Server shutdown: drop connections; runtimes keep running. */
+  close?(): void;
 }
 
-/**
- * Stub: one Docker container per bot. Not implemented in milestone 1; it supplies no
- * environment, so conversations run without one.
- */
-export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
-  readonly kind = "docker";
-
-  readonly options: { readonly image?: string };
-
-  constructor(options: { readonly image?: string } = {}) {
-    this.options = options;
-  }
-
-  harnessEnv(_botId: string): HarnessEnvFactory {
-    return () => undefined;
-  }
-
-  async dispose(_botId: string): Promise<void> {}
-}
+export {
+  DockerEnvironmentAdapter,
+  type DockerEnvironmentOptions,
+  type GitMaterial,
+} from "./environment/docker.ts";

@@ -149,6 +149,20 @@ export const configSchema = z.strictObject({
       user_email: z.email().max(320).optional(),
     })
     .prefault({}),
+  /** Where a bot's tools run: `docker` gives each bot its own container; `none` gives no tools. */
+  environment: z
+    .strictObject({
+      backend: z.enum(["none", "docker"]).default("none"),
+      /** Image override; by default `pi-bot-env:<hash>` is built from packages/server/docker. */
+      image: z.string().min(1).optional(),
+    })
+    .prefault({}),
+  /** Which bot orchestrates the others (Settings → Bots). Unset: the first-created bot. */
+  bots: z
+    .strictObject({
+      orchestrator: z.string().uuid().optional(),
+    })
+    .prefault({}),
   credentials: z
     .strictObject({
       /** `auto`: Keychain on macOS, encrypted SQLite elsewhere. */

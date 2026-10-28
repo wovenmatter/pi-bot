@@ -8,6 +8,7 @@ import {
   type HarnessOptions,
   section,
 } from "@earendil-works/pi-durable";
+import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { createCompactionRegistry, NativeCompaction } from "./compaction/context.ts";
 import type { ModelRef, RawConfig } from "./config.ts";
 import type { BotEnvironmentAdapter } from "./env.ts";
@@ -69,7 +70,9 @@ export function defaultAgent(orchestrator: ModelRef): AgentChange {
 /**
  * Harness options for one bot, following the pi-durable-chat composition: one registry and
  * extension, `conversationCreated` configures only the root (main channel) conversation; forks
- * keep the copies they were forked with. No tools in milestone 1.
+ * keep the copies they were forked with. With an environment adapter the bot also gets Pi Durable's
+ * coding tools (bash, read, write, edit), which run in that environment (the bot's container);
+ * without one it has no tools.
  */
 export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOptions {
   const source = options.models;
@@ -85,7 +88,10 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
       section(
         "preamble",
         () =>
-          `You are ${options.botName}, a personal assistant bot running on Pi Bot. Be concise and helpful.`,
+          `You are ${options.botName}, a personal assistant bot running on Pi Bot. Be concise and helpful.` +
+          (options.env
+            ? " Your tools run in your own Linux container (Ubuntu, non-root user with sudo) with your files in /workspace; git, Node, Python, build tools and Playwright with Chromium are installed."
+            : ""),
         { tag: false },
       ),
     ],
@@ -97,12 +103,13 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
   });
   const registry = createCompactionRegistry();
   registry.install(extension);
+  if (options.env) registry.install(CodingTools);
   const agent = defaultAgent(options.orchestrator);
   return {
     models: native.models(),
     registry,
     settings: {
-      extensions: [extension],
+      extensions: options.env ? [extension, CodingTools] : [extension],
       documentRetentionMs: 0,
       // Woven's durable-session settings: SSE transport, no hidden retries, no background compaction.
       stream: { transport: "sse", maxRetries: 0 },

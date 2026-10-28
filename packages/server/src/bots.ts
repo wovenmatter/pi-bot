@@ -238,6 +238,8 @@ export type BotManagerOptions = {
   readonly onBotClosed?: (bot: BotRecord, reason: string) => void;
   /** After a soft delete: release runtime resources (containers). Never delete bot data. */
   readonly onBotDeleted?: (bot: BotRecord) => Promise<void>;
+  /** After a restore: bring the bot's runtime environment (container) back up. */
+  readonly onBotRestored?: (bot: BotRecord) => Promise<void>;
   /** Thread title generation (`[models.titles]`); threads stay untitled without it. */
   readonly titles?: TitleGenerator;
   readonly onReport?: (error: unknown) => void;
@@ -407,6 +409,7 @@ export class BotManager {
     if (this.#closed) throw new Error("bot manager is closed");
     if (!(await this.registry.restore(id))) return undefined;
     const bot = await this.get(id);
+    await this.#options.onBotRestored?.(bot.record);
     return bot.record;
   }
 
