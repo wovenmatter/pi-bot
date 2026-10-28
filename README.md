@@ -117,6 +117,21 @@ Limits:
   pi-ai's Anthropic catalog.
 - Tested only against a fake `query()`. No real Claude token or Claude Code process was used.
 
+## Thread titles
+
+Threads have no visible names: the web client shows each thread as a reply link under the
+message it forked from, and nothing renames a thread (`thread.fork` takes no title). A title
+is still generated as metadata for thread listing and search (`threads.list` with `query`),
+the way Woven Matter titles conversations (`CodexConversationTitleGenerator.swift`):
+
+- On the first user message of an untitled thread, the server sends Woven's title prompt
+  (verbatim) plus that message to `[models.titles]` (default `openai-codex/gpt-6-luna`,
+  `reasoning = "high"`), in the background, at most one request per thread.
+- The reply goes through Woven's sanitizer (JSON `title`, else the first line; quotes and
+  trailing periods trimmed; 50 characters max) and is stored compare-and-set: only while the
+  thread is still untitled. The main channel is never titled.
+- A failed request is logged and leaves the thread untitled.
+
 ## Web client styling
 
 The client uses the Woven Matter Enterprise web stack (React 19, Vite, lucide-react,
