@@ -273,8 +273,8 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
 
   /** Soft delete: stop the container and its agent, keep the container and its volume. */
   dispose(botId: string): Promise<void> {
+    // Kept in the map (not deleted) so `close()` still reaches it if it is used again.
     this.#connections.get(botId)?.close();
-    this.#connections.delete(botId);
     return this.#locked(botId, async () => {
       this.#ready.delete(botId);
       const result = await this.#docker.run(["stop", "-t", "10", containerName(botId)]);
