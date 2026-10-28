@@ -153,6 +153,14 @@ describe("shared storage", () => {
       expect(await registry.list()).toEqual([]);
       expect(await registry.deletedAt(id)).toMatch(/^\d{4}-/);
       expect(await registry.markDeleted("00000000-0000-4000-8000-000000000000")).toBe(false);
+      expect(await registry.listDeleted()).toEqual([
+        expect.objectContaining({ id, name: "Old", deletedAt: expect.any(String) }),
+      ]);
+      expect(await registry.restore(id)).toBe(true);
+      expect(await registry.restore(id)).toBe(false);
+      expect(await registry.listDeleted()).toEqual([]);
+      expect((await registry.list()).map((bot) => bot.id)).toEqual([id]);
+      expect(await registry.deletedAt(id)).toBeUndefined();
     } finally {
       await db.close();
     }

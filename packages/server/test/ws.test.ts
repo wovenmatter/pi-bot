@@ -100,9 +100,12 @@ describe("websocket server", () => {
     const client = await Client.open(wsUrl);
     await client.waitFor((message) => message.type === "hello");
 
-    const { bot } = await client.request<{ bot: { id: string; name: string } }>("bots.create", {
-      name: "Scout",
-    });
+    const { bot } = await client.request<{ bot: { id: string; name: string; createdAt: string } }>(
+      "bots.create",
+      {
+        name: "Scout",
+      },
+    );
     expect((await client.request<{ bots: { id: string }[] }>("bots.list")).bots).toEqual([
       expect.objectContaining({ id: bot.id, name: "Scout" }),
     ]);
@@ -196,6 +199,26 @@ describe("websocket server", () => {
     await expect(other.request("conversation.open", { botId: bot.id })).rejects.toThrow(
       /was deleted/,
     );
+    // Restorable only through the user's Deleted bots requests.
+    const deleted = await other.request<{ bots: { id: string; deletedAt: string }[] }>(
+      "bots.listDeleted",
+    );
+    expect(deleted.bots).toEqual([
+      { id: bot.id, name: bot.name, createdAt: bot.createdAt, deletedAt: expect.any(String) },
+    ]);
+    expect(await other.request("bots.restore", { botId: bot.id })).toEqual({
+      restored: true,
+      bot: { id: bot.id, name: bot.name, createdAt: bot.createdAt },
+    });
+    expect(await other.request("bots.restore", { botId: bot.id })).toEqual({ restored: false });
+    expect((await other.request<{ bots: unknown[] }>("bots.listDeleted")).bots).toEqual([]);
+    expect((await other.request<{ bots: { id: string }[] }>("bots.list")).bots).toEqual([
+      expect.objectContaining({ id: bot.id }),
+    ]);
+    const reopened = await other.request<ConversationSnapshot>("conversation.open", {
+      botId: bot.id,
+    });
+    expect(reopened.entries).toHaveLength(4);
     client.close();
     other.close();
   });
