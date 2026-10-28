@@ -5,7 +5,13 @@ import { type SqliteDatabase, SqliteStorage } from "@earendil-works/pi-durable/s
 import type { BotHarnessOptions } from "./agent.ts";
 import { conversationId as toConversationId, entryId as toEntryId } from "./ids.ts";
 import { sharedDatabaseView } from "./storage/database.ts";
-import { type BotRecord, BotRegistry, botPrefix, type ThreadRecord } from "./storage/registry.ts";
+import {
+  type BotRecord,
+  BotRegistry,
+  botPrefix,
+  type DeletedBotRecord,
+  type ThreadRecord,
+} from "./storage/registry.ts";
 import type { TitleGenerator } from "./titles.ts";
 import { displayEntry } from "./transcript.ts";
 
@@ -369,7 +375,8 @@ export class BotManager {
    * Soft-delete a bot. Only the user deletes bots (the WebSocket `bots.delete` request); no agent
    * or orchestrator tool may call this. The registry row is marked deleted first, so no new open
    * can start, then the in-memory harness is closed and evicted and the bot's runtime environment
-   * released. Its tables, threads and data stay in the database; purging is deferred.
+   * released. Its tables, threads and data stay in the database, so `restore()` can bring it back
+   * (from Settings → Deleted bots); purging is deferred.
    */
   async delete(id: string): Promise<boolean> {
     const record = await this.registry.get(id);
@@ -383,6 +390,24 @@ export class BotManager {
     }
     await this.#options.onBotDeleted?.(record);
     return true;
+  }
+
+  /** Soft-deleted bots, for the user's Settings → Deleted bots. User-only, like `delete`. */
+  listDeleted(): Promise<DeletedBotRecord[]> {
+    return this.registry.listDeleted();
+  }
+
+  /**
+   * Restore a soft-deleted bot (user-only: no agent or orchestrator tool may call this). Clears
+   * `deleted_at`, then opens the bot as on a normal load: its history and threads are intact, it
+   * goes through startup recovery, and its environment is re-acquired lazily through
+   * `harnessOptions`. Returns undefined for an unknown or live bot.
+   */
+  async restore(id: string): Promise<BotRecord | undefined> {
+    if (this.#closed) throw new Error("bot manager is closed");
+    if (!(await this.registry.restore(id))) return undefined;
+    const bot = await this.get(id);
+    return bot.record;
   }
 
   async close(): Promise<void> {

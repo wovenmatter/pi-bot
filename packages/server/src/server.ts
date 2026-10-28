@@ -222,6 +222,17 @@ class Connection {
         }
         return { deleted: await manager.delete(request.botId) };
       }
+      case "bots.listDeleted":
+        return {
+          bots: (await manager.listDeleted()).map((record) => ({
+            ...bot(record),
+            deletedAt: record.deletedAt,
+          })),
+        };
+      case "bots.restore": {
+        const restored = await manager.restore(request.botId);
+        return restored ? { restored: true, bot: bot(restored) } : { restored: false };
+      }
       case "threads.list": {
         const target = await manager.get(request.botId);
         return { threads: (await target.threads(request.query)).map(thread) };

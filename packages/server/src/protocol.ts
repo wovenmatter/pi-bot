@@ -10,6 +10,9 @@ export const requestSchema = z.discriminatedUnion("type", [
   z.object({ id: requestId, type: z.literal("bots.list") }),
   z.object({ id: requestId, type: z.literal("bots.create"), name: z.string().min(1).max(80) }),
   z.object({ id: requestId, type: z.literal("bots.delete"), botId }),
+  // User-only, from Settings → Deleted bots. Never exposed to agent or orchestrator tools.
+  z.object({ id: requestId, type: z.literal("bots.listDeleted") }),
+  z.object({ id: requestId, type: z.literal("bots.restore"), botId }),
   z.object({
     id: requestId,
     type: z.literal("conversation.open"),
@@ -50,6 +53,7 @@ export type Request = z.infer<typeof requestSchema>;
 export type RequestType = Request["type"];
 
 export type BotSummary = { id: string; name: string; createdAt: string };
+export type DeletedBotSummary = BotSummary & { deletedAt: string };
 export type ThreadSummary = {
   conversationId: number;
   parentConversationId: number;

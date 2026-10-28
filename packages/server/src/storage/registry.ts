@@ -13,6 +13,9 @@ export type BotRecord = {
   readonly createdAt: string;
 };
 
+/** A soft-deleted bot, as listed in Settings → Deleted bots. */
+export type DeletedBotRecord = BotRecord & { readonly deletedAt: string };
+
 export type ThreadRecord = {
   readonly botId: string;
   readonly conversationId: number;
@@ -146,13 +149,34 @@ export class BotRegistry {
 
   /**
    * Soft delete: stamp `deleted_at` and nothing else. The bot's prefixed Pi Durable tables, its
-   * thread rows and all its data stay in the database. Purging (and restoring) is deferred.
+   * thread rows and all its data stay in the database, so `restore()` can bring it back.
+   * Purging is deferred.
    * Returns false for an unknown or already deleted bot.
    */
   async markDeleted(id: string, at = new Date().toISOString()): Promise<boolean> {
     const row = await this.#db.get<{ id: string }>(
       `UPDATE ${BOTS_TABLE} SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING id`,
       at,
+      id,
+    );
+    return row !== undefined;
+  }
+
+  /** Soft-deleted bots, most recently deleted first. */
+  async listDeleted(): Promise<DeletedBotRecord[]> {
+    const rows = await this.#db.all<BotRow & { deleted_at: string }>(
+      `SELECT id, name, schema_prefix, created_at, deleted_at FROM ${BOTS_TABLE} WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id`,
+    );
+    return rows.map((row) => ({ ...toBot(row), deletedAt: row.deleted_at }));
+  }
+
+  /**
+   * Undo a soft delete by clearing `deleted_at`; the bot's tables and threads were never touched.
+   * Returns false for an unknown or live bot. Bot names are not unique, so nothing can collide.
+   */
+  async restore(id: string): Promise<boolean> {
+    const row = await this.#db.get<{ id: string }>(
+      `UPDATE ${BOTS_TABLE} SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL RETURNING id`,
       id,
     );
     return row !== undefined;
