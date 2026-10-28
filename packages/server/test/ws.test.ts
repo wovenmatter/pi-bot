@@ -192,6 +192,10 @@ describe("websocket server", () => {
 
     expect(await other.request("bots.delete", { botId: bot.id })).toEqual({ deleted: true });
     expect((await other.request<{ bots: unknown[] }>("bots.list")).bots).toEqual([]);
+    // Soft-deleted: it cannot be opened or messaged any more.
+    await expect(other.request("conversation.open", { botId: bot.id })).rejects.toThrow(
+      /was deleted/,
+    );
     client.close();
     other.close();
   });

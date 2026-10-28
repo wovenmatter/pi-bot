@@ -68,4 +68,29 @@ describe("bots", () => {
       await second.close();
     }
   });
+
+  it("soft-deletes: closes and evicts the harness, releases the env once, refuses messages", async () => {
+    const released: string[] = [];
+    const t = await openTestManager(join(dir.path, "pi-bot.sqlite"), {
+      onBotDeleted: async (record) => {
+        released.push(record.id);
+      },
+    });
+    try {
+      const record = await t.manager.create("Alpha");
+      const bot = await t.manager.get(record.id);
+      expect(await t.manager.delete(record.id)).toBe(true);
+      await expect(bot.harness.closed).resolves.toBeDefined();
+      expect(released).toEqual([record.id]);
+      await expect(t.manager.get(record.id)).rejects.toThrow(NotFoundError);
+      await expect(t.manager.get(record.id)).rejects.toThrow(`bot ${record.id} was deleted`);
+      expect(await t.manager.list()).toEqual([]);
+      expect(await t.manager.delete(record.id)).toBe(false);
+      expect(released).toEqual([record.id]);
+      // Unknown bots keep their own error.
+      await expect(t.manager.get("00000000-0000-4000-8000-000000000000")).rejects.toThrow(/no bot/);
+    } finally {
+      await t.close();
+    }
+  });
 });

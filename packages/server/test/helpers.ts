@@ -56,6 +56,7 @@ export async function openTestManager(
     titles?: TitleGenerator;
     onReport?: (error: unknown) => void;
     onRecovered?: BotManagerOptions["onRecovered"];
+    onBotDeleted?: BotManagerOptions["onBotDeleted"];
     tokensPerSecond?: number;
   } = {},
 ) {

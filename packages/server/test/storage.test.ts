@@ -1,8 +1,16 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { SqliteExecutor } from "@earendil-works/pi-durable/storage/sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BOTS_TABLE, botPrefix, prefixedObjects, THREADS_TABLE } from "../src/storage/registry.ts";
+import { openSharedDatabase } from "../src/storage/database.ts";
+import {
+  BOTS_TABLE,
+  BotRegistry,
+  botPrefix,
+  prefixedObjects,
+  THREADS_TABLE,
+} from "../src/storage/registry.ts";
 import { openTestManager, tempDir } from "./helpers.ts";
 
 const ctx = BACKGROUND_CONTEXT;
@@ -72,23 +80,94 @@ describe("shared storage", () => {
     }
   });
 
-  it("drops only the deleted bot's tables and registry row", async () => {
+  it("soft-deletes a bot: its tables, data and thread rows stay", async () => {
     const t = await openTestManager(join(dir.path, "pi-bot.sqlite"));
     try {
       const a = await t.manager.create("Alpha");
       const b = await t.manager.create("Beta");
-      const before = (await prefixedObjects(t.db, b.prefix)).length;
+      const alpha = await t.manager.get(a.id);
+      const sent = await alpha.send("remember me");
+      await expect(sent.submission.wait(ctx)).resolves.toMatchObject({ status: "done" });
+      const main = await alpha.main();
+      const last = (await main.entries({ order: "descending" }, 1, undefined, ctx)).items[0];
+      if (!last) throw new Error("empty main");
+      const thread = await alpha.fork({ entryId: last.id as unknown as number });
+      const objectsBefore = await prefixedObjects(t.db, a.prefix);
+      const rowsBefore = await rowCounts(t.db, objectsBefore);
+      expect(Object.values(rowsBefore).some((count) => count > 0)).toBe(true);
+      const betaBefore = (await prefixedObjects(t.db, b.prefix)).length;
+
       expect(await t.manager.delete(a.id)).toBe(true);
-      expect(await prefixedObjects(t.db, a.prefix)).toEqual([]);
-      expect((await prefixedObjects(t.db, b.prefix)).length).toBe(before);
+      await alpha.harness.closed;
+
+      // No DROP and no DELETE: every object and every row is still there.
+      const objectsAfter = await prefixedObjects(t.db, a.prefix);
+      expect(objectsAfter).toEqual(objectsBefore);
+      expect(await rowCounts(t.db, objectsAfter)).toEqual(rowsBefore);
+      expect(await t.manager.registry.listThreads(a.id)).toEqual([
+        expect.objectContaining({ conversationId: thread.conversationId }),
+      ]);
+      const row = await t.db.get<{ deleted_at: string | null }>(
+        `SELECT deleted_at FROM ${BOTS_TABLE} WHERE id = ?`,
+        a.id,
+      );
+      expect(row?.deleted_at).toMatch(/^\d{4}-/);
+
+      // Hidden and unopenable, with a clear error; a second delete is a no-op.
       expect((await t.manager.list()).map((bot) => bot.id)).toEqual([b.id]);
+      expect(await t.manager.registry.get(a.id)).toBeUndefined();
+      await expect(t.manager.get(a.id)).rejects.toThrow(`bot ${a.id} was deleted`);
       expect(await t.manager.delete(a.id)).toBe(false);
+      expect((await prefixedObjects(t.db, b.prefix)).length).toBe(betaBefore);
+
       // The surviving bot still works.
-      const main = await (await t.manager.get(b.id)).main();
-      const sub = await main.submit({ type: "input", content: "still here?" }, ctx);
-      await expect(sub.wait(ctx)).resolves.toMatchObject({ status: "done" });
+      const beta = await t.manager.get(b.id);
+      const sub = await beta.send("still here?");
+      await expect(sub.submission.wait(ctx)).resolves.toMatchObject({ status: "done" });
     } finally {
       await t.close();
     }
   });
+
+  it("adds deleted_at to a registry created before soft delete", async () => {
+    const dbPath = join(dir.path, "pi-bot.sqlite");
+    const db = await openSharedDatabase(dbPath);
+    const id = "0b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4";
+    await db.exec(
+      `CREATE TABLE ${BOTS_TABLE} (id TEXT PRIMARY KEY, name TEXT NOT NULL, schema_prefix TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL) STRICT`,
+    );
+    await db.run(
+      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at) VALUES (?, ?, ?, ?)`,
+      id,
+      "Old",
+      botPrefix(id),
+      "2026-01-01T00:00:00.000Z",
+    );
+    const registry = new BotRegistry(db);
+    try {
+      await registry.migrate();
+      await registry.migrate();
+      expect((await registry.list()).map((bot) => bot.name)).toEqual(["Old"]);
+      expect(await registry.markDeleted(id)).toBe(true);
+      expect(await registry.markDeleted(id)).toBe(false);
+      expect(await registry.list()).toEqual([]);
+      expect(await registry.deletedAt(id)).toMatch(/^\d{4}-/);
+      expect(await registry.markDeleted("00000000-0000-4000-8000-000000000000")).toBe(false);
+    } finally {
+      await db.close();
+    }
+  });
 });
+
+async function rowCounts(
+  db: SqliteExecutor,
+  objects: readonly { type: string; name: string }[],
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  for (const { type, name } of objects) {
+    if (type !== "table") continue;
+    const row = await db.get<{ n: number }>(`SELECT count(*) AS n FROM "${name}"`);
+    counts[name] = row?.n ?? 0;
+  }
+  return counts;
+}

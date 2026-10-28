@@ -8,6 +8,7 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, it } from "vitest";
 import type { Bot, RecoveryReport } from "../src/bots.ts";
+import { prefixedObjects } from "../src/storage/registry.ts";
 import { TitleGenerator } from "../src/titles.ts";
 import { displayEntry } from "../src/transcript.ts";
 import { openTestManager, tempDir } from "./helpers.ts";
@@ -189,6 +190,39 @@ describe("crash recovery", () => {
         // A thread without its own message stays untitled; nothing to title it from.
         const empty = await second.manager.registry.getThread(created.id, untitled.conversationId);
         expect(empty?.title).toBe("");
+      } finally {
+        await second.close();
+      }
+    } finally {
+      await dir.cleanup();
+    }
+  });
+
+  it("does not load or recover a deleted bot on restart, and keeps its tables", async () => {
+    const dir = await tempDir();
+    try {
+      const path = join(dir.path, "bots.sqlite");
+      const first = await openTestManager(path);
+      const kept = await first.manager.create("Kept");
+      const gone = await first.manager.create("Gone");
+      const bot = await first.manager.get(gone.id);
+      const sent = await bot.send("before delete");
+      await sent.submission.wait(ctx);
+      const tables = await prefixedObjects(first.db, gone.prefix);
+      expect(await first.manager.delete(gone.id)).toBe(true);
+      await first.close();
+
+      const recovered: string[] = [];
+      const second = await openTestManager(path, {
+        onRecovered: (record) => recovered.push(record.id),
+      });
+      try {
+        expect(recovered).toEqual([kept.id]);
+        expect((await second.manager.list()).map((record) => record.id)).toEqual([kept.id]);
+        await expect(second.manager.get(gone.id)).rejects.toThrow(/was deleted/);
+        expect(recovered).toEqual([kept.id]);
+        expect(await second.manager.delete(gone.id)).toBe(false);
+        expect(await prefixedObjects(second.db, gone.prefix)).toEqual(tables);
       } finally {
         await second.close();
       }
