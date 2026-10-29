@@ -24,7 +24,7 @@ Requires Node ≥ 22.19 and pnpm 12.
 ```sh
 pnpm install
 pnpm build
-mkdir -p ~/.config/pi-bot && cp config.example.toml ~/.config/pi-bot/config.toml   # required; edit [models]
+mkdir -p ~/.config/pi-bot && cp config.example.toml ~/.config/pi-bot/config.toml   # required; edit [profiles]
 node packages/server/dist/cli.js set-key openai   # stores the key encrypted; never echoed
 pnpm start                        # http://127.0.0.1:4317  (WebSocket at /ws, health at /health)
 ```
@@ -90,7 +90,7 @@ It follows Woven Matter's `default-agent/src/claude-provider.mjs`, `claude-runti
 ```sh
 claude setup-token                                            # prints a long-lived OAuth token
 node packages/server/dist/cli.js set-key claude-subscription  # paste it (stored encrypted)
-# then use e.g. orchestrator = "claude-subscription/claude-sonnet-4-5" in config.toml
+# then use e.g. main = "claude-subscription/claude-sonnet-4-5" in a [profiles.*] table
 ```
 
 An `sk-ant-oat…` token is passed to Claude Code as `CLAUDE_CODE_OAUTH_TOKEN`; any other key is
@@ -173,8 +173,10 @@ The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
     refused by xAI with a 403) or an **API key**. Both share one credential slot.
   - **OpenRouter** and **OpenCode Go** API keys.
     Variables from the environment show as "From …" and can't be removed here.
-- **Models** — models from each signed-in provider and the bots (`orchestrator` key) / background
-  / titles roles plus title reasoning, validated and written to `config.toml`.
+- **Models** — models from each signed-in provider and the global title model plus title
+  reasoning (`[models.titles]`), validated and written to `config.toml`.
+- **Profiles** — create, edit, delete and set the default model profile (see below), plus
+  account notes (plans, tiers, keys, rough monthly comfort spend; guidance for Admin Bot, not caps).
 - **Search** — Exa (default), Brave and Firecrawl keys, and `[search] provider`.
 - **GitHub** — an SSH key for git over SSH (generate an ed25519 key server-side, or paste an
   unencrypted OpenSSH private key; only the public key and SHA256 fingerprint are shown back) and
@@ -240,12 +242,16 @@ built-in tools, and Pi Bot's tool calls execute in the container).
 
 - **Admin Bot** is created on first start (exactly one; it can't be deleted, renamed or put on a
   team). It is the only bot with account/config tools: settings status, `config.toml` read/update,
-  restart, its own model (`set_my_model`) and teams (`set_team`). It confirms config changes unless
-  you asked for them, and never asks for secrets in chat (sign-ins and keys stay in Settings).
-- **Onboarding**: on first run the web app asks you to sign in, then pick Admin Bot's model
-  (`onboarding.status`, `admin.setModel`). Change it later in Settings → Bots or by asking Admin Bot.
-  Admin Bot's first conversation explains the platform and creates the bots/teams you want.
-- **Bots** use the default `[models] orchestrator` model. Every bot has `list_bots`, `create_bot`
+  restart, model profiles (`list_profiles`, `save_profile`, `delete_profile`,
+  `set_default_profile`, `set_bot_profile`), account notes (`read_account_notes`,
+  `write_account_notes`) and teams (`set_team`). It confirms config changes unless you asked for
+  them, and never asks for secrets in chat (sign-ins and keys stay in Settings).
+- **Onboarding**: on first run the web app asks you to sign in and, only if the default profile's
+  main model isn't available, to pick one (`onboarding.status`, `onboarding.setMainModel`). Admin
+  Bot's first conversation explains the platform, asks about your subscriptions, tiers, API keys and
+  comfortable monthly spend (saved as account notes; guidance, not caps), proposes profiles (or
+  goes step by step) and creates the bots/teams you want.
+- **Bots** each run one model profile (new bots get the default). Every bot has `list_bots`, `create_bot`
   and `message_bot` (delivers to the target's main conversation as a follow-up, rate limited by
   `[bot_to_bot] max_messages_per_hour_per_pair`). A bot created by a manager or team member joins
   that team.
@@ -256,6 +262,46 @@ built-in tools, and Pi Bot's tool calls execute in the container).
   manager.
 - WebSocket: `bots.create {name, managerId?}`, `bots.setManager`, `bots.setTeam`,
   `bots.replaceManager`; the server pushes `{type: "bots.changed"}` when the list changes.
+
+### Model profiles
+
+A profile is a name, one **main model**, a **pool** of models the main model may delegate to (each
+`provider/model-id` with a "use it for" note) and optional guidance. Profiles live in
+`config.toml`:
+
+```toml
+[models]
+default_profile = "default"
+
+[profiles.default]
+name = "Default"
+main = "openai-codex/gpt-6-sol"
+guidance = "Use the cheap pool models for lookups and summaries."
+
+[profiles.default.pool."openai-codex/gpt-6-luna"]
+use_for = "Quick lookups, summaries and background work"
+background = true
+
+[profiles.default.pool."openrouter/anthropic/claude-sonnet-5"]
+use_for = "Careful writing and code review"
+```
+
+- Every bot runs exactly one profile; a bot with none assigned runs the default, so editing the
+  default changes every bot on it. Deleting a profile moves its bots back to the default (the
+  default itself can't be deleted). Pick per bot in Settings → Bots.
+- The main channel and every thread use the profile's main model. If the pool is not empty the
+  main model gets `run_subagent {model, task, reasoning?}`: the task runs on the chosen pool model
+  in a separate child conversation (the main model's prompt cache is untouched) and the result
+  comes back as the tool result. A failure is returned as a clear error so the main model can pick
+  another; there is no fallback engine.
+- Background work (memory extraction and other quiet jobs) uses the pool entry flagged
+  `background = true`, else the main model. Thread titles keep the single global `[models.titles]`.
+- Changes apply from each bot's next turn (breaking its cache is fine). The chat header shows only
+  the profile name; the models used, including subagent calls, are logged server-side.
+- Migration: an old `[models] orchestrator` / `background` config becomes the `default` profile
+  (the background model becomes its background pool entry) on first start, with the previous file
+  kept as `config.toml.pre-profiles.bak`. A bot's old per-bot model override becomes its own
+  profile (e.g. `admin-bot`) unless it matched the default.
 
 ### Running as a service
 

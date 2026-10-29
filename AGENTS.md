@@ -43,7 +43,21 @@ the working agreement for every human or agent who changes this repository.
   `bots.restore`). Bot tools may create bots but must never get a delete or restore tool.
 - Exactly one Admin Bot (`kind = 'admin'`, auto-created): only it gets account/config tools; it is
   never on a team and can't be deleted or renamed. Teams are one level (`manager`, `manager_id`);
-  rules live in `BotManager` (`BotRuleError`). There is no orchestrator setting.
+  rules live in `BotManager` (`BotRuleError`).
+
+## Model profiles
+
+- Profiles (`[profiles.<id>]` in config.toml: name, main, pool `{use_for, background}`, guidance)
+  are owned by `ProfileStore` (`profiles.ts`); `[models] default_profile` names the default.
+  Bots store only a profile id (`pibot_bots.profile`, null = default). There is no per-bot model
+  and no global orchestrator/background role; `[models.titles]` stays global.
+- The main model drives the channel and all threads. Delegation is the `run_subagent` tool
+  (`subagent.ts`): a pool model, a task and an optional reasoning level, run in a task-owned child
+  conversation with no `run_subagent` of its own. Failures are returned as tool errors; never add
+  a fallback engine. Background work uses the `background` pool entry, else the main model.
+- Account notes (`pibot_notes`) are guidance for Admin Bot (plans, keys, comfort spend), never
+  caps and never secrets. Profile tools are Admin Bot only and follow confirm-unless-asked.
+- Tests use faux providers; never real keys.
 - Deleted bots are listed and restored only in the web app's Settings → Bots section,
   never in the sidebar or main bot list. Restore clears `deleted_at`; the bot reloads normally.
 
