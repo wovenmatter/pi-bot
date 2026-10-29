@@ -7,6 +7,7 @@ import { BotManager } from "./bots.ts";
 import { type ModelRef, type PiBotConfig, parseModelRef } from "./config.ts";
 import { type OpenedCredentialStore, openCredentialStore } from "./credentials/index.ts";
 import { type BotEnvironmentAdapter, DockerEnvironmentAdapter } from "./env.ts";
+import { ModelAvailability } from "./limits.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
 import { ProfileStore, persistProfiles } from "./profiles.ts";
 import { type PiBotServer, type RestartAccepted, startServer } from "./server.ts";
@@ -124,10 +125,13 @@ export async function startPiBot(
         (error: unknown) => log(`config: could not write profiles: ${String(error)}`),
       );
     }
+    const availability = new ModelAvailability();
     const opened = await BotManager.open({
       db,
       ensureAdmin: true,
       onBotsChanged: () => server?.botsChanged(),
+      availability,
+      onModelStatus: () => server?.botsChanged(),
       profiles,
       log,
       harnessOptions: (bot, self) =>
@@ -143,6 +147,8 @@ export async function startPiBot(
           compaction: config.compaction,
           ...(env ? { env } : {}),
           onReport: (error) => log(`bot ${bot.id}: ${String(error)}`),
+          onLimit: (conversationId, model, limit) =>
+            self.reportLimit(bot.id, conversationId, model, limit),
         }),
       onBotClosed: (bot, reason) => {
         if (reason !== "closed") log(`bot ${bot.id} harness ${reason}`);
@@ -213,6 +219,7 @@ export async function startPiBot(
       async close() {
         await server?.close();
         await opened.close();
+        availability.close();
         env?.close?.();
         await db.close();
       },

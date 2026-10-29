@@ -50,7 +50,8 @@ export function poolSection(profile: Profile): string | undefined {
   const lines = [
     `Your model profile is "${profile.name}". You can hand self-contained work to these pool models with run_subagent; each runs separately with your tools but none of your conversation, so give it everything it needs in the task:`,
     ...profile.pool.map((entry) => `- ${entry.model}${entry.useFor ? `: ${entry.useFor}` : ""}`),
-    "Pick the model and reasoning level that fit the task (cheaper for simple work). Independent subagents can run at once. If a call fails or is rate limited, pick another pool model or do the work yourself.",
+    "Pick the model and reasoning level that fit the task (cheaper for simple work). Independent subagents can run at once. If a call fails, pick another pool model or do the work yourself.",
+    'If a pool model hit a usage limit, ran out of credits or is rate limited, quietly use another suitable pool model (or do the work yourself) and tell the user in one short line, e.g. "I couldn\'t use <model>, so I used <other model> instead." Say only what the error said; do not guess when a limit resets.',
   ];
   if (profile.guidance) lines.push(`Guidance: ${profile.guidance}`);
   return lines.join("\n");

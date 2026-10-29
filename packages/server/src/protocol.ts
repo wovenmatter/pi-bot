@@ -60,6 +60,7 @@ export const requestSchema = z.discriminatedUnion("type", [
       id: z.string().max(40),
       name: z.string().max(80),
       main: modelRefText,
+      fallbacks: z.array(modelRefText).max(5).optional(),
       guidance: z.string().max(4000).optional(),
       pool: z
         .array(
@@ -216,6 +217,28 @@ export type BotSummary = {
   profileName: string;
   /** Runs the default profile (no profile of its own). */
   defaultProfile: boolean;
+  /** Set while the main model is out (fallback or paused), and briefly after it returns. */
+  modelStatus?: ModelStatusSummary;
+};
+
+/** A limited main model: only what the provider said (kind, and reset when it gave one). */
+export type ModelLimitSummary = {
+  model: string;
+  /** e.g. "ChatGPT account", "OpenRouter key". */
+  account: string;
+  kind: "five_hour" | "weekly" | "usage" | "credits";
+  /** Epoch ms, only when the provider returned it. */
+  resetsAt?: number;
+  /** Epoch ms: when it is tried again (the reset, or a cooldown when unknown). */
+  retryAt: number;
+};
+export type ModelStatusSummary = {
+  kind: "fallback" | "paused" | "returned";
+  /** Epoch ms of the change. */
+  at: number;
+  primary: string;
+  active: string;
+  limits: ModelLimitSummary[];
 };
 
 export type PoolModelSummary = { model: string; useFor: string; background?: boolean };
@@ -223,6 +246,8 @@ export type ProfileSummary = {
   id: string;
   name: string;
   main: string;
+  /** Ordered main-model fallbacks for usage limits (absent: none). */
+  fallbacks?: string[];
   guidance?: string;
   pool: PoolModelSummary[];
   default?: boolean;

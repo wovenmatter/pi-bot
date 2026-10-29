@@ -8,8 +8,9 @@ import {
 } from "@earendil-works/pi-durable";
 import { type SqliteDatabase, SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { type BotHarnessOptions, defaultAgent } from "./agent.ts";
-import { type ModelRef, parseModelRef } from "./config.ts";
+import { type ModelRef, type Profile, parseModelRef } from "./config.ts";
 import { conversationId as toConversationId, entryId as toEntryId } from "./ids.ts";
+import type { Limit, LimitEntry, ModelAvailability } from "./limits.ts";
 import type { ProfileStore } from "./profiles.ts";
 import { sharedDatabaseView } from "./storage/database.ts";
 import {
@@ -293,7 +294,45 @@ export type BotManagerOptions = {
   readonly profiles?: ProfileStore;
   /** Server-side log lines (model changes, migrations). */
   readonly log?: (message: string) => void;
+  /**
+   * Main-model usage limits shared by every bot. With it (and profiles), a bot whose main model is
+   * out runs its profile's first available fallback, and goes back once the main model resets.
+   */
+  readonly availability?: ModelAvailability;
+  /** A bot's main-model status changed (fallback, paused, returned). */
+  readonly onModelStatus?: (botId: string, status: ModelStatus | undefined) => void;
 };
+
+/**
+ * A bot's main-model status, for the chat banner. `fallback`: the profile's main model (and maybe
+ * earlier fallbacks) is out and `active` runs instead; `paused`: every model in the chain is out;
+ * `returned`: back on the main model after a fallback or pause (shown briefly).
+ */
+export type ModelStatus = {
+  readonly kind: "fallback" | "paused" | "returned";
+  readonly at: number;
+  readonly primary: string;
+  readonly active: string;
+  /** The limited models, in fallback order (empty for `returned`). */
+  readonly limits: readonly LimitEntry[];
+};
+
+/** How long a `returned` status is reported after the switch back. */
+export const RETURNED_STATUS_MS = 10 * 60_000;
+
+/** The model a profile runs right now: the first available of main and its fallbacks. */
+export function effectiveModel(
+  profile: Profile,
+  availability: ModelAvailability | undefined,
+): { readonly model: string; readonly limits: LimitEntry[]; readonly paused: boolean } {
+  const limits: LimitEntry[] = [];
+  for (const ref of [profile.main, ...(profile.fallbacks ?? [])]) {
+    const limit = availability?.limit(ref);
+    if (!limit) return { model: ref, limits, paused: false };
+    limits.push(limit);
+  }
+  return { model: profile.main, limits, paused: true };
+}
 
 /**
  * Hosts every bot in this process. Each opened Harness has scheduling enabled (`resume()`), so
@@ -305,6 +344,9 @@ export class BotManager {
   readonly #bots = new Map<string, Promise<Bot>>();
   /** Each live bot's assigned profile id (undefined: the default), kept in step with the registry. */
   readonly #assigned = new Map<string, string | undefined>();
+  readonly #status = new Map<string, ModelStatus>();
+  /** Serializes re-applying every bot's model after a limit is marked or ends. */
+  #reapplying: Promise<void> = Promise.resolve();
   #closed = false;
 
   readonly #options: BotManagerOptions;
@@ -326,6 +368,7 @@ export class BotManager {
       else await manager.#insert(ADMIN_NAME, { kind: "admin", manager: false });
     }
     options.profiles?.onChange(() => manager.#profilesChanged());
+    options.availability?.onChange(() => void manager.#reapplyAll());
     // Live bots only: soft-deleted bots are neither loaded nor recovered.
     for (const record of await manager.registry.list()) await manager.get(record.id);
     return manager;
@@ -362,16 +405,91 @@ export class BotManager {
     return this.record(id);
   }
 
+  /** A bot's main-model status (fallback, paused, or recently returned); undefined: normal. */
+  modelStatus(id: string): ModelStatus | undefined {
+    const status = this.#status.get(id);
+    if (status?.kind === "returned" && Date.now() - status.at > RETURNED_STATUS_MS)
+      return undefined;
+    return status;
+  }
+
+  /**
+   * A request on `ref` hit a usage limit: mark it (for every bot) and move bots running it to their
+   * next available fallback. Returns the model `conversationId` runs now when that changed, so the
+   * failed request can be retried on it.
+   */
+  async reportLimit(
+    botId: string,
+    conversationId: number,
+    ref: ModelRef,
+    limit: Limit,
+  ): Promise<string | undefined> {
+    const availability = this.#options.availability;
+    if (!availability) return undefined;
+    const entry = availability.mark(ref, limit);
+    this.#options.log?.(
+      `usage limit: ${entry.model} (${entry.account}): ${entry.kind}${entry.resetsAt ? `, resets ${new Date(entry.resetsAt).toISOString()}` : ", reset unknown"}`,
+    );
+    await this.#reapplyAll();
+    const bot = await this.#bots.get(botId)?.catch(() => undefined);
+    const conversation = await bot?.harness.conversation(toConversationId(conversationId), ctx);
+    const now = conversation ? (await conversation.agent(ctx)).model : undefined;
+    if (!now || (now.provider === ref.provider && now.modelId === ref.modelId)) return undefined;
+    return `${now.provider}/${now.modelId}`;
+  }
+
+  #reapplyAll(): Promise<void> {
+    const run = async () => {
+      if (this.#closed) return;
+      for (const pending of [...this.#bots.values()]) {
+        const bot = await pending.catch(() => undefined);
+        if (bot) await this.#applyProfile(bot).catch((error) => this.#options.onReport?.(error));
+      }
+    };
+    this.#reapplying = this.#reapplying.then(run, run);
+    return this.#reapplying;
+  }
+
   async #applyProfile(bot: Bot): Promise<void> {
     const profiles = this.#options.profiles;
     if (!profiles) return;
     const profile = profiles.resolve(this.#assigned.get(bot.id));
-    const changed = await bot.applyModel(parseModelRef(profile.main));
+    const effective = effectiveModel(profile, this.#options.availability);
+    const changed = await bot.applyModel(parseModelRef(effective.model));
     if (changed) {
       this.#options.log?.(
-        `bot "${bot.record.name}": profile "${profile.id}", main model ${profile.main} (${changed} conversation(s) updated)`,
+        `bot "${bot.record.name}": profile "${profile.id}", main model ${effective.model}${effective.model === profile.main ? "" : ` (fallback for ${profile.main})`} (${changed} conversation(s) updated)`,
       );
     }
+    this.#updateStatus(bot, profile, effective);
+  }
+
+  #updateStatus(bot: Bot, profile: Profile, effective: ReturnType<typeof effectiveModel>): void {
+    const previous = this.#status.get(bot.id);
+    const kind = effective.paused
+      ? "paused"
+      : effective.model !== profile.main
+        ? "fallback"
+        : previous && previous.kind !== "returned"
+          ? "returned"
+          : undefined;
+    if (!kind) return;
+    const key = (status: Pick<ModelStatus, "kind" | "active" | "limits">) =>
+      `${status.kind} ${status.active} ${status.limits.map((limit) => `${limit.model}@${limit.at}`).join(",")}`;
+    const next: ModelStatus = {
+      kind,
+      at: Date.now(),
+      primary: profile.main,
+      active: effective.model,
+      limits: kind === "returned" ? [] : effective.limits,
+    };
+    if (previous && key(previous) === key(next)) return;
+    if (kind === "returned" && previous?.kind === "returned") return;
+    this.#status.set(bot.id, next);
+    this.#options.log?.(
+      `bot "${bot.record.name}": ${kind === "paused" ? `paused (${profile.main} and every fallback are out)` : kind === "fallback" ? `on fallback ${effective.model} (${profile.main} is out)` : `back on ${profile.main}`}`,
+    );
+    this.#options.onModelStatus?.(bot.id, next);
   }
 
   /** After any profile change: deleted profiles fall back to the default, then models re-apply. */

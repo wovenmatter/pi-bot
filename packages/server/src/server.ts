@@ -6,7 +6,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { type AgentEventStream, watchEvents } from "@earendil-works/pi-durable";
 import { type RawData, WebSocket, WebSocketServer } from "ws";
-import type { BotManager } from "./bots.ts";
+import type { BotManager, ModelStatus } from "./bots.ts";
 import { NotFoundError } from "./bots.ts";
 import { isAllowedBindHost } from "./config.ts";
 import { conversationId as toConversationId } from "./ids.ts";
@@ -63,8 +63,12 @@ export type PiBotServer = {
   close(): Promise<void>;
 };
 
-/** How clients see a bot: the chat UI shows only its profile's name, never models. */
-const botSummary = (record: BotRecord, profiles: ProfileStore | undefined): BotSummary => {
+/** How clients see a bot: its profile's name, and model names only in a usage-limit status. */
+const botSummary = (
+  record: BotRecord,
+  profiles: ProfileStore | undefined,
+  status?: ModelStatus,
+): BotSummary => {
   const profile = profiles?.resolve(record.profile);
   return {
     id: record.id,
@@ -76,6 +80,23 @@ const botSummary = (record: BotRecord, profiles: ProfileStore | undefined): BotS
     profileId: profile?.id ?? record.profile ?? "",
     profileName: profile?.name ?? "",
     defaultProfile: !record.profile || !profiles?.get(record.profile),
+    ...(status
+      ? {
+          modelStatus: {
+            kind: status.kind,
+            at: status.at,
+            primary: status.primary,
+            active: status.active,
+            limits: status.limits.map((limit) => ({
+              model: limit.model,
+              account: limit.account,
+              kind: limit.kind,
+              ...(limit.resetsAt !== undefined ? { resetsAt: limit.resetsAt } : {}),
+              retryAt: limit.retryAt,
+            })),
+          },
+        }
+      : {}),
   };
 };
 
@@ -249,7 +270,8 @@ class Connection {
 
   async #handle(request: Request): Promise<unknown> {
     const manager = this.#server.manager;
-    const bot = (record: BotRecord) => botSummary(record, manager.profiles);
+    const bot = (record: BotRecord) =>
+      botSummary(record, manager.profiles, manager.modelStatus(record.id));
     const profiles = () => {
       const store = manager.profiles;
       if (!store) throw new Error("model profiles are not available on this server");
@@ -333,6 +355,7 @@ class Connection {
             id: profile.id,
             name: profile.name,
             main: profile.main,
+            ...(profile.fallbacks ? { fallbacks: profile.fallbacks } : {}),
             pool: profile.pool,
             ...(profile.guidance !== undefined ? { guidance: profile.guidance } : {}),
           },

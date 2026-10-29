@@ -114,6 +114,11 @@ export const configSchema = z.strictObject({
       z.strictObject({
         name: z.string().trim().min(1).max(80),
         main: modelRef,
+        /**
+         * Ordered main-model fallbacks (at most 5). When the main model hits a usage limit or runs
+         * out of credits, the bot switches to the first available one and back once it resets.
+         */
+        fallbacks: z.array(modelRef).max(5, "at most 5 fallbacks").default([]),
         /** Free text for the main model: when to use which pool model or reasoning level. */
         guidance: z.string().max(4000).optional(),
         pool: z
@@ -232,6 +237,8 @@ export type Profile = {
   readonly name: string;
   /** `provider/model-id` of the main channel and every thread. */
   readonly main: string;
+  /** Ordered main-model fallbacks for usage limits (0–5); none: the bot pauses at a limit. */
+  readonly fallbacks?: readonly string[];
   readonly guidance?: string;
   readonly pool: readonly PoolModel[];
 };
@@ -241,12 +248,26 @@ export type ProfileSet = {
   readonly profiles: readonly Profile[];
 };
 
+function checkFallbacks(id: string, main: string, fallbacks: readonly string[]): string[] {
+  const seen = new Set<string>([main]);
+  for (const ref of fallbacks) {
+    if (seen.has(ref)) {
+      throw new Error(`profiles.${id}.fallbacks: ${ref} is listed twice or is the main model`);
+    }
+    seen.add(ref);
+  }
+  return [...fallbacks];
+}
+
 /** Profiles from the raw config, synthesizing one from the legacy model roles when there are none. */
 export function normalizeProfiles(raw: RawConfig): ProfileSet {
   let profiles: Profile[] = Object.entries(raw.profiles).map(([id, value]) => ({
     id,
     name: value.name,
     main: value.main,
+    ...(value.fallbacks.length
+      ? { fallbacks: checkFallbacks(id, value.main, value.fallbacks) }
+      : {}),
     ...(value.guidance?.trim() ? { guidance: value.guidance.trim() } : {}),
     pool: Object.entries(value.pool).map(([model, entry]) => ({
       model,

@@ -308,7 +308,7 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
     defineTool({
       name: "list_profiles",
       description:
-        "List the model profiles (main model, pool models with their use-for notes, guidance), which is the default, and which profile each bot runs.",
+        "List the model profiles (main model, its ordered fallbacks, pool models with their use-for notes, guidance), which is the default, and which profile each bot runs.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: () =>
@@ -329,11 +329,17 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
     }),
     defineTool({
       name: "save_profile",
-      description: `Create (create: true) or replace a model profile. main runs the main channel and threads of every bot on it; pool lists the models the main model may hand work to with run_subagent. Models must be listed by settings_status. Changes apply from each bot's next reply. ${confirm}`,
+      description: `Create (create: true) or replace a model profile. main runs the main channel and threads of every bot on it; fallbacks (optional, ordered, at most 5) are main models to switch to when main hits a usage limit or runs out of credits (none: the bot pauses until the limit resets); pool lists the models the main model may hand work to with run_subagent. Models must be listed by settings_status. Changes apply from each bot's next reply. ${confirm}`,
       parameters: Type.Object({
         id: Type.String({ description: "lowercase letters, digits, - and _" }),
         name: Type.String(),
         main: Type.String({ description: "provider/model-id" }),
+        fallbacks: Type.Optional(
+          Type.Array(Type.String({ description: "provider/model-id" }), {
+            maxItems: 5,
+            description: "Ordered main-model fallbacks for usage limits; omit or [] for none",
+          }),
+        ),
         pool: Type.Array(poolEntry),
         guidance: Type.Optional(
           Type.String({ description: "When to use which pool model or reasoning level" }),
@@ -344,6 +350,7 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
         run(async () => {
           const service = settings();
           service.checkModel(args.main);
+          for (const ref of args.fallbacks ?? []) service.checkModel(ref);
           for (const entry of args.pool) service.checkModel(entry.model);
           const profiles = store();
           const saved = await profiles.save(
@@ -351,6 +358,7 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
               id: args.id,
               name: args.name,
               main: args.main,
+              ...(args.fallbacks ? { fallbacks: args.fallbacks } : {}),
               pool: args.pool,
               ...(args.guidance !== undefined ? { guidance: args.guidance } : {}),
             },

@@ -13,11 +13,16 @@ import { setTomlValues } from "./settings/toml-edit.ts";
 
 export class ProfileError extends Error {}
 
+/** The most main-model fallbacks a profile may list. */
+export const MAX_FALLBACKS = 5;
+
 /** What a client or Admin Bot sends to create or replace a profile. */
 export type ProfileInput = {
   readonly id: string;
   readonly name: string;
   readonly main: string;
+  /** Ordered main-model fallbacks for usage limits, at most 5. */
+  readonly fallbacks?: readonly string[];
   readonly guidance?: string;
   readonly pool?: readonly { model: string; useFor?: string; background?: boolean }[];
 };
@@ -128,6 +133,16 @@ export class ProfileStore {
       this.#options.checkModel?.(ref);
     };
     check(input.main);
+    const fallbacks: string[] = [];
+    for (const ref of input.fallbacks ?? []) {
+      check(ref);
+      if (ref === input.main) throw new ProfileError(`${ref} is the main model, not a fallback`);
+      if (fallbacks.includes(ref)) throw new ProfileError(`fallbacks list ${ref} twice`);
+      fallbacks.push(ref);
+    }
+    if (fallbacks.length > MAX_FALLBACKS) {
+      throw new ProfileError(`at most ${MAX_FALLBACKS} fallback models`);
+    }
     const pool: PoolModel[] = [];
     for (const entry of input.pool ?? []) {
       check(entry.model);
@@ -146,7 +161,14 @@ export class ProfileStore {
     const guidance = input.guidance?.trim();
     if (guidance && guidance.length > 4000)
       throw new ProfileError("guidance is too long (max 4000)");
-    return { id, name, main: input.main, ...(guidance ? { guidance } : {}), pool };
+    return {
+      id,
+      name,
+      main: input.main,
+      ...(fallbacks.length ? { fallbacks } : {}),
+      ...(guidance ? { guidance } : {}),
+      pool,
+    };
   }
 
   /** Serialize changes: compute, persist, swap, notify. */
@@ -176,6 +198,9 @@ export function renderProfiles(set: ProfileSet): string {
       `name = ${JSON.stringify(profile.name)}`,
       `main = ${JSON.stringify(profile.main)}`,
     ];
+    if (profile.fallbacks?.length) {
+      lines.push(`fallbacks = [${profile.fallbacks.map((ref) => JSON.stringify(ref)).join(", ")}]`);
+    }
     if (profile.guidance) lines.push(`guidance = ${JSON.stringify(profile.guidance)}`);
     blocks.push(lines.join("\n"));
     for (const entry of profile.pool) {
@@ -254,6 +279,7 @@ export function describeProfile(profile: Profile, defaultId: string) {
     id: profile.id,
     name: profile.name,
     main: profile.main,
+    ...(profile.fallbacks?.length ? { fallbacks: [...profile.fallbacks] } : {}),
     ...(profile.guidance ? { guidance: profile.guidance } : {}),
     pool: profile.pool.map((entry) => ({
       model: entry.model,

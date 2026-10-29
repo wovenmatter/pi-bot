@@ -1,4 +1,4 @@
-import type { FetchFunction, Models } from "@earendil-works/pi-ai";
+import type { AssistantMessage, FetchFunction, Models } from "@earendil-works/pi-ai";
 import {
   type AgentChange,
   type CompactionSettings,
@@ -12,6 +12,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { createCompactionRegistry, NativeCompaction } from "./compaction/context.ts";
 import { type ModelRef, type Profile, parseModelRef, type RawConfig } from "./config.ts";
 import type { BotEnvironmentAdapter } from "./env.ts";
+import { classifyLimit, type Limit, type LimitCarrier, observeLimits } from "./limits.ts";
 import type { BeforeCompactHook } from "./memory.ts";
 import type { BotRecord } from "./storage/registry.ts";
 import { type SubagentLog, subagentExtension } from "./subagent.ts";
@@ -69,7 +70,39 @@ export type BotAgentOptions = {
   readonly fetch?: FetchFunction;
   /** Memory extraction before every compaction; a no-op stub by default. */
   readonly onBeforeCompact?: BeforeCompactHook;
+  /**
+   * A request in `conversationId` on `model` hit a usage limit or ran out of credits. Returns the
+   * fallback the conversation runs now (the failed request is retried on it), if it switched.
+   */
+  readonly onLimit?: (
+    conversationId: number,
+    model: ModelRef,
+    limit: Limit,
+  ) => Promise<string | undefined>;
 };
+
+const LIMIT_TEXT: Record<Limit["kind"], string> = {
+  five_hour: "hit its 5-hour usage limit",
+  weekly: "hit its weekly usage limit",
+  usage: "hit a usage limit",
+  credits: "ran out of credits",
+};
+
+/**
+ * After a usage limit: mark it and, when the conversation switched to a fallback, reword the error
+ * so Pi Durable's normal retry runs the request again (on the fallback). Transient rate limits and
+ * ordinary errors are left to the normal retry rules.
+ */
+export function limitHook(onLimit: NonNullable<BotAgentOptions["onLimit"]>) {
+  return async (message: AssistantMessage, api: { readonly conversationId: unknown }) => {
+    const found = classifyLimit(message as AssistantMessage & LimitCarrier);
+    if (!found || found.kind === "rate") return;
+    const model = { provider: message.provider, modelId: message.model };
+    const next = await onLimit(Number(api.conversationId), model, found);
+    if (!next) return;
+    message.errorMessage = `${model.provider}/${model.modelId} ${LIMIT_TEXT[found.kind]}. Pi Bot switched to the fallback ${next}; you can retry your request.`;
+  };
+}
 
 /** The agent every new bot's main channel starts with (its profile's main model). Threads inherit it via fork. */
 export function defaultAgent(main: ModelRef): AgentChange {
@@ -85,7 +118,7 @@ Before you change config (config.toml edits, model profiles, restarts), say exac
 Sign-ins and keys are entered by the user in Settings (Account & sign-ins, Search, GitHub): point them there. Never ask the user to paste a secret into the chat and never reveal one.
 You are never on a team and never manage one. Deleting and restoring bots is done by the user in the web UI.
 In your first conversation, briefly explain what Pi Bot can do: bots, each with one long-lived main channel and threads forked off any message; tools in each bot's own Linux container when enabled; optional one-level teams, where a manager bot assigns work to its members; and bots messaging each other. Then set up models with the user (below), and ask which bots or teams they want and create them.
-Models work through profiles. A profile has a main model, which runs a bot's main channel and every thread, and a pool of models the main model can hand self-contained work to (run_subagent), each with a short note on what it is good for, plus optional guidance. Background work uses the pool model flagged background, else the main model. Every bot runs one profile; new bots get the default profile, and editing a profile changes every bot on it from its next reply.
+Models work through profiles. A profile has a main model, which runs a bot's main channel and every thread, and a pool of models the main model can hand self-contained work to (run_subagent), each with a short note on what it is good for, plus optional guidance. Background work uses the pool model flagged background, else the main model. A profile can also list up to 5 ordered fallback main models: when the main model hits a usage limit or its key runs out of credits, the bot switches to the first available fallback and back once the main model resets; with no fallbacks it pauses until then. Every bot runs one profile; new bots get the default profile, and editing a profile changes every bot on it from its next reply.
 Setting up models: ask which subscriptions and tiers the user has (e.g. ChatGPT, Claude or xAI plans), which API keys (e.g. OpenRouter), and roughly what they are comfortable spending each month. These are guidance for your choices, not hard caps. Save the answers with write_account_notes and read them back (read_account_notes) before later model decisions. Then either propose a complete setup (profiles with main and pool models, which bot runs which) or go step by step, whichever the user prefers, and apply it with the profile tools. Only use models that settings_status lists; if a needed sign-in or key is missing, send the user to Settings first.`;
 
 /** The preamble, read live so team changes apply from the next request. */
@@ -135,7 +168,13 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     name: "pi-bot",
     // One implementation for the main channel and every thread.
     hooks: [
-      { task: "pi.generation", handlers: { beforeRequest: native.beforeRequest } },
+      {
+        task: "pi.generation",
+        handlers: {
+          beforeRequest: native.beforeRequest,
+          ...(options.onLimit ? { afterResponse: limitHook(options.onLimit) } : {}),
+        },
+      },
       { task: "pi.compaction", handlers: { beforeCompact: native.beforeCompact } },
     ],
   });
@@ -155,7 +194,7 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
   const registry = createCompactionRegistry();
   for (const installed of extensions) registry.install(installed);
   return {
-    models: native.models(),
+    models: observeLimits(native.models(), options.fetch),
     registry,
     settings: {
       extensions,

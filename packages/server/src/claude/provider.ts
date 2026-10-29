@@ -17,6 +17,7 @@ import { createProvider } from "@earendil-works/pi-ai/models";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { CLAUDE_AGENT_API } from "../compaction/native.ts";
+import { type ClaudeRateLimitInfo, claudeLimit, type LimitClass } from "../limits.ts";
 import {
   type ClaudeAgentOptions,
   ClaudeAgentRuntime,
@@ -42,7 +43,11 @@ const INVENTORY = fileURLToPath(
 /** Set on a compaction request (`Models.stream` options); the summary comes back on the result. */
 export type ClaudeCompactOptions = { readonly pibotCompact?: { readonly instructions?: string } };
 export type ClaudeCompaction = { readonly summary: string; readonly preTokens?: number };
-export type ClaudeCompactedMessage = AssistantMessage & { pibotCompaction?: ClaudeCompaction };
+export type ClaudeCompactedMessage = AssistantMessage & {
+  pibotCompaction?: ClaudeCompaction;
+  /** The usage limit Claude Code reported for a failed request (see limits.ts). */
+  pibotLimit?: LimitClass;
+};
 
 const zeroCost = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
 const zeroUsage = (): Usage => ({
@@ -284,6 +289,8 @@ export class ClaudeAgentStream {
     let summary: string | undefined;
     let boundary: ClaudeSdkEvent | undefined;
     let failure: string | undefined;
+    let rateLimit: ClaudeRateLimitInfo | undefined;
+    let assistantError: string | undefined;
     let replyId: string | undefined;
     const reply: Block[] = [];
     let replyUsage: Block;
@@ -397,6 +404,7 @@ export class ClaudeAgentStream {
       for await (const event of query) {
         resetTimeout();
         if (event.type === "system" && event.subtype === "compact_boundary") boundary = event;
+        else if (event.type === "rate_limit_event") rateLimit = event.rate_limit_info;
         else if (event.type === "result" && acknowledge) {
           if (event.is_error || event.num_turns !== 0) {
             throw new ClaudeAgentError("Claude Code could not restore this conversation.");
@@ -416,6 +424,7 @@ export class ClaudeAgentStream {
           onPartial(event.event);
         } else if (event.type === "assistant" && event.parent_tool_use_id == null) {
           if (event.error) {
+            assistantError = String(event.error);
             failure = (event.message?.content ?? [])
               .filter((block: Block) => block.type === "text")
               .map((block: Block) => block.text)
@@ -439,6 +448,10 @@ export class ClaudeAgentStream {
       await rm(scratch, { recursive: true, force: true });
     }
     signal?.throwIfAborted();
+    if (failure) {
+      const limit = claudeLimit(rateLimit, assistantError, failure);
+      if (limit) message.pibotLimit = limit;
+    }
     if (timedOut) throw new ClaudeAgentError("The Claude request timed out.");
 
     if (compact !== undefined) {
