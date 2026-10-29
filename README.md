@@ -155,8 +155,7 @@ unique, so a restore never collides with an existing bot.
 Over WebSocket this is `bots.listDeleted` (`{id, name, createdAt, deletedAt}` for each deleted
 bot, newest deletion first) and `bots.restore {botId}`, which returns `{restored: true, bot}`, or
 `{restored: false}` when the bot is unknown or not deleted. Delete, list-deleted and restore are
-user-only paths: future orchestrator tooling may create bots but must never get a delete or
-restore tool.
+user-only paths: bot tools may create bots but never delete or restore them.
 
 ## Settings
 
@@ -174,8 +173,8 @@ The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
     refused by xAI with a 403) or an **API key**. Both share one credential slot.
   - **OpenRouter** and **OpenCode Go** API keys.
     Variables from the environment show as "From …" and can't be removed here.
-- **Models** — models from each signed-in provider and the orchestrator / background / titles
-  roles plus title reasoning, validated and written to `config.toml`.
+- **Models** — models from each signed-in provider and the bots (`orchestrator` key) / background
+  / titles roles plus title reasoning, validated and written to `config.toml`.
 - **Search** — Exa (default), Brave and Firecrawl keys, and `[search] provider`.
 - **GitHub** — an SSH key for git over SSH (generate an ed25519 key server-side, or paste an
   unencrypted OpenSSH private key; only the public key and SHA256 fingerprint are shown back) and
@@ -237,10 +236,26 @@ built-in tools, and Pi Bot's tool calls execute in the container).
   (0600, with `~/.ssh/config` and GitHub's pinned host keys) and `git config --global` in every
   container on start and whenever they change in Settings.
 
-### Orchestrator
+### Admin, bots and teams
 
-One bot is its own orchestrator. With two or more, the first-created bot is the default and
-Settings → Bots asks you to confirm it or pick another (stored as `[bots] orchestrator`).
+- **Admin** is created on first start (exactly one; it can't be deleted, renamed or put on a
+  team). It is the only bot with account/config tools: settings status, `config.toml` read/update,
+  restart, its own model (`set_my_model`) and teams (`set_team`). It confirms config changes unless
+  you asked for them, and never asks for secrets in chat (sign-ins and keys stay in Settings).
+- **Onboarding**: on first run the web app asks you to sign in, then pick Admin's model
+  (`onboarding.status`, `admin.setModel`). Change it later in Settings → Bots or by asking Admin.
+  Admin's first conversation explains the platform and creates the bots/teams you want.
+- **Bots** use the default `[models] orchestrator` model. Every bot has `list_bots`, `create_bot`
+  and `message_bot` (delivers to the target's main conversation as a follow-up, rate limited by
+  `[bot_to_bot] max_messages_per_hour_per_pair`). A bot created by a manager or team member joins
+  that team.
+- **Teams** are optional and one level: any non-Admin bot can be a manager (managers have no
+  manager). Move bots, promote/demote and hand a team to a member in Settings → Bots, by asking
+  Admin, or by telling a bot to start a team. Demoting or deleting a manager ungroups its team; a
+  restored manager comes back without one. The sidebar pins Admin, then nests members under their
+  manager.
+- WebSocket: `bots.create {name, managerId?}`, `bots.setManager`, `bots.setTeam`,
+  `bots.replaceManager`; the server pushes `{type: "bots.changed"}` when the list changes.
 
 ### Running as a service
 
