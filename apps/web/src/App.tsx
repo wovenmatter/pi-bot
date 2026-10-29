@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { type ConnectionState, defaultSocketUrl, errorMessage, PiBotClient } from "./api.ts";
 import { Empty, ErrorNotice } from "./components/ui.tsx";
 import { Conversation } from "./features/Conversation.tsx";
+import { Onboarding } from "./features/Onboarding.tsx";
 import { Settings } from "./features/Settings.tsx";
-import type { BotSummary, ThreadSummary } from "./protocol.ts";
+import type { BotSummary, OnboardingStatus, ThreadSummary } from "./protocol.ts";
 import { parseRoute, type Route, routeHref } from "./routes.ts";
 import { Sidebar } from "./shell/Sidebar.tsx";
 import { useTheme } from "./theme.ts";
@@ -29,6 +30,7 @@ export function App() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [mainConversationId, setMainConversationId] = useState<number>();
   const [error, setError] = useState<string>();
+  const [onboarding, setOnboarding] = useState<OnboardingStatus>();
   const [theme, setTheme] = useTheme();
   const route = useRoute();
   const bot = bots?.find((item) => item.id === route.botId);
@@ -44,17 +46,26 @@ export function App() {
 
   useEffect(() => {
     if (connection !== "open") return;
+    const load = () =>
+      client
+        .request("bots.list", {})
+        .then(({ bots }) => setBots(bots))
+        .catch((e: unknown) => setError(errorMessage(e)));
+    void load();
     client
-      .request("bots.list", {})
-      .then(({ bots }) => setBots(bots))
+      .request("onboarding.status", {})
+      .then(setOnboarding)
       .catch((e: unknown) => setError(errorMessage(e)));
+    // Bots create bots and change teams: refetch when the server says so.
+    return client.onBotsChanged(() => void load());
   }, [client, connection]);
 
-  // Default to the first bot; drop routes to bots that no longer exist.
+  // Default to Admin; drop routes to bots that no longer exist.
   useEffect(() => {
     if (!bots || route.settings) return;
+    const fallback = bots.find((item) => item.kind === "admin") ?? bots[0];
     if (route.botId && !bots.some((item) => item.id === route.botId)) navigate({});
-    else if (!route.botId && bots[0]) navigate({ botId: bots[0].id });
+    else if (!route.botId && fallback) navigate({ botId: fallback.id });
   }, [bots, route.botId, route.settings]);
 
   const refreshThreads = useCallback(
@@ -130,7 +141,17 @@ export function App() {
           className={route.settings ? "main-content" : "main-content conversation-page"}
         >
           <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
-          {route.settings ? (
+          {onboarding?.needed && !route.settings ? (
+            <Onboarding
+              client={client}
+              connected={connection === "open"}
+              status={onboarding}
+              onStatus={(status) => {
+                setOnboarding(status);
+                if (!status.needed) navigate({ botId: status.adminId });
+              }}
+            />
+          ) : route.settings ? (
             <Settings
               client={client}
               connected={connection === "open"}

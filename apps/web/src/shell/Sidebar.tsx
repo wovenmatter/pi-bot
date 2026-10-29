@@ -1,4 +1,4 @@
-import { Bot, MessageSquare, Plus, Settings, Trash2 } from "lucide-react";
+import { Bot, MessageSquare, Plus, Settings, ShieldCheck, Trash2, Users } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import type { ConnectionState } from "../api.ts";
 import { Brand } from "../components/Brand.tsx";
@@ -6,6 +6,7 @@ import { Icon } from "../components/Icon.tsx";
 import type { BotSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
 import { THEMES, type Theme } from "../theme.ts";
+import { groupBots } from "./bot-groups.ts";
 
 export function Sidebar({
   bots,
@@ -36,6 +37,36 @@ export function Sidebar({
   const creating = creatingOpen || bots.length === 0;
   const selected = settings ? undefined : bots.find((bot) => bot.id === botId);
   const onMain = conversationId === undefined || conversationId === mainConversationId;
+  const groups = groupBots(bots);
+
+  function botRow(bot: BotSummary, member = false) {
+    const active = !settings && bot.id === botId;
+    const icon = bot.kind === "admin" ? ShieldCheck : bot.manager ? Users : Bot;
+    return (
+      <div key={bot.id} className={member ? "rail-row rail-member" : "rail-row"}>
+        <a
+          href={routeHref({ botId: bot.id })}
+          className={`nav-link${active ? " active" : ""}`}
+          aria-current={active ? "page" : undefined}
+          title={bot.kind === "admin" ? "Admin: accounts, models and config" : undefined}
+        >
+          <Icon icon={icon} />
+          <span className="rail-title">{bot.name}</span>
+        </a>
+        {bot.kind === "admin" ? null : (
+          <button
+            type="button"
+            className="rail-action reveal"
+            aria-label={`Delete ${bot.name}`}
+            title="Delete bot"
+            onClick={() => onDelete(bot)}
+          >
+            <Icon icon={Trash2} size={13} weight="control" />
+          </button>
+        )}
+      </div>
+    );
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -90,27 +121,14 @@ export function Sidebar({
           </form>
         ) : null}
         <div className="rail-group">
-          {bots.map((bot) => (
-            <div key={bot.id} className="rail-row">
-              <a
-                href={routeHref({ botId: bot.id })}
-                className={`nav-link${!settings && bot.id === botId ? " active" : ""}`}
-                aria-current={!settings && bot.id === botId ? "page" : undefined}
-              >
-                <Icon icon={Bot} />
-                <span className="rail-title">{bot.name}</span>
-              </a>
-              <button
-                type="button"
-                className="rail-action reveal"
-                aria-label={`Delete ${bot.name}`}
-                title="Delete bot"
-                onClick={() => onDelete(bot)}
-              >
-                <Icon icon={Trash2} size={13} weight="control" />
-              </button>
+          {groups.admin ? botRow(groups.admin) : null}
+          {groups.teams.map(({ manager, members }) => (
+            <div key={manager.id} className="rail-team">
+              {botRow(manager)}
+              {members.map((member) => botRow(member, true))}
             </div>
           ))}
+          {groups.ungrouped.map((bot) => botRow(bot))}
           {bots.length === 0 && !creating ? <p className="rail-empty muted">No bots yet.</p> : null}
         </div>
         {selected ? (

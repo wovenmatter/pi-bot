@@ -18,6 +18,7 @@ export class PiBotClient {
   #pending = new Map<number, Pending>();
   #events = new Set<(message: EventMessage) => void>();
   #states = new Set<(state: ConnectionState) => void>();
+  #botsChanged = new Set<() => void>();
   #state: ConnectionState = "closed";
   #attempt = 0;
   #reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -121,6 +122,12 @@ export class PiBotClient {
     };
   }
 
+  /** The server's bot list changed (created by a bot, a team change, ...). */
+  onBotsChanged(listener: () => void): () => void {
+    this.#botsChanged.add(listener);
+    return () => this.#botsChanged.delete(listener);
+  }
+
   onState(listener: (state: ConnectionState) => void): () => void {
     this.#states.add(listener);
     return () => this.#states.delete(listener);
@@ -156,6 +163,10 @@ export class PiBotClient {
     }
     if (message.type === "event") {
       for (const listener of this.#events) listener(message);
+      return;
+    }
+    if (message.type === "bots.changed") {
+      for (const listener of this.#botsChanged) listener();
       return;
     }
     if (message.type === "result" || message.type === "error") {

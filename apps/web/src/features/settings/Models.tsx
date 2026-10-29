@@ -3,7 +3,11 @@ import { Loading } from "../../components/ui.tsx";
 import type { ProviderModels, Roles } from "../../protocol.ts";
 
 const ROLES = [
-  { key: "orchestrator", label: "Orchestrator", help: "Answers in chat and plans work." },
+  {
+    key: "orchestrator",
+    label: "Bots",
+    help: "Default chat model for every bot except Admin (set Admin's under Bots).",
+  },
   { key: "background", label: "Background", help: "Memory extraction and other quiet jobs." },
   { key: "titles", label: "Titles", help: "Names threads and conversations." },
 ] as const;

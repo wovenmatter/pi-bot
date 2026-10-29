@@ -9,6 +9,8 @@ const deleted = [
     name: "Scout",
     createdAt: "2026-10-01T12:00:00.000Z",
     deletedAt: "2026-10-26T15:30:00.000Z",
+    kind: "bot" as const,
+    manager: false,
   },
 ];
 

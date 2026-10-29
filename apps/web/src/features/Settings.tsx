@@ -8,7 +8,6 @@ import type {
   BotSummary,
   DeletedBotSummary,
   GitHubStatus,
-  OrchestratorStatus,
   Requests,
 } from "../protocol.ts";
 import { routeHref, type SettingsSection } from "../routes.ts";
@@ -17,9 +16,9 @@ import { ConfigEditor, LimitsForm, type ValidationState } from "./settings/Confi
 import { GitHubSettings } from "./settings/GitHub.tsx";
 import type { LoginState } from "./settings/Login.tsx";
 import { ModelSettings } from "./settings/Models.tsx";
-import { OrchestratorPanel } from "./settings/Orchestrator.tsx";
 import { SearchSettings } from "./settings/Search.tsx";
 import { RESTART_TIMEOUT_MS, RestartNotice, type RestartState } from "./settings/shared.tsx";
+import { AdminModelPicker, type Placement, TeamsPanel } from "./settings/Teams.tsx";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
@@ -94,16 +93,25 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "config", label: "Config" },
 ];
 
-function AccountsSection({ client, connected, onError }: SectionProps) {
+/** Sign-ins and keys; also the first onboarding step. `onChanged` runs after each refresh. */
+export function AccountsSection({
+  client,
+  connected,
+  onError,
+  onChanged,
+}: Pick<SectionProps, "client" | "connected" | "onError"> & { onChanged?: () => void }) {
   const [accounts, setAccounts] = useState<AccountStatus[]>();
   const [login, setLogin] = useState<LoginState>();
   const refresh = useCallback(
     () =>
       client
         .request("settings.accounts", {})
-        .then((result) => setAccounts(result.accounts))
+        .then((result) => {
+          setAccounts(result.accounts);
+          onChanged?.();
+        })
         .catch((e: unknown) => onError(errorMessage(e))),
-    [client, onError],
+    [client, onError, onChanged],
   );
   useEffect(() => {
     if (connected) void refresh();
@@ -334,27 +342,57 @@ function BotsSection({
   const [deleted, setDeleted] = useState<DeletedBotSummary[]>();
   const [restoring, setRestoring] = useState<string>();
   const [live, setLive] = useState<BotSummary[]>();
-  const [orchestrator, setOrchestrator] = useState<OrchestratorStatus>();
-  const [savingOrchestrator, setSavingOrchestrator] = useState(false);
+  const [providers, setProviders] = useState<Requests["models.catalog"]["result"]["providers"]>();
+  const [busy, setBusy] = useState(false);
   const refresh = useCallback(
     () =>
-      Promise.all([
-        client.request("bots.listDeleted", {}),
-        client.request("bots.list", {}),
-        client.request("bots.orchestrator", {}),
-      ])
-        .then(([removed, active, status]) => {
+      Promise.all([client.request("bots.listDeleted", {}), client.request("bots.list", {})])
+        .then(([removed, active]) => {
           setDeleted(removed.bots);
           setLive(active.bots);
-          setOrchestrator(status);
         })
         .catch((e: unknown) => onError(errorMessage(e))),
     [client, onError],
   );
   useEffect(() => {
-    if (connected) void refresh();
-  }, [connected, refresh]);
+    if (!connected) return;
+    void refresh();
+    client
+      .request("models.catalog", {})
+      .then((catalog) => setProviders(catalog.providers))
+      .catch((e: unknown) => onError(errorMessage(e)));
+    return client.onBotsChanged(() => void refresh());
+  }, [client, connected, refresh, onError]);
 
+  async function act(work: () => Promise<unknown>) {
+    onError(undefined);
+    setBusy(true);
+    try {
+      await work();
+      await refresh();
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const place = (bot: BotSummary, placement: Placement) =>
+    act(async () => {
+      if (placement === "manager") {
+        await client.request("bots.setManager", { botId: bot.id, manager: true });
+        return;
+      }
+      if (bot.manager) {
+        const members = live?.filter((other) => other.managerId === bot.id).length ?? 0;
+        if (members && !window.confirm(`${bot.name}'s team will be ungrouped. Continue?`)) return;
+        await client.request("bots.setManager", { botId: bot.id, manager: false });
+      }
+      if (placement === "none") {
+        if (bot.managerId) await client.request("bots.setTeam", { botId: bot.id, managerId: null });
+      } else {
+        await client.request("bots.setTeam", { botId: bot.id, managerId: placement });
+      }
+    });
   async function restore(target: DeletedBotSummary) {
     onError(undefined);
     setRestoring(target.id);
@@ -368,25 +406,31 @@ function BotsSection({
       setRestoring(undefined);
     }
   }
-  async function confirmOrchestrator(botId: string) {
-    onError(undefined);
-    setSavingOrchestrator(true);
-    try {
-      setOrchestrator(await client.request("bots.setOrchestrator", { botId }));
-    } catch (e) {
-      onError(errorMessage(e));
-    } finally {
-      setSavingOrchestrator(false);
-    }
-  }
+  const admin = live?.find((bot) => bot.kind === "admin");
   return (
     <>
-      <OrchestratorPanel
+      <section className="settings-section" aria-labelledby="admin-heading">
+        <h3 id="admin-heading">Admin</h3>
+        <p className="muted">
+          Admin is your account and config bot: sign-ins, models, keys, GitHub and config.toml, and
+          creating and organizing bots. It cannot be deleted and is never on a team.
+        </p>
+        <AdminModelPicker
+          providers={providers}
+          {...(admin?.model ? { current: admin.model } : {})}
+          disabled={!connected || busy}
+          onSave={(model) => act(() => client.request("admin.setModel", { model }))}
+        />
+      </section>
+      <TeamsPanel
         bots={live}
-        status={orchestrator}
-        saving={savingOrchestrator}
-        disabled={!connected}
-        onConfirm={(botId) => void confirmOrchestrator(botId)}
+        disabled={!connected || busy}
+        onPlace={(bot, placement) => void place(bot, placement)}
+        onReplaceManager={(manager, newManagerId) =>
+          void act(() =>
+            client.request("bots.replaceManager", { managerId: manager.id, newManagerId }),
+          )
+        }
       />
       <DeletedBotsList
         bots={deleted}

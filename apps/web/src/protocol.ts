@@ -10,14 +10,26 @@ export type DisplayEntry = {
   readonly error?: string;
 };
 
-export type BotSummary = { id: string; name: string; createdAt: string };
+export type BotSummary = {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** Exactly one bot is "admin": it manages accounts and config and is never on a team. */
+  kind: "admin" | "bot";
+  /** Leads a team (one level: managers have no manager). */
+  manager: boolean;
+  managerId?: string;
+  /** Admin's own model (`provider/modelId`); other bots use the default model role. */
+  model?: string;
+};
 export type DeletedBotSummary = BotSummary & { deletedAt: string };
 
-/** Which bot orchestrates the others; `default` (2+ bots, none chosen) asks the user to confirm. */
-export type OrchestratorStatus = {
-  botId?: string;
-  source: "none" | "single" | "configured" | "default";
-  needsConfirmation: boolean;
+/** First run: sign in to a provider, then pick Admin's model. */
+export type OnboardingStatus = {
+  adminId: string;
+  adminModel?: string;
+  signedIn: boolean;
+  needed: boolean;
 };
 
 export type ThreadSummary = {
@@ -119,21 +131,32 @@ export type ServerMessage =
   | { type: "hello"; version: string }
   | { type: "result"; id: string | number; data: unknown }
   | { type: "error"; id?: string | number; message: string }
+  /** The bot list changed (a bot created one, a team changed): refetch `bots.list`. */
+  | { type: "bots.changed" }
   | EventMessage
   | LoginMessage;
 
 /** Request bodies (without `id`) and the result each one resolves to. */
 export type Requests = {
   "bots.list": { body: Record<never, never>; result: { bots: BotSummary[] } };
-  "bots.create": { body: { name: string }; result: { bot: BotSummary } };
+  "bots.create": { body: { name: string; managerId?: string }; result: { bot: BotSummary } };
   "bots.delete": { body: { botId: string }; result: { deleted: boolean } };
   "bots.listDeleted": { body: Record<never, never>; result: { bots: DeletedBotSummary[] } };
   "bots.restore": {
     body: { botId: string };
     result: { restored: true; bot: BotSummary } | { restored: false };
   };
-  "bots.orchestrator": { body: Record<never, never>; result: OrchestratorStatus };
-  "bots.setOrchestrator": { body: { botId: string }; result: OrchestratorStatus };
+  "bots.setManager": { body: { botId: string; manager: boolean }; result: { bot: BotSummary } };
+  "bots.setTeam": {
+    body: { botId: string; managerId: string | null };
+    result: { bot: BotSummary };
+  };
+  "bots.replaceManager": {
+    body: { managerId: string; newManagerId: string };
+    result: { bot: BotSummary };
+  };
+  "onboarding.status": { body: Record<never, never>; result: OnboardingStatus };
+  "admin.setModel": { body: { model: string }; result: { bot: BotSummary } };
   "conversation.open": {
     body: { botId: string; conversationId?: number };
     result: ConversationSnapshot;
