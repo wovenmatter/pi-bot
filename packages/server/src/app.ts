@@ -1,14 +1,14 @@
+import { copyFile } from "node:fs/promises";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { CredentialStore, Models } from "@earendil-works/pi-ai";
-import { configure } from "@earendil-works/pi-durable";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
-import { createBotHarnessOptions, defaultAgent } from "./agent.ts";
+import { createBotHarnessOptions } from "./agent.ts";
 import { BotManager } from "./bots.ts";
-import { type PiBotConfig, parseModelRef } from "./config.ts";
+import { type ModelRef, type PiBotConfig, parseModelRef } from "./config.ts";
 import { type OpenedCredentialStore, openCredentialStore } from "./credentials/index.ts";
 import { type BotEnvironmentAdapter, DockerEnvironmentAdapter } from "./env.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
+import { ProfileStore, persistProfiles } from "./profiles.ts";
 import { type PiBotServer, type RestartAccepted, startServer } from "./server.ts";
 import { SettingsService } from "./settings/service.ts";
 import { openSharedDatabase } from "./storage/database.ts";
@@ -99,26 +99,46 @@ export async function startPiBot(
         claude: { directory: join(config.paths.dataDir, "claude-agent") },
       });
     if (!options.models) {
-      for (const problem of checkModelRoles(createPiBotModels(credentials.store), config.roles)) {
+      const refs: Record<string, ModelRef> = { "titles.model": config.roles.titles };
+      for (const profile of config.modelProfiles.profiles) {
+        refs[`profiles.${profile.id}.main`] = parseModelRef(profile.main);
+        for (const entry of profile.pool) {
+          refs[`profiles.${profile.id}.pool "${entry.model}"`] = parseModelRef(entry.model);
+        }
+      }
+      for (const problem of checkModelRoles(createPiBotModels(credentials.store), refs)) {
         log(`warning: ${problem}`);
       }
+    }
+    const configPath = config.source;
+    const profiles = new ProfileStore(config.modelProfiles, {
+      ...(configPath ? { persist: (set) => persistProfiles(configPath, set) } : {}),
+      checkModel: (ref) => settings?.checkModel(ref),
+    });
+    if (configPath && Object.keys(config.profiles).length === 0) {
+      // Legacy `[models] orchestrator`/`background`: write them out as `[profiles.default]`.
+      await copyFile(configPath, `${configPath}.pre-profiles.bak`).catch(() => {});
+      await persistProfiles(configPath, profiles.snapshot()).then(
+        () =>
+          log(`config: wrote [models] orchestrator/background as [profiles.${profiles.defaultId}]`),
+        (error: unknown) => log(`config: could not write profiles: ${String(error)}`),
+      );
     }
     const opened = await BotManager.open({
       db,
       ensureAdmin: true,
       onBotsChanged: () => server?.botsChanged(),
-      applyModel: async (bot, model) => {
-        const main = await bot.main();
-        await bot.harness.commit(
-          (tx) => configure(tx, main.id, defaultAgent(parseModelRef(model))),
-          BACKGROUND_CONTEXT,
-        );
-      },
-      harnessOptions: (bot) =>
+      profiles,
+      log,
+      harnessOptions: (bot, self) =>
         createBotHarnessOptions({
           bot,
           models,
-          orchestrator: config.roles.orchestrator,
+          profile: () => profiles.resolve(self.assignedProfile(bot.id)),
+          onSubagent: (event) =>
+            log(
+              `bot ${bot.id}: subagent ${event.phase} on ${event.model}${event.reasoning ? ` (${event.reasoning})` : ""}${event.detail ? `: ${event.detail}` : ""}`,
+            ),
           platform,
           compaction: config.compaction,
           ...(env ? { env } : {}),

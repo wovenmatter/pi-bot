@@ -1,6 +1,7 @@
 import { defineExtension, defineTool, type Extension } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { BotManager } from "./bots.ts";
+import { describeProfile, type ProfileStore } from "./profiles.ts";
 import type { RestartAccepted } from "./server.ts";
 import type { SettingsService } from "./settings/service.ts";
 import type { BotRecord } from "./storage/registry.ts";
@@ -162,8 +163,8 @@ function teamTools(botId: string, platform: BotPlatform) {
   ];
 }
 
-/** Admin Bot only: teams on the user's behalf, its own model, and account/config management. */
-function adminTools(botId: string, platform: BotPlatform) {
+/** Admin Bot only: teams on the user's behalf, model profiles, and account/config management. */
+function adminTools(platform: BotPlatform) {
   const settings = () => {
     const found = platform.settings?.();
     if (!found) throw new Error("settings are not available on this server");
@@ -210,7 +211,7 @@ function adminTools(botId: string, platform: BotPlatform) {
     defineTool({
       name: "settings_status",
       description:
-        "Read the current setup: which provider accounts and search keys are configured (never the secrets), model roles, available models, GitHub key and identity, and whether a restart is pending.",
+        "Read the current setup: which provider accounts and search keys are configured (never the secrets), the title model, available models, GitHub key and identity, and whether a restart is pending. Model profiles: list_profiles.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: () =>
@@ -221,7 +222,6 @@ function adminTools(botId: string, platform: BotPlatform) {
             service.modelCatalog(),
             service.github(),
           ]);
-          const admin = await platform.manager().record(botId);
           return {
             accounts: accounts.accounts.map((a) => ({
               id: a.id,
@@ -232,8 +232,7 @@ function adminTools(botId: string, platform: BotPlatform) {
               provider: accounts.search.provider,
               configured: accounts.search.providers.filter((p) => p.configured).map((p) => p.id),
             },
-            roles: catalog.roles,
-            adminModel: admin.model ?? null,
+            titles: { model: catalog.roles.titles, reasoning: catalog.roles.titlesReasoning },
             models: catalog.providers.map((p) => ({
               provider: p.id,
               models: p.models.map((m) => `${p.id}/${m.id}`),
@@ -257,7 +256,7 @@ function adminTools(botId: string, platform: BotPlatform) {
     defineTool({
       name: "update_config",
       description:
-        'Set values in config.toml, e.g. path ["models","orchestrator"]. Validated before saving; applies after restart_server. Confirm with the user first unless they asked for this change.',
+        'Set values in config.toml, e.g. path ["models","titles","model"]. Use the profile tools for model profiles. Validated before saving; applies after restart_server. Confirm with the user first unless they asked for this change.',
       parameters: Type.Object({
         edits: Type.Array(
           Type.Object({
@@ -285,20 +284,143 @@ function adminTools(botId: string, platform: BotPlatform) {
           return `Restarting (${accepted.mode}); ${accepted.activeWork} live run(s) resume afterwards.`;
         }),
     }),
+    ...profileTools(platform, settings),
+  ];
+}
+
+const poolEntry = Type.Object({
+  model: Type.String({ description: "provider/model-id" }),
+  useFor: Type.String({ description: "What this model is good for, shown to the main model" }),
+  background: Type.Optional(
+    Type.Boolean({ description: "Use it for background work (at most one per profile)" }),
+  ),
+});
+
+/** Admin Bot: model profiles, which bot runs which, and the user's account notes. */
+function profileTools(platform: BotPlatform, settings: () => SettingsService) {
+  const store = (): ProfileStore => {
+    const found = platform.manager().profiles;
+    if (!found) throw new Error("model profiles are not available on this server");
+    return found;
+  };
+  const confirm = "Confirm with the user first unless they asked for this change.";
+  return [
     defineTool({
-      name: "set_my_model",
+      name: "list_profiles",
       description:
-        "Change the model you (Admin Bot) use, as provider/modelId from settings_status. Applies from your next reply.",
-      parameters: Type.Object({ model: Type.String() }),
+        "List the model profiles (main model, pool models with their use-for notes, guidance), which is the default, and which profile each bot runs.",
+      parameters: Type.Object({}),
+      replay: "safe",
+      execute: () =>
+        run(async () => {
+          const profiles = store();
+          const manager = platform.manager();
+          return {
+            defaultProfile: profiles.defaultId,
+            profiles: profiles.list().map((p) => describeProfile(p, profiles.defaultId)),
+            bots: (await manager.list()).map((bot) => ({
+              id: bot.id,
+              name: bot.name,
+              profile: profiles.resolve(bot.profile).id,
+              ...(bot.profile ? {} : { usesDefault: true }),
+            })),
+          };
+        }),
+    }),
+    defineTool({
+      name: "save_profile",
+      description: `Create (create: true) or replace a model profile. main runs the main channel and threads of every bot on it; pool lists the models the main model may hand work to with run_subagent. Models must be listed by settings_status. Changes apply from each bot's next reply. ${confirm}`,
+      parameters: Type.Object({
+        id: Type.String({ description: "lowercase letters, digits, - and _" }),
+        name: Type.String(),
+        main: Type.String({ description: "provider/model-id" }),
+        pool: Type.Array(poolEntry),
+        guidance: Type.Optional(
+          Type.String({ description: "When to use which pool model or reasoning level" }),
+        ),
+        create: Type.Optional(Type.Boolean()),
+      }),
       execute: (args) =>
         run(async () => {
-          settings().checkModel(args.model);
-          await platform.manager().setModel(botId, args.model);
-          return `Admin Bot now uses ${args.model}.`;
+          const service = settings();
+          service.checkModel(args.main);
+          for (const entry of args.pool) service.checkModel(entry.model);
+          const profiles = store();
+          const saved = await profiles.save(
+            {
+              id: args.id,
+              name: args.name,
+              main: args.main,
+              pool: args.pool,
+              ...(args.guidance !== undefined ? { guidance: args.guidance } : {}),
+            },
+            { create: args.create === true },
+          );
+          return describeProfile(saved, profiles.defaultId);
+        }),
+    }),
+    defineTool({
+      name: "delete_profile",
+      description: `Delete a model profile (not the default). Bots on it go back to the default profile. ${confirm}`,
+      parameters: Type.Object({ id: Type.String() }),
+      execute: (args) =>
+        run(async () => {
+          await store().remove(args.id);
+          return `Deleted profile "${args.id}".`;
+        }),
+    }),
+    defineTool({
+      name: "set_default_profile",
+      description: `Make a profile the default: every bot without its own profile, and every new bot, runs it. ${confirm}`,
+      parameters: Type.Object({ id: Type.String() }),
+      execute: (args) =>
+        run(async () => {
+          await store().setDefault(args.id);
+          return `"${args.id}" is now the default profile.`;
+        }),
+    }),
+    defineTool({
+      name: "set_bot_profile",
+      description: `Choose which profile a bot runs (bot ids from list_bots); omit profileId for the default. Applies from the bot's next reply. ${confirm}`,
+      parameters: Type.Object({
+        botId: Type.String(),
+        profileId: Type.Optional(Type.String()),
+      }),
+      execute: (args) =>
+        run(async () => {
+          const record = await platform.manager().setProfile(args.botId, args.profileId);
+          return `${record.name} now runs profile "${store().resolve(record.profile).id}".`;
+        }),
+    }),
+    defineTool({
+      name: "read_account_notes",
+      description:
+        "Read the account notes: the user's subscriptions and tiers, API keys, and rough monthly comfort spend (guidance for model choices, not hard caps).",
+      parameters: Type.Object({}),
+      replay: "safe",
+      execute: () =>
+        run(async () => {
+          const note = await platform.manager().registry.note(ACCOUNT_NOTES);
+          return note ? { notes: note.text, updatedAt: note.updatedAt } : "No account notes yet.";
+        }),
+    }),
+    defineTool({
+      name: "write_account_notes",
+      description:
+        "Replace the account notes with the full text (plans and tiers, API keys by name only, comfort spend). Never include secrets.",
+      parameters: Type.Object({ notes: Type.String() }),
+      execute: (args) =>
+        run(async () => {
+          if (args.notes.length > 8000) throw new Error("account notes are too long (max 8000)");
+          await platform.manager().registry.setNote(ACCOUNT_NOTES, args.notes);
+          return "Saved the account notes.";
         }),
     }),
   ];
 }
+
+/** The account notes record (`pibot_notes`). */
+export const ACCOUNT_NOTES = "account";
 
 /** The `pi-bot-tools` extension for one bot. */
 export function botTools(record: BotRecord, platform: BotPlatform): Extension {
@@ -306,9 +428,7 @@ export function botTools(record: BotRecord, platform: BotPlatform): Extension {
     name: "pi-bot-tools",
     tools: [
       ...commonTools(record.id, platform),
-      ...(record.kind === "admin"
-        ? adminTools(record.id, platform)
-        : teamTools(record.id, platform)),
+      ...(record.kind === "admin" ? adminTools(platform) : teamTools(record.id, platform)),
     ],
   });
 }

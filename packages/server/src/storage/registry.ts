@@ -4,6 +4,8 @@ import type { SqliteDatabase, SqliteExecutor } from "@earendil-works/pi-durable/
 /** Shared tables. Bot tables all start with `pibot_<32 hex>_`, so these can never collide. */
 export const BOTS_TABLE = "pibot_bots";
 export const THREADS_TABLE = "pibot_threads";
+/** Free-text notes, e.g. the user's plans and comfort spend (`account`), which Admin Bot reads. */
+export const NOTES_TABLE = "pibot_notes";
 
 export type BotRecord = {
   readonly id: string;
@@ -17,8 +19,13 @@ export type BotRecord = {
   readonly manager: boolean;
   /** The bot's team manager, if it is on a team. */
   readonly managerId?: string;
-  /** Model the bot's main channel uses, `provider/modelId`; unset: `[models] orchestrator`. */
-  readonly model?: string;
+  /** The model profile the bot runs (`[profiles.<id>]`); unset: the default profile. */
+  readonly profile?: string;
+  /**
+   * Legacy per-bot model override (before profiles), read only by the startup migration that
+   * turns it into a profile assignment.
+   */
+  readonly legacyModel?: string;
 };
 
 export type BotKind = "admin" | "bot";
@@ -49,8 +56,10 @@ type BotRow = {
   is_manager: number;
   manager_id: string | null;
   model: string | null;
+  profile: string | null;
 };
-const BOT_COLUMNS = "id, name, schema_prefix, created_at, kind, is_manager, manager_id, model";
+const BOT_COLUMNS =
+  "id, name, schema_prefix, created_at, kind, is_manager, manager_id, model, profile";
 type ThreadRow = {
   bot_id: string;
   conversation_id: number;
@@ -79,7 +88,8 @@ function toBot(row: BotRow): BotRecord {
     kind: row.kind === "admin" ? "admin" : "bot",
     manager: row.is_manager === 1,
     ...(row.manager_id ? { managerId: row.manager_id } : {}),
-    ...(row.model ? { model: row.model } : {}),
+    ...(row.profile ? { profile: row.profile } : {}),
+    ...(row.model ? { legacyModel: row.model } : {}),
   };
 }
 
@@ -132,6 +142,11 @@ export class BotRegistry {
         created_at TEXT NOT NULL,
         PRIMARY KEY (bot_id, conversation_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS ${NOTES_TABLE} (
+        name TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
     `);
     // Older databases lack later columns: add each missing one (existing bots are plain bots).
     const columns = new Set(
@@ -145,6 +160,7 @@ export class BotRegistry {
       ["is_manager", "INTEGER NOT NULL DEFAULT 0"],
       ["manager_id", "TEXT"],
       ["model", "TEXT"],
+      ["profile", "TEXT"],
     ];
     for (const [name, type] of added) {
       if (!columns.has(name))
@@ -193,8 +209,40 @@ export class BotRegistry {
     );
   }
 
-  async setModel(id: string, model: string | undefined): Promise<void> {
-    await this.#db.run(`UPDATE ${BOTS_TABLE} SET model = ? WHERE id = ?`, model ?? null, id);
+  /** Assign a profile (undefined: the default). */
+  async setProfile(id: string, profile: string | undefined): Promise<void> {
+    await this.#db.run(`UPDATE ${BOTS_TABLE} SET profile = ? WHERE id = ?`, profile ?? null, id);
+  }
+
+  /** Startup migration: the legacy model override was turned into a profile assignment. */
+  async clearLegacyModel(id: string): Promise<void> {
+    await this.#db.run(`UPDATE ${BOTS_TABLE} SET model = NULL WHERE id = ?`, id);
+  }
+
+  /** Every bot (live or deleted) on `profile` goes back to the default profile. */
+  async clearProfile(profile: string): Promise<string[]> {
+    const rows = await this.#db.all<{ id: string }>(
+      `UPDATE ${BOTS_TABLE} SET profile = NULL WHERE profile = ? RETURNING id`,
+      profile,
+    );
+    return rows.map((row) => row.id);
+  }
+
+  async note(name: string): Promise<{ text: string; updatedAt: string } | undefined> {
+    const row = await this.#db.get<{ text: string; updated_at: string }>(
+      `SELECT text, updated_at FROM ${NOTES_TABLE} WHERE name = ?`,
+      name,
+    );
+    return row ? { text: row.text, updatedAt: row.updated_at } : undefined;
+  }
+
+  async setNote(name: string, text: string, at = new Date().toISOString()): Promise<void> {
+    await this.#db.run(
+      `INSERT INTO ${NOTES_TABLE} (name, text, updated_at) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at`,
+      name,
+      text,
+      at,
+    );
   }
 
   /** Live bots only; soft-deleted bots are hidden. */
@@ -225,7 +273,7 @@ export class BotRegistry {
 
   async insert(record: BotRecord): Promise<void> {
     await this.#db.run(
-      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at, kind, is_manager, manager_id, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at, kind, is_manager, manager_id, profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       record.id,
       record.name,
       record.prefix,
@@ -233,7 +281,7 @@ export class BotRegistry {
       record.kind,
       record.manager ? 1 : 0,
       record.managerId ?? null,
-      record.model ?? null,
+      record.profile ?? null,
     );
   }
 

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AuthResult, CredentialStore, Provider } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
@@ -329,36 +330,138 @@ describe("settings over the websocket", () => {
     intruder.close();
   });
 
-  it("onboards Admin Bot: needs a model, then a valid one sets it live", async () => {
-    type Status = { adminId: string; adminModel?: string; signedIn: boolean; needed: boolean };
+  it("migrates legacy model roles to a default profile in config.toml", async () => {
+    const text = await readFile(configPath, "utf8");
+    expect(text).toContain("# my settings");
+    expect(text).toContain("[profiles.default]");
+    expect(text).toContain('main = "faux/faux-1"');
+    expect(text).toContain('default_profile = "default"');
+    expect(text).not.toContain("orchestrator =");
+    expect((await stat(configPath)).mode & 0o777).toBe(0o640);
+    expect(await readFile(`${configPath}.pre-profiles.bak`, "utf8")).toContain("orchestrator =");
+  });
+
+  it("onboards Admin Bot: needs an available main model, then sets it on its profile", async () => {
+    type Status = {
+      adminId: string;
+      profileId: string;
+      mainModel: string;
+      mainModelAvailable: boolean;
+      signedIn: boolean;
+      needed: boolean;
+    };
     const before = await client.request<Status>("onboarding.status");
-    // OPENROUTER_API_KEY counts as signed in; Admin Bot still needs a model.
-    expect(before).toMatchObject({ signedIn: true, needed: true });
-    expect(before.adminModel).toBeUndefined();
-    await expect(client.request("admin.setModel", { model: "openai/missing" })).rejects.toThrow(
-      /unknown model/,
-    );
+    // OPENROUTER_API_KEY counts as signed in; faux/faux-1 is not a signed-in provider's model.
+    expect(before).toMatchObject({
+      signedIn: true,
+      profileId: "default",
+      mainModel: "faux/faux-1",
+      mainModelAvailable: false,
+      needed: true,
+    });
+    await expect(
+      client.request("onboarding.setMainModel", { model: "openai/missing" }),
+    ).rejects.toThrow(/unknown model/);
     await client.request("credentials.set", { accountId: "openai", key: OPENAI_KEY });
-    const { bot } = await client.request<{ bot: { kind: string; model?: string } }>(
-      "admin.setModel",
-      { model: "openai/openai-model" },
-    );
-    expect(bot).toMatchObject({ kind: "admin", model: "openai/openai-model" });
+    await client.request("onboarding.setMainModel", { model: "openai/openai-model" });
     expect(await client.request<Status>("onboarding.status")).toEqual({
       adminId: before.adminId,
-      adminModel: "openai/openai-model",
+      profileId: "default",
+      mainModel: "openai/openai-model",
+      mainModelAvailable: true,
       signedIn: true,
       needed: false,
     });
+    // Live: Admin Bot's main channel runs the new main model, no restart.
+    const admin = await app.manager.get(before.adminId);
+    const agent = await (await admin.main()).agent(BACKGROUND_CONTEXT);
+    expect(agent.model).toEqual({ provider: "openai", modelId: "openai-model" });
+    expect(await readFile(configPath, "utf8")).toContain('main = "openai/openai-model"');
   });
 
-  it("lists models for signed-in providers and writes roles to config.toml", async () => {
+  it("manages profiles, bot assignments and account notes live", async () => {
+    type List = {
+      defaultId: string;
+      profiles: { id: string; name: string; main: string; pool: unknown[] }[];
+    };
+    type Summary = { id: string; profileId: string; profileName: string; defaultProfile: boolean };
+    const initial = await client.request<List>("profiles.list");
+    expect(initial).toMatchObject({ defaultId: "default", profiles: [{ id: "default" }] });
+    await expect(
+      client.request("profiles.save", {
+        create: true,
+        profile: { id: "cheap", name: "Cheap", main: "openai/missing", pool: [] },
+      }),
+    ).rejects.toThrow(/unknown model/);
+    await client.request("credentials.set", { accountId: "openai", key: OPENAI_KEY });
+    const saved = await client.request<List>("profiles.save", {
+      create: true,
+      profile: {
+        id: "cheap",
+        name: "Cheap",
+        main: "openai/openai-model",
+        guidance: "Prefer low reasoning.",
+        pool: [{ model: "openai/openai-model", useFor: "Summaries", background: true }],
+      },
+    });
+    expect(saved.profiles.map((profile) => profile.id)).toEqual(["default", "cheap"]);
+    await expect(
+      client.request("profiles.save", {
+        create: true,
+        profile: { id: "cheap", name: "Again", main: "openai/openai-model", pool: [] },
+      }),
+    ).rejects.toThrow(/already exists/);
+
+    const { bot } = await client.request<{ bot: Summary }>("bots.create", { name: "Worker" });
+    expect(bot).toMatchObject({
+      profileId: "default",
+      profileName: "Default",
+      defaultProfile: true,
+    });
+    const assigned = await client.request<{ bot: Summary }>("bots.setProfile", {
+      botId: bot.id,
+      profileId: "cheap",
+    });
+    expect(assigned.bot).toMatchObject({ profileId: "cheap", profileName: "Cheap" });
+    const worker = await app.manager.get(bot.id);
+    const model = async () => (await (await worker.main()).agent(BACKGROUND_CONTEXT)).model;
+    expect(await model()).toEqual({ provider: "openai", modelId: "openai-model" });
+
+    const text = await readFile(configPath, "utf8");
+    expect(text).toContain("[profiles.cheap]");
+    expect(text).toContain('[profiles.cheap.pool."openai/openai-model"]');
+    expect(text).toContain("background = true");
+    expect(text).toContain("# my settings");
+
+    await expect(client.request("profiles.delete", { profileId: "default" })).rejects.toThrow(
+      /cannot be deleted/,
+    );
+    await client.request("profiles.setDefault", { profileId: "cheap" });
+    await client.request("profiles.setDefault", { profileId: "default" });
+    const after = await client.request<List>("profiles.delete", { profileId: "cheap" });
+    expect(after.profiles.map((profile) => profile.id)).toEqual(["default"]);
+    // Its bots fall back to the default profile, live.
+    const { bots } = await client.request<{ bots: Summary[] }>("bots.list");
+    expect(bots.find((entry) => entry.id === bot.id)).toMatchObject({
+      profileId: "default",
+      defaultProfile: true,
+    });
+    expect(await model()).toEqual({ provider: "faux", modelId: "faux-1" });
+
+    expect(await client.request("account.notes")).toEqual({ notes: "" });
+    await client.request("account.setNotes", { notes: "ChatGPT Pro; ~$100/month on OpenRouter" });
+    expect(await client.request("account.notes")).toMatchObject({
+      notes: "ChatGPT Pro; ~$100/month on OpenRouter",
+    });
+  });
+
+  it("lists models for signed-in providers and writes the title model to config.toml", async () => {
     let catalog = await client.request<{
       providers: { id: string; models: { id: string }[] }[];
       roles: Record<string, string>;
     }>("models.catalog");
     expect(catalog.providers.map((provider) => provider.id).sort()).toEqual(["openrouter"]);
-    expect(catalog.roles).toMatchObject({ orchestrator: "faux/faux-1", titlesReasoning: "high" });
+    expect(catalog.roles).toEqual({ titles: "openai-codex/gpt-6-luna", titlesReasoning: "high" });
 
     await client.request("credentials.set", { accountId: "openai", key: OPENAI_KEY });
     catalog = await client.request("models.catalog");
@@ -366,27 +469,19 @@ describe("settings over the websocket", () => {
       expect.objectContaining({ id: "openai-model" }),
     ]);
 
-    await expect(
-      client.request("models.setRoles", { orchestrator: "openai/missing" }),
-    ).rejects.toThrow(/unknown model/);
+    await expect(client.request("models.setRoles", { titles: "openai/missing" })).rejects.toThrow(
+      /unknown model/,
+    );
     const result = await client.request<{
       roles: Record<string, string>;
       restartRequired: boolean;
-    }>("models.setRoles", {
-      orchestrator: "openai/openai-model",
-      titles: "openai/openai-model",
-      titlesReasoning: "low",
-    });
+    }>("models.setRoles", { titles: "openai/openai-model", titlesReasoning: "low" });
     expect(result).toMatchObject({
       restartRequired: true,
-      roles: {
-        orchestrator: "openai/openai-model",
-        titles: "openai/openai-model",
-        titlesReasoning: "low",
-      },
+      roles: { titles: "openai/openai-model", titlesReasoning: "low" },
     });
     const text = await readFile(configPath, "utf8");
-    expect(text).toContain('orchestrator = "openai/openai-model"   # main');
+    expect(text).toContain('model = "openai/openai-model"');
     expect(text).toContain("# my settings");
     expect((await stat(configPath)).mode & 0o777).toBe(0o640);
     await expect(client.request("models.setRoles", { titlesReasoning: "extreme" })).rejects.toThrow(

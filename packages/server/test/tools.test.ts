@@ -12,7 +12,7 @@ import { ADMIN_PROMPT, createBotHarnessOptions } from "../src/agent.ts";
 import { type Bot, BotManager } from "../src/bots.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
 import { type BotPlatform, MessageLimiter } from "../src/tools.ts";
-import { FAUX_MODEL, tempDir } from "./helpers.ts";
+import { FAUX_MODEL, profileOf, tempDir } from "./helpers.ts";
 
 const ctx = BACKGROUND_CONTEXT;
 
@@ -50,7 +50,7 @@ describe("bot tools", () => {
         db,
         ensureAdmin: true,
         harnessOptions: (bot) =>
-          createBotHarnessOptions({ bot, models, orchestrator: FAUX_MODEL, platform }),
+          createBotHarnessOptions({ bot, models, profile: profileOf(FAUX_MODEL), platform }),
       });
     manager = await openManager();
   });
@@ -83,7 +83,16 @@ describe("bot tools", () => {
     faux.setResponses([reply, reply]);
     await say(await manager.get(admin.id), "hi");
     expect(seen[0]).toContain(JSON.stringify(ADMIN_PROMPT).slice(1, 60));
-    for (const name of ["create_bot", "message_bot", "set_team", "update_config", "set_my_model"]) {
+    for (const name of [
+      "create_bot",
+      "message_bot",
+      "set_team",
+      "update_config",
+      "list_profiles",
+      "save_profile",
+      "set_bot_profile",
+      "write_account_notes",
+    ]) {
       expect(hasTool(seen[0], name)).toBe(true);
     }
     expect(hasTool(seen[0], "my_team")).toBe(false);
@@ -94,7 +103,7 @@ describe("bot tools", () => {
     for (const name of ["create_bot", "list_bots", "message_bot", "my_team"]) {
       expect(hasTool(seen[1], name)).toBe(true);
     }
-    for (const name of ["set_team", "update_config", "restart_server", "set_my_model"]) {
+    for (const name of ["set_team", "update_config", "restart_server", "save_profile"]) {
       expect(hasTool(seen[1], name)).toBe(false);
     }
   });

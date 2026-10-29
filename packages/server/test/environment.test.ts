@@ -25,7 +25,7 @@ import {
 } from "../src/environment/docker.ts";
 import { AgentConnection, RemoteExecutionEnv } from "../src/environment/remote.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
-import { FAUX_MODEL, tempDir } from "./helpers.ts";
+import { FAUX_MODEL, profileOf, tempDir } from "./helpers.ts";
 
 const AGENT = fileURLToPath(new URL("../docker/agent.mjs", import.meta.url));
 const ctx = BACKGROUND_CONTEXT;
@@ -364,7 +364,7 @@ describe("bot tools", () => {
         createBotHarnessOptions({
           bot,
           models,
-          orchestrator: FAUX_MODEL,
+          profile: profileOf(FAUX_MODEL),
           env,
         }),
       onBotDeleted: (bot) => env.dispose(bot.id),

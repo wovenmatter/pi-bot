@@ -8,6 +8,7 @@ import {
   BOTS_TABLE,
   BotRegistry,
   botPrefix,
+  NOTES_TABLE,
   prefixedObjects,
   THREADS_TABLE,
 } from "../src/storage/registry.ts";
@@ -58,7 +59,7 @@ describe("shared storage", () => {
       expect(names).toContain(THREADS_TABLE);
       // Nothing outside the shared tables escapes a bot prefix.
       for (const name of names) {
-        if (name === BOTS_TABLE || name === THREADS_TABLE) continue;
+        if (name === BOTS_TABLE || name === THREADS_TABLE || name === NOTES_TABLE) continue;
         expect(name.startsWith(a.prefix) || name.startsWith(b.prefix), name).toBe(true);
       }
       const aTables = await prefixedObjects(t.db, a.prefix);
@@ -152,8 +153,14 @@ describe("shared storage", () => {
       ]);
       expect(await registry.admin()).toBeUndefined();
       await registry.setTeam(id, { manager: true });
-      await registry.setModel(id, "faux/faux-1");
-      expect(await registry.get(id)).toMatchObject({ manager: true, model: "faux/faux-1" });
+      await registry.setProfile(id, "fast");
+      expect(await registry.get(id)).toMatchObject({ manager: true, profile: "fast" });
+      expect(await registry.clearProfile("fast")).toEqual([id]);
+      expect((await registry.get(id))?.profile).toBeUndefined();
+      expect(await registry.note("account")).toBeUndefined();
+      await registry.setNote("account", "first");
+      await registry.setNote("account", "second");
+      expect(await registry.note("account")).toMatchObject({ text: "second" });
       await registry.setTeam(id, { manager: false });
       expect(await registry.markDeleted(id)).toBe(true);
       expect(await registry.markDeleted(id)).toBe(false);

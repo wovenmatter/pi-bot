@@ -10,10 +10,16 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { createBotHarnessOptions } from "../src/agent.ts";
 import { BotManager, type BotManagerOptions } from "../src/bots.ts";
+import type { ModelRef, Profile } from "../src/config.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
 import type { TitleGenerator } from "../src/titles.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
+
+/** A one-off profile with `main` as its main model. */
+export function profileOf(main: ModelRef, pool: Profile["pool"] = []): Profile {
+  return { id: "default", name: "Default", main: `${main.provider}/${main.modelId}`, pool };
+}
 
 export async function tempDir(): Promise<{ path: string; cleanup: () => Promise<void> }> {
   const path = await mkdtemp(join(tmpdir(), "pi-bot-test-"));
@@ -66,11 +72,12 @@ export async function openTestManager(
   const manager = await BotManager.open({
     db,
     ...managerOptions,
-    harnessOptions: (bot) =>
+    harnessOptions: (bot, self) =>
       createBotHarnessOptions({
         bot,
         models,
-        orchestrator: FAUX_MODEL,
+        profile: () =>
+          self.profiles?.resolve(self.assignedProfile(bot.id)) ?? profileOf(FAUX_MODEL),
       }),
   });
   return {

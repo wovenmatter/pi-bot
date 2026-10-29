@@ -1,7 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ConfigError, isAllowedBindHost, parseConfig, parseModelRef } from "../src/config.ts";
+import {
+  backgroundModel,
+  ConfigError,
+  isAllowedBindHost,
+  type Profile,
+  parseConfig,
+  parseModelRef,
+} from "../src/config.ts";
 
 const minimal = `
 [models]
@@ -14,7 +21,27 @@ describe("config", () => {
     const path = resolve(import.meta.dirname, "../../../config.example.toml");
     const config = parseConfig(await readFile(path, "utf8"), "/tmp/cfg", path);
     expect(config.server).toMatchObject({ host: "127.0.0.1", port: 4317 });
-    expect(config.roles.orchestrator).toEqual({ provider: "openai", modelId: "gpt-6-sol" });
+    expect(config.modelProfiles.defaultId).toBe("default");
+    expect(config.modelProfiles.profiles).toEqual([
+      {
+        id: "default",
+        name: "Default",
+        main: "openai/gpt-6-sol",
+        guidance: "Prefer the cheaper pool models for lookups and summaries.",
+        pool: [
+          {
+            model: "openai/gpt-6-luna",
+            useFor: "Quick lookups, summaries and background work",
+            background: true,
+          },
+          {
+            model: "openrouter/anthropic/claude-sonnet-5",
+            useFor: "Careful writing and code review",
+            background: false,
+          },
+        ],
+      },
+    ]);
     expect(config.roles.titles).toEqual({ provider: "openai-codex", modelId: "gpt-6-luna" });
     expect(config.models.titles.reasoning).toBe("high");
     expect(config.extraction.timezone).toBe("America/New_York");
@@ -31,10 +58,44 @@ describe("config", () => {
     expect(config.paths.keyFile).toBe("/srv/pibot/state/credentials.key");
     expect(config.credentials.backend).toBe("auto");
     expect(config.extraction.schedule).toBe("0 3 * * *");
-    expect(config.roles.background).toEqual({
-      provider: "openrouter",
-      modelId: "anthropic/claude-sonnet-5",
+  });
+
+  it("turns legacy orchestrator/background roles into a default profile", () => {
+    const config = parseConfig(minimal);
+    expect(config.modelProfiles).toEqual({
+      defaultId: "default",
+      profiles: [
+        {
+          id: "default",
+          name: "Default",
+          main: "openai/gpt-6-sol",
+          pool: [
+            {
+              model: "openrouter/anthropic/claude-sonnet-5",
+              useFor: "Background work",
+              background: true,
+            },
+          ],
+        },
+      ],
     });
+    expect(backgroundModel(config.modelProfiles.profiles[0] as Profile)).toBe(
+      "openrouter/anthropic/claude-sonnet-5",
+    );
+  });
+
+  it("validates profiles and the default profile", () => {
+    const profiles = `[models]\ndefault_profile = "fast"\n[profiles.fast]\nname = "Fast"\nmain = "a/b"\n`;
+    const config = parseConfig(profiles);
+    expect(config.modelProfiles.defaultId).toBe("fast");
+    expect(backgroundModel(config.modelProfiles.profiles[0] as Profile)).toBe("a/b");
+    expect(() => parseConfig(`[profiles.fast]\nname = "Fast"\nmain = "a/b"\n`)).not.toThrow();
+    expect(() =>
+      parseConfig(
+        `[models]\ndefault_profile = "nope"\n[profiles.fast]\nname = "F"\nmain = "a/b"\n`,
+      ),
+    ).toThrow(/nope/);
+    expect(() => parseConfig(`[profiles.fast]\nname = "F"\nmain = "gpt"\n`)).toThrow(ConfigError);
   });
 
   it("requires model roles (no hardcoded default model)", () => {

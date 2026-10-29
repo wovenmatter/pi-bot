@@ -10,10 +10,11 @@ import {
 } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { createCompactionRegistry, NativeCompaction } from "./compaction/context.ts";
-import { type ModelRef, parseModelRef, type RawConfig } from "./config.ts";
+import { type ModelRef, type Profile, parseModelRef, type RawConfig } from "./config.ts";
 import type { BotEnvironmentAdapter } from "./env.ts";
 import type { BeforeCompactHook } from "./memory.ts";
 import type { BotRecord } from "./storage/registry.ts";
+import { type SubagentLog, subagentExtension } from "./subagent.ts";
 import { type BotPlatform, botTools } from "./tools.ts";
 
 export type CompactionConfig = RawConfig["compaction"];
@@ -52,8 +53,13 @@ export type BotAgentOptions = {
   readonly bot: BotRecord;
   /** pi-ai models resolving credentials from the shared credential store. */
   readonly models: Models | (() => Models);
-  /** The configured `models.orchestrator` role, unless the bot has its own `model`; never hardcoded. */
-  readonly orchestrator: ModelRef;
+  /**
+   * The bot's model profile, read live: its main model drives the main channel and threads, its
+   * pool backs `run_subagent`. Never hardcoded.
+   */
+  readonly profile: Profile | (() => Profile);
+  /** Server-side log of model choices (subagent runs). */
+  readonly onSubagent?: SubagentLog;
   /** Bot tools (list/create/message bots, teams, Admin Bot's settings); omitted: none. */
   readonly platform?: BotPlatform;
   readonly env?: BotEnvironmentAdapter;
@@ -65,9 +71,9 @@ export type BotAgentOptions = {
   readonly onBeforeCompact?: BeforeCompactHook;
 };
 
-/** The agent every new bot's main channel starts with. Threads inherit it via fork. */
-export function defaultAgent(orchestrator: ModelRef): AgentChange {
-  return { model: { provider: orchestrator.provider, modelId: orchestrator.modelId } };
+/** The agent every new bot's main channel starts with (its profile's main model). Threads inherit it via fork. */
+export function defaultAgent(main: ModelRef): AgentChange {
+  return { model: { provider: main.provider, modelId: main.modelId } };
 }
 
 const CONTAINER =
@@ -75,10 +81,12 @@ const CONTAINER =
 
 /** Admin Bot's standing instructions: account/config management, user's ask = go-ahead. */
 export const ADMIN_PROMPT = `You are Admin Bot, the account and configuration bot of this Pi Bot. You are the only bot whose job is account and config management: provider sign-ins, models, search keys, GitHub, config.toml and restart-and-apply. You also create and organize bots and teams on the user's behalf.
-Before you change config (config.toml edits, model changes, restarts), say exactly what you will change and ask the user to confirm, unless the user already asked for that change: their request is the go-ahead. Do not ask twice.
+Before you change config (config.toml edits, model profiles, restarts), say exactly what you will change and ask the user to confirm, unless the user already asked for that change: their request is the go-ahead. Do not ask twice.
 Sign-ins and keys are entered by the user in Settings (Account & sign-ins, Search, GitHub): point them there. Never ask the user to paste a secret into the chat and never reveal one.
 You are never on a team and never manage one. Deleting and restoring bots is done by the user in the web UI.
-In your first conversation, briefly explain what Pi Bot can do: bots, each with one long-lived main channel and threads forked off any message; tools in each bot's own Linux container when enabled; optional one-level teams, where a manager bot assigns work to its members; and bots messaging each other. Then ask which bots or teams the user wants and create them.`;
+In your first conversation, briefly explain what Pi Bot can do: bots, each with one long-lived main channel and threads forked off any message; tools in each bot's own Linux container when enabled; optional one-level teams, where a manager bot assigns work to its members; and bots messaging each other. Then set up models with the user (below), and ask which bots or teams they want and create them.
+Models work through profiles. A profile has a main model, which runs a bot's main channel and every thread, and a pool of models the main model can hand self-contained work to (run_subagent), each with a short note on what it is good for, plus optional guidance. Background work uses the pool model flagged background, else the main model. Every bot runs one profile; new bots get the default profile, and editing a profile changes every bot on it from its next reply.
+Setting up models: ask which subscriptions and tiers the user has (e.g. ChatGPT, Claude or xAI plans), which API keys (e.g. OpenRouter), and roughly what they are comfortable spending each month. These are guidance for your choices, not hard caps. Save the answers with write_account_notes and read them back (read_account_notes) before later model decisions. Then either propose a complete setup (profiles with main and pool models, which bot runs which) or go step by step, whichever the user prefers, and apply it with the profile tools. Only use models that settings_status lists; if a needed sign-in or key is missing, send the user to Settings first.`;
 
 /** The preamble, read live so team changes apply from the next request. */
 async function preamble(options: BotAgentOptions): Promise<string> {
@@ -88,7 +96,7 @@ async function preamble(options: BotAgentOptions): Promise<string> {
   const platform = options.platform;
   if (!platform) return text;
   text +=
-    "\nYou can create bots when the user asks (create_bot) and message any bot (message_bot). Account and config changes (sign-ins, models, keys, config) are Admin Bot's job: send the user to Admin Bot.";
+    "\nYou can create bots when the user asks (create_bot) and message any bot (message_bot). Account and config changes (sign-ins, keys, model profiles, config) are Admin Bot's job: send the user to Admin Bot.";
   const bots = await platform.manager().list();
   const self = bots.find((bot) => bot.id === options.bot.id);
   if (self?.manager) {
@@ -116,24 +124,36 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     ...(options.onBeforeCompact ? { onBeforeCompact: options.onBeforeCompact } : {}),
     ...(options.onReport ? { onReport: options.onReport } : {}),
   });
+  const profile = () =>
+    typeof options.profile === "function" ? options.profile() : options.profile;
+  // The bot's identity and standing instructions; subagents run without it.
+  const identity = defineExtension({
+    name: "pi-bot-preamble",
+    sections: [section("preamble", () => preamble(options), { tag: false })],
+  });
   const extension = defineExtension({
     name: "pi-bot",
-    sections: [section("preamble", () => preamble(options), { tag: false })],
     // One implementation for the main channel and every thread.
     hooks: [
       { task: "pi.generation", handlers: { beforeRequest: native.beforeRequest } },
       { task: "pi.compaction", handlers: { beforeCompact: native.beforeCompact } },
     ],
   });
-  const registry = createCompactionRegistry();
-  registry.install(extension);
-  if (options.env) registry.install(CodingTools);
   const tools = options.platform ? botTools(options.bot, options.platform) : undefined;
-  if (tools) registry.install(tools);
-  const extensions = [extension, ...(options.env ? [CodingTools] : []), ...(tools ? [tools] : [])];
-  const agent = defaultAgent(
-    options.bot.model ? parseModelRef(options.bot.model) : options.orchestrator,
-  );
+  const subagent = subagentExtension({
+    profile,
+    removeFromChild: [identity, ...(tools ? [tools] : [])],
+    ...(options.onSubagent ? { log: options.onSubagent } : {}),
+  });
+  const extensions = [
+    identity,
+    extension,
+    ...(options.env ? [CodingTools] : []),
+    ...(tools ? [tools] : []),
+    subagent,
+  ];
+  const registry = createCompactionRegistry();
+  for (const installed of extensions) registry.install(installed);
   return {
     models: native.models(),
     registry,
@@ -147,7 +167,7 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     attach: (harness) => native.harness.attach(harness),
     conversationCreated: (tx, conversation) =>
       conversation.owner === undefined && conversation.parent === undefined
-        ? configure(tx, conversation.id, agent)
+        ? configure(tx, conversation.id, defaultAgent(parseModelRef(profile().main)))
         : undefined,
     ...(options.env ? { env: options.env.harnessEnv(options.bot.id) } : {}),
     ...(options.onReport ? { onReport: options.onReport } : {}),

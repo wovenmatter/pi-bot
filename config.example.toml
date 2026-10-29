@@ -12,16 +12,33 @@ port = 4317
 # Shared SQLite database (pi-bot.sqlite, mode 0600) lives here; the directory is created 0700.
 data_dir = "~/.local/share/pi-bot"
 
-# Model roles: provider/model-id from the pi-ai catalog. There is no model picker.
+# Models: provider/model-id from the pi-ai catalog. Every bot runs one model profile; new bots get
+# the default one. Older configs with [models] orchestrator/background still load: they become a
+# "default" profile (the background model as its background pool entry) and are rewritten on start.
 [models]
-orchestrator = "openai/gpt-6-sol"   # main channel and threads
-background = "openai/gpt-6-luna"    # extraction and other background work
+default_profile = "default"
 
 # Thread titles: generated once from a thread's first message with Woven Matter's title prompt.
 # Metadata only (thread listing and search); the UI shows no thread names and threads can't be renamed.
 [models.titles]
 model = "openai-codex/gpt-6-luna"
 reasoning = "high"                  # minimal | low | medium | high | xhigh
+
+# A profile: the main model runs the main channel and every thread; it can hand self-contained
+# tasks to pool models with run_subagent (it picks the model and reasoning level). Background work
+# (extraction etc.) uses the pool entry with background = true, else the main model. Admin Bot
+# and Settings → Profiles edit these; changes apply from each bot's next reply.
+[profiles.default]
+name = "Default"
+main = "openai/gpt-6-sol"
+guidance = "Prefer the cheaper pool models for lookups and summaries."
+
+[profiles.default.pool."openai/gpt-6-luna"]
+use_for = "Quick lookups, summaries and background work"
+background = true
+
+[profiles.default.pool."openrouter/anthropic/claude-sonnet-5"]
+use_for = "Careful writing and code review"
 
 [extraction]
 schedule = "0 3 * * *"              # 5-field cron

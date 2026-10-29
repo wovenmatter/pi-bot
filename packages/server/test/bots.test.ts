@@ -29,7 +29,7 @@ describe("bots", () => {
 
       const main = await (await t.manager.get(alpha.id)).main();
       expect(main.id).toBe(ROOT_CONVERSATION_ID);
-      // The default agent comes from the configured orchestrator role.
+      // The default agent comes from the default profile's main model.
       expect((await main.agent(ctx)).model).toMatchObject(FAUX_MODEL);
     } finally {
       await t.close();

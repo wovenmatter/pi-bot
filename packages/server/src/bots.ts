@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { type Conversation, type ConversationRecord, Harness } from "@earendil-works/pi-durable";
+import {
+  type Conversation,
+  type ConversationRecord,
+  configure,
+  Harness,
+} from "@earendil-works/pi-durable";
 import { type SqliteDatabase, SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
-import type { BotHarnessOptions } from "./agent.ts";
+import { type BotHarnessOptions, defaultAgent } from "./agent.ts";
+import { type ModelRef, parseModelRef } from "./config.ts";
 import { conversationId as toConversationId, entryId as toEntryId } from "./ids.ts";
+import type { ProfileStore } from "./profiles.ts";
 import { sharedDatabaseView } from "./storage/database.ts";
 import {
   type BotRecord,
@@ -61,6 +68,28 @@ export class Bot {
   /** The main channel: the session's root conversation, one long-lived conversation. */
   main(): Promise<Conversation> {
     return this.harness.root(ctx);
+  }
+
+  /**
+   * Point the main channel and every thread at `model` (a profile's main model). Conversations
+   * already on it are left alone; a change applies from each one's next request. Returns how many
+   * conversations changed.
+   */
+  async applyModel(model: ModelRef): Promise<number> {
+    const ids = [(await this.main()).id];
+    for (const thread of await this.#registry.listThreads(this.id)) {
+      ids.push(toConversationId(thread.conversationId));
+    }
+    let changed = 0;
+    for (const id of ids) {
+      const conversation = await this.harness.conversation(id, ctx);
+      if (!conversation) continue;
+      const current = (await conversation.agent(ctx)).model;
+      if (current?.provider === model.provider && current.modelId === model.modelId) continue;
+      await this.harness.commit((tx) => configure(tx, id, defaultAgent(model)), ctx);
+      changed += 1;
+    }
+    return changed;
   }
 
   /** The main channel when `conversationId` is omitted, otherwise one of this bot's threads. */
@@ -241,7 +270,7 @@ export type BotManagerOptions = {
   /** The shared database. The manager never closes it. */
   readonly db: SqliteDatabase;
   /** Harness options for one bot (models, registry, default agent). */
-  readonly harnessOptions: (bot: BotRecord) => BotHarnessOptions;
+  readonly harnessOptions: (bot: BotRecord, manager: BotManager) => BotHarnessOptions;
   readonly onBotClosed?: (bot: BotRecord, reason: string) => void;
   /** After a soft delete: release runtime resources (containers). Never delete bot data. */
   readonly onBotDeleted?: (bot: BotRecord) => Promise<void>;
@@ -256,8 +285,14 @@ export type BotManagerOptions = {
   readonly ensureAdmin?: boolean;
   /** A bot was created, deleted, restored or moved between teams (pushes a refresh to clients). */
   readonly onBotsChanged?: () => void;
-  /** Applies a model to a bot's open main channel (`setModel`); see `agent.ts`. */
-  readonly applyModel?: (bot: Bot, model: string) => Promise<void>;
+  /**
+   * Model profiles. With them, each open bot's main channel and threads follow its profile's main
+   * model (on open, on `setProfile`, and on every profile change), and legacy per-bot model
+   * overrides are migrated to profiles on open.
+   */
+  readonly profiles?: ProfileStore;
+  /** Server-side log lines (model changes, migrations). */
+  readonly log?: (message: string) => void;
 };
 
 /**
@@ -268,6 +303,8 @@ export class BotManager {
   readonly registry: BotRegistry;
   readonly titles: ThreadTitles | undefined;
   readonly #bots = new Map<string, Promise<Bot>>();
+  /** Each live bot's assigned profile id (undefined: the default), kept in step with the registry. */
+  readonly #assigned = new Map<string, string | undefined>();
   #closed = false;
 
   readonly #options: BotManagerOptions;
@@ -283,10 +320,12 @@ export class BotManager {
   static async open(options: BotManagerOptions): Promise<BotManager> {
     const manager = new BotManager(options);
     await manager.registry.migrate();
+    await manager.#migrateLegacyModels();
     if (options.ensureAdmin) {
       if (await manager.registry.admin()) await manager.registry.renameAdmin(ADMIN_NAME);
       else await manager.#insert(ADMIN_NAME, { kind: "admin", manager: false });
     }
+    options.profiles?.onChange(() => manager.#profilesChanged());
     // Live bots only: soft-deleted bots are neither loaded nor recovered.
     for (const record of await manager.registry.list()) await manager.get(record.id);
     return manager;
@@ -294,6 +333,120 @@ export class BotManager {
 
   list(): Promise<BotRecord[]> {
     return this.registry.list();
+  }
+
+  get profiles(): ProfileStore | undefined {
+    return this.#options.profiles;
+  }
+
+  /** The profile id a bot is assigned (undefined: the default profile). */
+  assignedProfile(id: string): string | undefined {
+    return this.#assigned.get(id);
+  }
+
+  /**
+   * Assign a bot a profile (`undefined`: the default). Its main channel and threads switch to the
+   * profile's main model from their next request.
+   */
+  async setProfile(id: string, profileId: string | undefined): Promise<BotRecord> {
+    const profiles = this.#options.profiles;
+    if (!profiles) throw new Error("model profiles are not available");
+    await this.record(id);
+    if (profileId !== undefined && !profiles.get(profileId)) {
+      throw new NotFoundError(`no profile "${profileId}"`);
+    }
+    await this.registry.setProfile(id, profileId);
+    this.#assigned.set(id, profileId);
+    await this.#applyProfile(await this.get(id));
+    this.#options.onBotsChanged?.();
+    return this.record(id);
+  }
+
+  async #applyProfile(bot: Bot): Promise<void> {
+    const profiles = this.#options.profiles;
+    if (!profiles) return;
+    const profile = profiles.resolve(this.#assigned.get(bot.id));
+    const changed = await bot.applyModel(parseModelRef(profile.main));
+    if (changed) {
+      this.#options.log?.(
+        `bot "${bot.record.name}": profile "${profile.id}", main model ${profile.main} (${changed} conversation(s) updated)`,
+      );
+    }
+  }
+
+  /** After any profile change: deleted profiles fall back to the default, then models re-apply. */
+  async #profilesChanged(): Promise<void> {
+    const profiles = this.#options.profiles;
+    if (!profiles || this.#closed) return;
+    for (const [id, profileId] of this.#assigned) {
+      if (profileId !== undefined && !profiles.get(profileId)) this.#assigned.set(id, undefined);
+    }
+    for (const record of await this.registry.list()) {
+      if (record.profile && !profiles.get(record.profile)) {
+        await this.registry.setProfile(record.id, undefined);
+      }
+    }
+    for (const pending of [...this.#bots.values()]) {
+      const bot = await pending.catch(() => undefined);
+      if (bot) await this.#applyProfile(bot).catch((error) => this.#options.onReport?.(error));
+    }
+    this.#options.onBotsChanged?.();
+  }
+
+  /**
+   * Before profiles, a bot could have its own model. Turn each such override into a profile
+   * assignment: a profile whose main model it is, or a new one copying the default's pool.
+   */
+  async #migrateLegacyModels(): Promise<void> {
+    const profiles = this.#options.profiles;
+    if (!profiles) return;
+    for (const record of await this.registry.list()) {
+      const legacy = record.legacyModel;
+      if (!legacy) continue;
+      try {
+        await this.#migrateLegacyModel(profiles, record, legacy);
+      } catch (error) {
+        // Left as is (the bot runs the default profile meanwhile); retried on the next open.
+        this.#options.log?.(
+          `could not migrate bot "${record.name}" model ${legacy}: ${(error as Error).message}`,
+        );
+      }
+    }
+  }
+
+  async #migrateLegacyModel(
+    profiles: ProfileStore,
+    record: BotRecord,
+    legacy: string,
+  ): Promise<void> {
+    if (!record.profile) {
+      const fallback = profiles.resolve(undefined);
+      let target =
+        fallback.main === legacy ? fallback : profiles.list().find((p) => p.main === legacy);
+      if (!target) {
+        const base = record.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        let id = (base || "bot").slice(0, 32);
+        for (let n = 2; profiles.get(id); n += 1) id = `${(base || "bot").slice(0, 32)}-${n}`;
+        target = await profiles.save(
+          {
+            id,
+            name: record.name,
+            main: legacy,
+            pool: fallback.pool.map((entry) => ({ ...entry })),
+            ...(fallback.guidance ? { guidance: fallback.guidance } : {}),
+          },
+          { create: true },
+        );
+      }
+      if (target.id !== profiles.defaultId) await this.registry.setProfile(record.id, target.id);
+      this.#options.log?.(
+        `migrated bot "${record.name}" model ${legacy} to profile "${target.id}"`,
+      );
+    }
+    await this.registry.clearLegacyModel(record.id);
   }
 
   /** The Admin Bot (undefined only without `ensureAdmin`). */
@@ -380,13 +533,15 @@ export class BotManager {
     const storage = await SqliteStorage.open(sharedDatabaseView(this.#options.db), {
       prefix: record.prefix,
     });
-    const { attach, ...options } = this.#options.harnessOptions(record);
+    this.#assigned.set(id, record.profile);
+    const { attach, ...options } = this.#options.harnessOptions(record, this);
     const harness = await Harness.open(storage, options, ctx);
     attach?.(harness);
     const bot = new Bot(record, harness, this.registry, this.titles);
     let report: RecoveryReport;
     try {
       report = await this.#recover(bot);
+      await this.#applyProfile(bot);
     } catch (error) {
       await harness.close(ctx).catch(() => {});
       throw error;
@@ -534,15 +689,6 @@ export class BotManager {
     await this.registry.setTeam(old.id, { manager: false, managerId: next.id });
     this.#options.onBotsChanged?.();
     return this.record(next.id);
-  }
-
-  /** Set the model of a bot's main channel (`provider/modelId`); used for the Admin Bot model. */
-  async setModel(id: string, model: string): Promise<BotRecord> {
-    const bot = await this.get(id);
-    await this.#options.applyModel?.(bot, model);
-    await this.registry.setModel(id, model);
-    this.#options.onBotsChanged?.();
-    return this.record(id);
   }
 
   /**

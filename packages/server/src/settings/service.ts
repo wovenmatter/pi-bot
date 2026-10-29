@@ -60,9 +60,8 @@ export type ModelOption = {
 };
 export type ProviderModels = { readonly id: string; readonly name: string; models: ModelOption[] };
 
+/** The global model settings Settings → Models edits; bots' models are in profiles. */
 export type Roles = {
-  orchestrator: string;
-  background: string;
   titles: string;
   titlesReasoning: string;
 };
@@ -264,6 +263,19 @@ export class SettingsService {
     return (await this.accounts()).accounts.some((account) => account.configured);
   }
 
+  /** Whether `ref` is a model of a provider with working auth (signed in or keyed). */
+  async modelAvailable(ref: string): Promise<boolean> {
+    let parsed: ReturnType<typeof parseModelRef>;
+    try {
+      parsed = parseModelRef(ref);
+    } catch {
+      return false;
+    }
+    return (await this.#models.getAvailable()).some(
+      (model) => model.provider === parsed.provider && model.id === parsed.modelId,
+    );
+  }
+
   /** Throws unless `ref` (`provider/modelId`) is a known model. */
   checkModel(ref: string): void {
     let parsed: ReturnType<typeof parseModelRef>;
@@ -461,8 +473,6 @@ export class SettingsService {
       }
     }
     return {
-      orchestrator: config.models.orchestrator,
-      background: config.models.background,
       titles: config.models.titles.model,
       titlesReasoning: config.models.titles.reasoning,
     };
@@ -478,8 +488,6 @@ export class SettingsService {
       }
       edits.push({ path, value });
     };
-    ref("orchestrator", roles.orchestrator, ["models", "orchestrator"]);
-    ref("background", roles.background, ["models", "background"]);
     ref("titles", roles.titles, ["models", "titles", "model"]);
     if (roles.titlesReasoning !== undefined) {
       edits.push({ path: ["models", "titles", "reasoning"], value: roles.titlesReasoning });

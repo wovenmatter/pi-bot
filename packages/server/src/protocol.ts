@@ -42,9 +42,58 @@ export const requestSchema = z.discriminatedUnion("type", [
     managerId: botId,
     newManagerId: botId,
   }),
-  // First-run onboarding: sign in to a provider, then pick Admin Bot's model.
+  // First-run onboarding: sign in to a provider, then (if Admin Bot's profile's main model is
+  // not available) pick that main model; Admin Bot then sets up profiles in chat.
   z.strictObject({ id: requestId, type: z.literal("onboarding.status") }),
-  z.strictObject({ id: requestId, type: z.literal("admin.setModel"), model: modelRefText }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("onboarding.setMainModel"),
+    model: modelRefText,
+  }),
+  // Model profiles (live, no restart).
+  z.strictObject({ id: requestId, type: z.literal("profiles.list") }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("profiles.save"),
+    create: z.boolean().optional(),
+    profile: z.strictObject({
+      id: z.string().max(40),
+      name: z.string().max(80),
+      main: modelRefText,
+      guidance: z.string().max(4000).optional(),
+      pool: z
+        .array(
+          z.strictObject({
+            model: modelRefText,
+            useFor: z.string().max(500).optional(),
+            background: z.boolean().optional(),
+          }),
+        )
+        .max(50),
+    }),
+  }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("profiles.delete"),
+    profileId: z.string().max(40),
+  }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("profiles.setDefault"),
+    profileId: z.string().max(40),
+  }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("bots.setProfile"),
+    botId: z.string(),
+    profileId: z.string().max(40).nullable(),
+  }),
+  z.strictObject({ id: requestId, type: z.literal("account.notes") }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("account.setNotes"),
+    notes: z.string().max(8000),
+  }),
   z.object({
     id: requestId,
     type: z.literal("conversation.open"),
@@ -106,8 +155,6 @@ export const requestSchema = z.discriminatedUnion("type", [
   z.strictObject({
     id: requestId,
     type: z.literal("models.setRoles"),
-    orchestrator: modelRefText.optional(),
-    background: modelRefText.optional(),
     titles: modelRefText.optional(),
     titlesReasoning: z.string().max(16).optional(),
   }),
@@ -164,15 +211,34 @@ export type BotSummary = {
   kind: "admin" | "bot";
   manager: boolean;
   managerId?: string;
-  model?: string;
+  /** The profile this bot runs (its own or the default). */
+  profileId: string;
+  profileName: string;
+  /** Runs the default profile (no profile of its own). */
+  defaultProfile: boolean;
 };
+
+export type PoolModelSummary = { model: string; useFor: string; background?: boolean };
+export type ProfileSummary = {
+  id: string;
+  name: string;
+  main: string;
+  guidance?: string;
+  pool: PoolModelSummary[];
+  default?: boolean;
+};
+export type ProfilesList = { defaultId: string; profiles: ProfileSummary[] };
 
 export type OnboardingStatus = {
   adminId: string;
-  adminModel?: string;
+  /** Admin Bot's profile and its main model. */
+  profileId: string;
+  mainModel: string;
+  /** The main model belongs to a signed-in (or keyed) provider. */
+  mainModelAvailable: boolean;
   /** Any model provider account is configured. */
   signedIn: boolean;
-  /** Show onboarding: Admin Bot has no model yet or no provider is signed in. */
+  /** Show onboarding: nothing is signed in, or Admin Bot's main model is not available. */
   needed: boolean;
 };
 export type DeletedBotSummary = BotSummary & { deletedAt: string };

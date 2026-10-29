@@ -149,12 +149,24 @@ describe("websocket server", () => {
         createdAt: bot.createdAt,
         kind: "bot",
         manager: false,
+        profileId: "default",
+        profileName: "Default",
+        defaultProfile: true,
         deletedAt: expect.any(String),
       },
     ]);
     expect(await other.request("bots.restore", { botId: bot.id })).toEqual({
       restored: true,
-      bot: { id: bot.id, name: bot.name, createdAt: bot.createdAt, kind: "bot", manager: false },
+      bot: {
+        id: bot.id,
+        name: bot.name,
+        createdAt: bot.createdAt,
+        kind: "bot",
+        manager: false,
+        profileId: "default",
+        profileName: "Default",
+        defaultProfile: true,
+      },
     });
     expect(await other.request("bots.restore", { botId: bot.id })).toEqual({ restored: false });
     expect((await other.request<{ bots: unknown[] }>("bots.listDeleted")).bots).toEqual([]);

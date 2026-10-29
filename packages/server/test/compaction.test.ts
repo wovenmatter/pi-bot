@@ -18,7 +18,7 @@ import {
   frameText,
   type RecordedRequest,
 } from "./fake-providers.ts";
-import { echoModels, FAUX_MODEL, tempDir } from "./helpers.ts";
+import { echoModels, FAUX_MODEL, profileOf, tempDir } from "./helpers.ts";
 
 /**
  * One suite, run against the main channel and against a thread: both use the same compaction
@@ -28,7 +28,7 @@ import { echoModels, FAUX_MODEL, tempDir } from "./helpers.ts";
 const ctx = BACKGROUND_CONTEXT;
 
 const defaults = configSchema.parse({
-  models: { orchestrator: "faux/faux-1", background: "faux/faux-1" },
+  profiles: { default: { name: "Default", main: "faux/faux-1" } },
 }).compaction;
 // Keep only the newest turn so a manual compaction always has something to cover.
 const compaction = { ...defaults, keep_recent_tokens: 1 };
@@ -65,7 +65,7 @@ async function open(
       createBotHarnessOptions({
         bot,
         models: shared,
-        orchestrator,
+        profile: profileOf(orchestrator),
         compaction,
         fetch: fake.fetch,
         onBeforeCompact: async (input) => {
@@ -416,7 +416,7 @@ describe.each(variants)("compaction: $name", ({ thread }) => {
         createBotHarnessOptions({
           bot,
           models,
-          orchestrator: model,
+          profile: profileOf(model),
           // Fake usage reports ~110 tokens per turn; leave 50 before the threshold.
           compaction: {
             ...compaction,
@@ -488,7 +488,7 @@ describe("beforeCompact memory hook", () => {
         createBotHarnessOptions({
           bot,
           models: combinedModels(new FakeProviders(), join(dir.path, "claude-agent")),
-          orchestrator: FAUX_MODEL,
+          profile: profileOf(FAUX_MODEL),
           compaction,
           onBeforeCompact: () => {
             throw new Error("extractor down");

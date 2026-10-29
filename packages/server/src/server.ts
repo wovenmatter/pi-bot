@@ -10,9 +10,12 @@ import type { BotManager } from "./bots.ts";
 import { NotFoundError } from "./bots.ts";
 import { isAllowedBindHost } from "./config.ts";
 import { conversationId as toConversationId } from "./ids.ts";
+import { describeProfile, type ProfileStore } from "./profiles.ts";
 import {
   type BotSummary,
   type ConversationSnapshot,
+  type OnboardingStatus,
+  type ProfilesList,
   type Request,
   requestSchema,
   type ServerMessage,
@@ -21,6 +24,7 @@ import {
 } from "./protocol.ts";
 import type { SettingsService } from "./settings/service.ts";
 import type { BotRecord, ThreadRecord } from "./storage/registry.ts";
+import { ACCOUNT_NOTES } from "./tools.ts";
 import { assistantText, type DisplayEntry, displayEntry } from "./transcript.ts";
 import { VERSION } from "./version.ts";
 
@@ -59,15 +63,21 @@ export type PiBotServer = {
   close(): Promise<void>;
 };
 
-const bot = (record: BotRecord): BotSummary => ({
-  id: record.id,
-  name: record.name,
-  createdAt: record.createdAt,
-  kind: record.kind,
-  manager: record.manager,
-  ...(record.managerId ? { managerId: record.managerId } : {}),
-  ...(record.model ? { model: record.model } : {}),
-});
+/** How clients see a bot: the chat UI shows only its profile's name, never models. */
+const botSummary = (record: BotRecord, profiles: ProfileStore | undefined): BotSummary => {
+  const profile = profiles?.resolve(record.profile);
+  return {
+    id: record.id,
+    name: record.name,
+    createdAt: record.createdAt,
+    kind: record.kind,
+    manager: record.manager,
+    ...(record.managerId ? { managerId: record.managerId } : {}),
+    profileId: profile?.id ?? record.profile ?? "",
+    profileName: profile?.name ?? "",
+    defaultProfile: !record.profile || !profiles?.get(record.profile),
+  };
+};
 
 const thread = (record: ThreadRecord): ThreadSummary => ({
   conversationId: record.conversationId,
@@ -239,6 +249,19 @@ class Connection {
 
   async #handle(request: Request): Promise<unknown> {
     const manager = this.#server.manager;
+    const bot = (record: BotRecord) => botSummary(record, manager.profiles);
+    const profiles = () => {
+      const store = manager.profiles;
+      if (!store) throw new Error("model profiles are not available on this server");
+      return store;
+    };
+    const listProfiles = (): ProfilesList => {
+      const store = profiles();
+      return {
+        defaultId: store.defaultId,
+        profiles: store.list().map((profile) => describeProfile(profile, store.defaultId)),
+      };
+    };
     switch (request.type) {
       case "bots.list":
         return { bots: (await manager.list()).map(bot) };
@@ -277,20 +300,63 @@ class Connection {
       case "onboarding.status": {
         const admin = await manager.admin();
         if (!admin) throw new Error("this server has no Admin Bot");
-        const signedIn = await this.#settings().signedIn();
-        return {
+        const settings = this.#settings();
+        const signedIn = await settings.signedIn();
+        const profile = profiles().resolve(manager.assignedProfile(admin.id));
+        const mainModelAvailable = await settings.modelAvailable(profile.main);
+        const status: OnboardingStatus = {
           adminId: admin.id,
-          ...(admin.model ? { adminModel: admin.model } : {}),
+          profileId: profile.id,
+          mainModel: profile.main,
+          mainModelAvailable,
           signedIn,
-          needed: !signedIn || !admin.model,
+          needed: !signedIn || !mainModelAvailable,
         };
+        return status;
       }
-      case "admin.setModel": {
+      case "onboarding.setMainModel": {
         const admin = await manager.admin();
         if (!admin) throw new Error("this server has no Admin Bot");
         this.#settings().checkModel(request.model);
-        return { bot: bot(await manager.setModel(admin.id, request.model)) };
+        const store = profiles();
+        const profile = store.resolve(manager.assignedProfile(admin.id));
+        const saved = await store.save({ ...profile, main: request.model });
+        return { profile: describeProfile(saved, store.defaultId) };
       }
+      case "profiles.list":
+        return listProfiles();
+      case "profiles.save": {
+        const store = profiles();
+        const { profile, create } = request;
+        await store.save(
+          {
+            id: profile.id,
+            name: profile.name,
+            main: profile.main,
+            pool: profile.pool,
+            ...(profile.guidance !== undefined ? { guidance: profile.guidance } : {}),
+          },
+          { create: create === true },
+        );
+        return listProfiles();
+      }
+      case "profiles.delete":
+        await profiles().remove(request.profileId);
+        return listProfiles();
+      case "profiles.setDefault":
+        await profiles().setDefault(request.profileId);
+        return listProfiles();
+      case "bots.setProfile":
+        return {
+          bot: bot(await manager.setProfile(request.botId, request.profileId ?? undefined)),
+        };
+      case "account.notes": {
+        const note = await manager.registry.note(ACCOUNT_NOTES);
+        return note ? { notes: note.text, updatedAt: note.updatedAt } : { notes: "" };
+      }
+      case "account.setNotes":
+        await manager.registry.setNote(ACCOUNT_NOTES, request.notes);
+        return { saved: true };
       case "settings.accounts":
         return this.#settings().accounts();
       case "credentials.set":

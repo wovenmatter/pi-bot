@@ -61,6 +61,9 @@ function isTimeZone(value: string): boolean {
   }
 }
 
+/** `[profiles.<id>]` keys. */
+export const PROFILE_ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
 const modelRef = z
   .string()
   .regex(MODEL_REF, "expected provider/model-id, e.g. openai/gpt-6-sol")
@@ -83,18 +86,50 @@ export const configSchema = z.strictObject({
       data_dir: z.string().min(1).default("~/.local/share/pi-bot"),
     })
     .prefault({}),
-  /** Model roles. There is deliberately no per-message model picker. */
-  models: z.strictObject({
-    orchestrator: modelRef,
-    background: modelRef,
-    /** Thread titles (metadata for listing and search), generated from a thread's first message. */
-    titles: z
-      .strictObject({
-        model: modelRef.default("openai-codex/gpt-6-luna"),
-        reasoning: z.enum(TITLE_REASONING).default("high"),
-      })
-      .prefault({}),
-  }),
+  /** Global model settings. Bots get their models from `[profiles]`; there is no per-message picker. */
+  models: z
+    .strictObject({
+      /** The profile every bot runs unless it is assigned another (`[profiles.<id>]`). */
+      default_profile: z.string().regex(PROFILE_ID).optional(),
+      /** Legacy: before profiles, the bots' model. Read as the main model of a synthesized default profile. */
+      orchestrator: modelRef.optional(),
+      /** Legacy: the old background role. Read as that profile's pool model for background work. */
+      background: modelRef.optional(),
+      /** Thread titles (metadata for listing and search), generated from a thread's first message. */
+      titles: z
+        .strictObject({
+          model: modelRef.default("openai-codex/gpt-6-luna"),
+          reasoning: z.enum(TITLE_REASONING).default("high"),
+        })
+        .prefault({}),
+    })
+    .prefault({}),
+  /**
+   * Model profiles: a main model for a bot's main channel and threads, plus a pool of models the
+   * main model may hand work to (`run_subagent`). Pool keys are `provider/model-id`.
+   */
+  profiles: z
+    .record(
+      z.string().regex(PROFILE_ID, "profile ids are lowercase letters, digits, - and _"),
+      z.strictObject({
+        name: z.string().trim().min(1).max(80),
+        main: modelRef,
+        /** Free text for the main model: when to use which pool model or reasoning level. */
+        guidance: z.string().max(4000).optional(),
+        pool: z
+          .record(
+            modelRef,
+            z.strictObject({
+              /** What this model is good for, shown to the main model. */
+              use_for: z.string().max(500).default(""),
+              /** Background work (memory extraction and the like) uses this model. */
+              background: z.boolean().default(false),
+            }),
+          )
+          .default({}),
+      }),
+    )
+    .default({}),
   extraction: z
     .strictObject({
       schedule: z
@@ -179,11 +214,76 @@ export type PiBotConfig = RawConfig & {
     readonly webDir?: string;
   };
   readonly roles: {
-    readonly orchestrator: ModelRef;
-    readonly background: ModelRef;
     readonly titles: ModelRef;
   };
+  /** `[profiles]` normalized; legacy `[models] orchestrator`/`background` become a default profile. */
+  readonly modelProfiles: ProfileSet;
 };
+
+/** One pool model the main model may delegate to. */
+export type PoolModel = {
+  readonly model: string;
+  readonly useFor: string;
+  readonly background: boolean;
+};
+
+export type Profile = {
+  readonly id: string;
+  readonly name: string;
+  /** `provider/model-id` of the main channel and every thread. */
+  readonly main: string;
+  readonly guidance?: string;
+  readonly pool: readonly PoolModel[];
+};
+
+export type ProfileSet = {
+  readonly defaultId: string;
+  readonly profiles: readonly Profile[];
+};
+
+/** Profiles from the raw config, synthesizing one from the legacy model roles when there are none. */
+export function normalizeProfiles(raw: RawConfig): ProfileSet {
+  let profiles: Profile[] = Object.entries(raw.profiles).map(([id, value]) => ({
+    id,
+    name: value.name,
+    main: value.main,
+    ...(value.guidance?.trim() ? { guidance: value.guidance.trim() } : {}),
+    pool: Object.entries(value.pool).map(([model, entry]) => ({
+      model,
+      useFor: entry.use_for,
+      background: entry.background,
+    })),
+  }));
+  if (profiles.length === 0) {
+    const { orchestrator, background } = raw.models;
+    if (!orchestrator) {
+      throw new Error(
+        'define a model profile: [profiles.default] with name = "Default" and main = "provider/model-id"',
+      );
+    }
+    profiles = [
+      {
+        id: "default",
+        name: "Default",
+        main: orchestrator,
+        pool:
+          background && background !== orchestrator
+            ? [{ model: background, useFor: "Background work", background: true }]
+            : [],
+      },
+    ];
+  }
+  const defaultId = raw.models.default_profile ?? profiles[0]?.id ?? "default";
+  if (!profiles.some((profile) => profile.id === defaultId)) {
+    throw new Error(`models.default_profile: no profile "${defaultId}"`);
+  }
+  return { defaultId, profiles };
+}
+
+/** The model background work of a profile uses: its pool model flagged `background`, else its main model. */
+export function backgroundModel(profile: Profile): string {
+  return profile.pool.find((entry) => entry.background)?.model ?? profile.main;
+}
 
 export class ConfigError extends Error {
   override name = "ConfigError";
@@ -207,6 +307,14 @@ export function validateConfig(
     );
   }
   const raw = result.data;
+  let modelProfiles: ProfileSet;
+  try {
+    modelProfiles = normalizeProfiles(raw);
+  } catch (error) {
+    throw new ConfigError(
+      `invalid config${source ? ` ${source}` : ""}: ${(error as Error).message}`,
+    );
+  }
   const dataDir = expandPath(raw.storage.data_dir, baseDir);
   return {
     ...raw,
@@ -219,11 +327,8 @@ export function validateConfig(
         : resolve(dataDir, "credentials.key"),
       ...(raw.server.web_dir ? { webDir: expandPath(raw.server.web_dir, baseDir) } : {}),
     },
-    roles: {
-      orchestrator: parseModelRef(raw.models.orchestrator),
-      background: parseModelRef(raw.models.background),
-      titles: parseModelRef(raw.models.titles.model),
-    },
+    roles: { titles: parseModelRef(raw.models.titles.model) },
+    modelProfiles,
   };
 }
 
