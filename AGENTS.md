@@ -47,14 +47,25 @@ the working agreement for every human or agent who changes this repository.
 
 ## Model profiles
 
-- Profiles (`[profiles.<id>]` in config.toml: name, main, pool `{use_for, background}`, guidance)
+- Profiles (`[profiles.<id>]` in config.toml: name, main, `fallbacks` (0–5, ordered), pool `{use_for, background}`, guidance)
   are owned by `ProfileStore` (`profiles.ts`); `[models] default_profile` names the default.
   Bots store only a profile id (`pibot_bots.profile`, null = default). There is no per-bot model
   and no global orchestrator/background role; `[models.titles]` stays global.
 - The main model drives the channel and all threads. Delegation is the `run_subagent` tool
   (`subagent.ts`): a pool model, a task and an optional reasoning level, run in a task-owned child
-  conversation with no `run_subagent` of its own. Failures are returned as tool errors; never add
-  a fallback engine. Background work uses the `background` pool entry, else the main model.
+  conversation with no `run_subagent` of its own. Failures are returned as tool errors (the prompt
+  tells the main model to quietly pick another pool model and say so in one line); pool models
+  never switch automatically. Background work uses the `background` pool entry, else the main model.
+- Main-model fallbacks: `limits.ts` classifies errors (`classifyLimit`, `claudeLimit`) into
+  five_hour / weekly / usage / credits (or rate = normal retry). Never invent a kind or reset:
+  `resetsAt` only from the provider; unknown resets use `LIMIT_COOLDOWN_MS` (15 min) as `retryAt`.
+  `observeLimits` wraps the models runtime with an observing fetch and attaches the HTTP evidence as
+  `message.pibotLimit`; the Claude provider sets it from SDK rate-limit events. The agent's
+  `afterResponse` hook (`limitHook`) calls `BotManager.reportLimit`, which marks `ModelAvailability`
+  (in memory, key `provider/model`, `provider/*` for credits) and re-applies every bot's
+  `effectiveModel(profile)`; if this conversation switched, the error text is rewritten to a
+  retryable one so the turn continues on the fallback. Expiry re-applies (auto-return). Status
+  (`fallback` / `paused` / `returned`, 10 min) is `BotSummary.modelStatus`, pushed via `bots.changed`.
 - Account notes (`pibot_notes`) are guidance for Admin Bot (plans, keys, comfort spend), never
   caps and never secrets. Profile tools are Admin Bot only and follow confirm-unless-asked.
 - Tests use faux providers; never real keys.

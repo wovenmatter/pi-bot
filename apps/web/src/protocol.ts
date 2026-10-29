@@ -24,6 +24,28 @@ export type BotSummary = {
   profileName: string;
   /** Runs the default profile (no profile of its own). */
   defaultProfile: boolean;
+  /** Set while the main model is out (usage limit or credits), and briefly after it returns. */
+  modelStatus?: ModelStatusSummary;
+};
+
+/** A provider limit the server observed. Only what the provider said: no invented resets. */
+export type ModelLimitSummary = {
+  model: string;
+  /** Human label for the provider account, e.g. "ChatGPT account" or "OpenRouter key". */
+  account: string;
+  kind: "five_hour" | "weekly" | "usage" | "credits";
+  /** Epoch ms, only when the provider returned a reset time. */
+  resetsAt?: number;
+  /** Epoch ms when Pi Bot tries the model again (the reset, or a cooldown). */
+  retryAt: number;
+};
+export type ModelStatusSummary = {
+  kind: "fallback" | "paused" | "returned";
+  /** Epoch ms of the change. */
+  at: number;
+  primary: string;
+  active: string;
+  limits: ModelLimitSummary[];
 };
 
 export type PoolModelSummary = { model: string; useFor: string; background?: boolean };
@@ -32,6 +54,8 @@ export type ProfileSummary = {
   id: string;
   name: string;
   main: string;
+  /** Ordered main-model fallbacks (0–5) used when the main model hits a usage limit. */
+  fallbacks?: string[];
   guidance?: string;
   pool: PoolModelSummary[];
   default?: boolean;
@@ -41,6 +65,7 @@ export type ProfileInput = {
   id: string;
   name: string;
   main: string;
+  fallbacks?: string[];
   guidance?: string;
   pool: { model: string; useFor?: string; background?: boolean }[];
 };

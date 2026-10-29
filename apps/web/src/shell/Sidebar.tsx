@@ -52,6 +52,22 @@ export function Sidebar({
         >
           <Icon icon={icon} />
           <span className="rail-title">{bot.name}</span>
+          {bot.modelStatus && bot.modelStatus.kind !== "returned" ? (
+            <span
+              className={`rail-status ${bot.modelStatus.kind}`}
+              role="img"
+              aria-label={
+                bot.modelStatus.kind === "paused"
+                  ? "Paused: main model unavailable"
+                  : `On fallback ${bot.modelStatus.active}`
+              }
+              title={
+                bot.modelStatus.kind === "paused"
+                  ? "Paused: main model unavailable"
+                  : `On fallback ${bot.modelStatus.active}`
+              }
+            />
+          ) : null}
         </a>
         {bot.kind === "admin" ? null : (
           <button

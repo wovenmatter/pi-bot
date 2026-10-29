@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Icon } from "../../components/Icon.tsx";
 import { Loading } from "../../components/ui.tsx";
@@ -115,16 +115,21 @@ type Draft = {
   id: string;
   name: string;
   main: string;
+  fallbacks: { key: number; model: string }[];
   guidance: string;
   pool: { key: number; model: string; useFor: string; background: boolean }[];
 };
 
 let poolKeys = 0;
 
+/** Ordered main-model fallbacks a profile may have. Mirrors the server's MAX_FALLBACKS. */
+export const MAX_FALLBACKS = 5;
+
 const toDraft = (profile?: ProfileSummary): Draft => ({
   id: profile?.id ?? "",
   name: profile?.name ?? "",
   main: profile?.main ?? "",
+  fallbacks: (profile?.fallbacks ?? []).map((model) => ({ key: poolKeys++, model })),
   guidance: profile?.guidance ?? "",
   pool: (profile?.pool ?? []).map((entry) => ({
     key: poolKeys++,
@@ -138,6 +143,7 @@ const toInput = (draft: Draft): ProfileInput => ({
   id: draft.id.trim(),
   name: draft.name.trim(),
   main: draft.main,
+  fallbacks: draft.fallbacks.map((entry) => entry.model).filter(Boolean),
   ...(draft.guidance.trim() ? { guidance: draft.guidance.trim() } : {}),
   pool: draft.pool
     .filter((entry) => entry.model)
@@ -178,6 +184,21 @@ export function ProfileEditor({
             : entry,
       ),
     }));
+
+  const fallbackModels = draft.fallbacks.map((entry) => entry.model).filter(Boolean);
+  const fallbackProblem = fallbackModels.includes(draft.main)
+    ? "A fallback can't be the main model."
+    : new Set(fallbackModels).size < fallbackModels.length
+      ? "Each fallback can appear only once."
+      : undefined;
+  const setFallbacks = (fallbacks: Draft["fallbacks"]) =>
+    setDraft((current) => ({ ...current, fallbacks }));
+  const moveFallback = (index: number, by: number) => {
+    const next = [...draft.fallbacks];
+    const [moved] = next.splice(index, 1);
+    if (moved) next.splice(index + by, 0, moved);
+    setFallbacks(next);
+  };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -226,6 +247,76 @@ export function ProfileEditor({
           disabled={busy}
           onChange={(main) => setDraft({ ...draft, main })}
         />
+      </div>
+      <div className="settings-field profile-pool">
+        <span>
+          Fallbacks
+          <small className="muted">
+            Up to {MAX_FALLBACKS}, tried in order when the main model hits a usage limit or runs out
+            of credits. The bot switches back once the main model resets. None: the bot pauses.
+          </small>
+        </span>
+        <div className="profile-pool-rows">
+          {draft.fallbacks.map((entry, index) => (
+            <div key={entry.key} className="profile-pool-row profile-fallback-row">
+              <small className="muted">{index + 1}.</small>
+              <ModelSelect
+                providers={providers}
+                value={entry.model}
+                label={`Fallback ${index + 1}`}
+                disabled={busy}
+                onChange={(model) =>
+                  setFallbacks(
+                    draft.fallbacks.map((item, at) => (at === index ? { ...item, model } : item)),
+                  )
+                }
+              />
+              <button
+                type="button"
+                className="text-button"
+                aria-label={`Move fallback ${index + 1} up`}
+                disabled={busy || index === 0}
+                onClick={() => moveFallback(index, -1)}
+              >
+                <Icon icon={ArrowUp} size={13} />
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                aria-label={`Move fallback ${index + 1} down`}
+                disabled={busy || index === draft.fallbacks.length - 1}
+                onClick={() => moveFallback(index, 1)}
+              >
+                <Icon icon={ArrowDown} size={13} />
+              </button>
+              <button
+                type="button"
+                className="text-button danger"
+                aria-label={`Remove fallback ${index + 1}`}
+                disabled={busy}
+                onClick={() => setFallbacks(draft.fallbacks.filter((_, at) => at !== index))}
+              >
+                <Icon icon={Trash2} size={13} />
+              </button>
+            </div>
+          ))}
+          {fallbackProblem ? (
+            <small className="profile-fallback-error" role="alert">
+              {fallbackProblem}
+            </small>
+          ) : null}
+          {draft.fallbacks.length < MAX_FALLBACKS ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => setFallbacks([...draft.fallbacks, { key: poolKeys++, model: "" }])}
+            >
+              <Icon icon={Plus} size={13} weight="control" />
+              Add fallback
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="settings-field profile-pool">
         <span>
@@ -309,7 +400,13 @@ export function ProfileEditor({
         <button
           type="submit"
           className="primary"
-          disabled={busy || !draft.name.trim() || !draft.main || (isNew && !draft.id.trim())}
+          disabled={
+            busy ||
+            !draft.name.trim() ||
+            !draft.main ||
+            (isNew && !draft.id.trim()) ||
+            fallbackProblem !== undefined
+          }
         >
           {saving ? "Saving…" : isNew ? "Create profile" : "Save profile"}
         </button>
@@ -378,6 +475,9 @@ export function ProfilesPanel({
                     </strong>
                     <small className="muted">
                       Main <code>{profile.main}</code>
+                      {profile.fallbacks?.length
+                        ? ` · fallbacks: ${profile.fallbacks.join(" → ")}`
+                        : " · no fallbacks"}
                       {profile.pool.length
                         ? ` · pool: ${profile.pool.map((entry) => `${entry.model}${entry.background ? " (background)" : ""}`).join(", ")}`
                         : " · no pool"}

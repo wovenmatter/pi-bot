@@ -276,6 +276,7 @@ default_profile = "default"
 [profiles.default]
 name = "Default"
 main = "openai-codex/gpt-6-sol"
+fallbacks = ["claude-subscription/claude-opus-5-5", "openrouter/openai/gpt-6.1-sol"]  # optional, max 5
 guidance = "Use the cheap pool models for lookups and summaries."
 
 [profiles.default.pool."openai-codex/gpt-6-luna"]
@@ -293,15 +294,53 @@ use_for = "Careful writing and code review"
   main model gets `run_subagent {model, task, reasoning?}`: the task runs on the chosen pool model
   in a separate child conversation (the main model's prompt cache is untouched) and the result
   comes back as the tool result. A failure is returned as a clear error so the main model can pick
-  another; there is no fallback engine.
+  another pool model (it tells you in one line: "I couldn't use X, so I used Y instead").
 - Background work (memory extraction and other quiet jobs) uses the pool entry flagged
   `background = true`, else the main model. Thread titles keep the single global `[models.titles]`.
 - Changes apply from each bot's next turn (breaking its cache is fine). The chat header shows only
   the profile name; the models used, including subagent calls, are logged server-side.
+- **Fallbacks** (see below) only cover the main model.
 - Migration: an old `[models] orchestrator` / `background` config becomes the `default` profile
   (the background model becomes its background pool entry) on first start, with the previous file
   kept as `config.toml.pre-profiles.bak`. A bot's old per-bot model override becomes its own
   profile (e.g. `admin-bot`) unless it matched the default.
+
+### Usage limits and fallbacks
+
+When a main-model request fails, `limits.ts` classifies the error from the provider's own signals
+(status, `x-codex-*` / `anthropic-ratelimit-unified-*` headers, the error body, Claude Agent SDK
+rate-limit events):
+
+| Kind                                   | Example notice                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| 5-hour subscription limit              | Your ChatGPT account hit its 5-hour usage limit. Resets Thu 9:30 PM EDT. |
+| Weekly subscription limit              | Your Claude account hit its weekly usage limit. Resets Mon 3:00 AM EDT.  |
+| Other / unknown usage limit            | This Claude account ran out of usage.                                    |
+| API key out of credits or quota        | Your OpenRouter key ran out of credits.                                  |
+| Transient rate limit (429, overloaded) | none: the normal retry with backoff                                      |
+
+Only what the provider said is shown: a window or reset time is never guessed. Ordinary errors
+never trigger a fallback.
+
+- The model (or, for credits, the whole provider account) is marked unavailable on the server
+  until its reset, or for a ~15-minute cooldown when no reset was given, after which the next
+  request probes it again. The state is in memory, per provider account + model, shared by all
+  bots (a restart forgets it; the next failure re-learns it).
+- Every bot whose profile chain (`main`, then `fallbacks` in order) includes that model moves to the
+  first available one. The failing turn continues on the fallback (Pi Durable's retry re-reads the
+  model). With no fallback, or all out, the bot stays on its main model, paused: its requests keep
+  failing (and act as probes) until the reset.
+- When the main model resets the bots switch back automatically (the prompt cache is rebuilt) and
+  the chat shows a brief "back on <model>" notice. A turn already running finishes its current
+  request on the fallback; the switch applies from the next request.
+- The chat shows a banner above the transcript (what was hit, which account and model, the reset in
+  your local time or "reset time not reported", and the fallback now in use or that the bot is
+  paused); the sidebar shows a dot on affected bots. The status rides on `bots.list`
+  (`modelStatus`), refreshed through `bots.changed`.
+- Pool models (subagents) never switch automatically: the error goes back to the main model, which
+  quietly uses another pool model and tells you in one line.
+- Edit fallbacks in Settings → Profiles (add, remove, reorder, max 5) or ask Admin Bot
+  (`save_profile` takes `fallbacks`). Changing credentials does not clear a marked limit yet.
 
 ### Running as a service
 

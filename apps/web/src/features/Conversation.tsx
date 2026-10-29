@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, CornerUpLeft, GitBranch, MessageSquareReply } from 
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
+import { ModelStatusBanner } from "../components/ModelStatusBanner.tsx";
 import { RichText } from "../components/RichText.tsx";
 import { Empty, ErrorNotice, Loading } from "../components/ui.tsx";
 import type { BotSummary, DisplayEntry, ThreadSummary } from "../protocol.ts";
@@ -42,6 +43,10 @@ export function Conversation({
   const follow = useRef(true);
   const scroll = useRef<HTMLDivElement>(null);
   const pendingKey = useRef(0);
+  /** Model-status notices the reader dismissed, by bot and change time. */
+  const [dismissed, setDismissed] = useState<string>();
+  const status = bot.modelStatus;
+  const statusKey = status ? `${bot.id}:${status.kind}:${status.at}` : undefined;
 
   // Open (and re-open after a reconnect) the conversation; events stream until closed.
   useEffect(() => {
@@ -180,6 +185,11 @@ export function Conversation({
             ) : null}
           </div>
         </header>
+        <ModelStatusBanner
+          status={statusKey !== undefined && statusKey !== dismissed ? status : undefined}
+          botName={bot.name}
+          onDismiss={() => setDismissed(statusKey)}
+        />
         <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
         <div
           className="transcript"

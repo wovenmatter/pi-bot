@@ -27,6 +27,7 @@ describe("config", () => {
         id: "default",
         name: "Default",
         main: "openai/gpt-6-sol",
+        fallbacks: ["claude-subscription/claude-opus-5-5", "openrouter/openai/gpt-6.1-sol"],
         guidance: "Prefer the cheaper pool models for lookups and summaries.",
         pool: [
           {

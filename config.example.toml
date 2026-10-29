@@ -31,6 +31,11 @@ reasoning = "high"                  # minimal | low | medium | high | xhigh
 [profiles.default]
 name = "Default"
 main = "openai/gpt-6-sol"
+# Optional, 0–5 models tried in order when the main model hits a subscription usage limit
+# (5-hour, weekly or other) or its API key runs out of credits. Pi Bot switches back when the
+# main model resets (or retries it after a ~15-minute cooldown when the provider gave no reset).
+# No fallbacks: the bot pauses and the chat says why. Transient rate limits just retry.
+fallbacks = ["claude-subscription/claude-opus-5-5", "openrouter/openai/gpt-6.1-sol"]
 guidance = "Prefer the cheaper pool models for lookups and summaries."
 
 [profiles.default.pool."openai/gpt-6-luna"]
