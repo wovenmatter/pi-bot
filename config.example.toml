@@ -61,11 +61,6 @@ provider = "exa"
 backend = "none"
 # image = "pi-bot-env:latest"   # default: built from packages/server/docker on first use
 
-[bots]
-# The orchestrator bot. With one bot it orchestrates itself; with two or more the first-created
-# bot is the default until confirmed in Settings → Bots (which writes this).
-# orchestrator = "00000000-0000-4000-8000-000000000000"
-
 [credentials]
 # auto = macOS Keychain on a Mac (stubbed in milestone 1, falls back), encrypted SQLite elsewhere.
 backend = "auto"

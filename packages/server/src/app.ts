@@ -1,9 +1,11 @@
 import { join } from "node:path";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { CredentialStore, Models } from "@earendil-works/pi-ai";
+import { configure } from "@earendil-works/pi-durable";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
-import { createBotHarnessOptions } from "./agent.ts";
+import { createBotHarnessOptions, defaultAgent } from "./agent.ts";
 import { BotManager } from "./bots.ts";
-import type { PiBotConfig } from "./config.ts";
+import { type PiBotConfig, parseModelRef } from "./config.ts";
 import { type OpenedCredentialStore, openCredentialStore } from "./credentials/index.ts";
 import { type BotEnvironmentAdapter, DockerEnvironmentAdapter } from "./env.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
@@ -11,6 +13,7 @@ import { type PiBotServer, type RestartAccepted, startServer } from "./server.ts
 import { SettingsService } from "./settings/service.ts";
 import { openSharedDatabase } from "./storage/database.ts";
 import { TitleGenerator } from "./titles.ts";
+import type { BotPlatform } from "./tools.ts";
 
 export type PiBotApp = {
   readonly db: SqliteDatabase;
@@ -66,6 +69,17 @@ export async function startPiBot(
 ): Promise<PiBotApp> {
   const log = options.log ?? ((message: string) => console.error(message));
   let settings: SettingsService | undefined;
+  let server: PiBotServer | undefined;
+  let manager: BotManager | undefined;
+  const platform: BotPlatform = {
+    manager: () => {
+      if (!manager) throw new Error("bots are still starting");
+      return manager;
+    },
+    settings: () => settings,
+    ...(options.restart ? { restart: options.restart } : {}),
+    maxMessagesPerHourPerPair: config.bot_to_bot.max_messages_per_hour_per_pair,
+  };
   const env =
     options.env ??
     (config.environment.backend === "docker"
@@ -89,14 +103,23 @@ export async function startPiBot(
         log(`warning: ${problem}`);
       }
     }
-    const manager = await BotManager.open({
+    const opened = await BotManager.open({
       db,
+      ensureAdmin: true,
+      onBotsChanged: () => server?.botsChanged(),
+      applyModel: async (bot, model) => {
+        const main = await bot.main();
+        await bot.harness.commit(
+          (tx) => configure(tx, main.id, defaultAgent(parseModelRef(model))),
+          BACKGROUND_CONTEXT,
+        );
+      },
       harnessOptions: (bot) =>
         createBotHarnessOptions({
-          botId: bot.id,
-          botName: bot.name,
+          bot,
           models,
           orchestrator: config.roles.orchestrator,
+          platform,
           compaction: config.compaction,
           ...(env ? { env } : {}),
           onReport: (error) => log(`bot ${bot.id}: ${String(error)}`),
@@ -134,6 +157,7 @@ export async function startPiBot(
         if (parts.length) log(`bot ${bot.id} recovery: ${parts.join("; ")}`);
       },
     });
+    manager = opened;
     settings = new SettingsService({
       credentials: credentials.store,
       models: options.settingsModels?.(credentials.store) ?? models,
@@ -146,11 +170,11 @@ export async function startPiBot(
         : {}),
     });
     const reconciled = env?.reconcile
-      ? reconcileWithRetry(env, async () => (await manager.list()).map((bot) => bot.id), log)
+      ? reconcileWithRetry(env, async () => (await opened.list()).map((bot) => bot.id), log)
       : Promise.resolve();
     const webDir = options.webDir ?? config.paths.webDir;
-    const server = await startServer({
-      manager,
+    server = await startServer({
+      manager: opened,
       settings,
       host: config.server.host,
       port: options.port ?? config.server.port,
@@ -162,13 +186,13 @@ export async function startPiBot(
       db,
       credentials,
       models,
-      manager,
+      manager: opened,
       server,
       ...(env ? { env } : {}),
       reconciled,
       async close() {
-        await server.close();
-        await manager.close();
+        await server?.close();
+        await opened.close();
         env?.close?.();
         await db.close();
       },

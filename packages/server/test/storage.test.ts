@@ -129,7 +129,7 @@ describe("shared storage", () => {
     }
   });
 
-  it("adds deleted_at to a registry created before soft delete", async () => {
+  it("adds deleted_at and team columns to a registry created before them", async () => {
     const dbPath = join(dir.path, "pi-bot.sqlite");
     const db = await openSharedDatabase(dbPath);
     const id = "0b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4";
@@ -147,7 +147,14 @@ describe("shared storage", () => {
     try {
       await registry.migrate();
       await registry.migrate();
-      expect((await registry.list()).map((bot) => bot.name)).toEqual(["Old"]);
+      expect(await registry.list()).toEqual([
+        expect.objectContaining({ name: "Old", kind: "bot", manager: false }),
+      ]);
+      expect(await registry.admin()).toBeUndefined();
+      await registry.setTeam(id, { manager: true });
+      await registry.setModel(id, "faux/faux-1");
+      expect(await registry.get(id)).toMatchObject({ manager: true, model: "faux/faux-1" });
+      await registry.setTeam(id, { manager: false });
       expect(await registry.markDeleted(id)).toBe(true);
       expect(await registry.markDeleted(id)).toBe(false);
       expect(await registry.list()).toEqual([]);

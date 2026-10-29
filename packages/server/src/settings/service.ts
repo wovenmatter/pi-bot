@@ -184,41 +184,6 @@ export type SettingsOptions = {
   readonly onGitChanged?: () => void;
 };
 
-/** Settings → Bots: which bot orchestrates the others. */
-export type OrchestratorStatus = {
-  /** Unset only when there are no bots. */
-  readonly botId?: string;
-  /**
-   * `single`: the only bot is its own orchestrator. `configured`: chosen in Settings.
-   * `default`: 2+ bots and none chosen, so the first-created bot is used until the user confirms.
-   */
-  readonly source: "none" | "single" | "configured" | "default";
-  /** True when Settings should ask the user to confirm (or change) the default. */
-  readonly needsConfirmation: boolean;
-};
-
-/** Resolve the orchestrator bot from the live bots (any order) and `[bots] orchestrator`. */
-export function resolveOrchestrator(
-  bots: readonly { readonly id: string; readonly createdAt: string }[],
-  configured: string | undefined,
-): OrchestratorStatus {
-  if (bots.length === 0) return { source: "none", needsConfirmation: false };
-  const [only] = bots;
-  if (bots.length === 1 && only)
-    return { botId: only.id, source: "single", needsConfirmation: false };
-  if (configured && bots.some((bot) => bot.id === configured)) {
-    return { botId: configured, source: "configured", needsConfirmation: false };
-  }
-  const first = [...bots].sort(
-    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
-  )[0];
-  return {
-    ...(first ? { botId: first.id } : {}),
-    source: "default",
-    needsConfirmation: true,
-  };
-}
-
 /**
  * Backs Settings: credential status and writes, provider sign-in sessions, the model catalog,
  * and validated config.toml edits. Secrets are write-only from the UI's point of view.
@@ -292,6 +257,24 @@ export class SettingsService {
         providers: await Promise.all(SEARCH_PROVIDERS.map(status)),
       },
     };
+  }
+
+  /** True once any model provider account (not a search key) is configured. */
+  async signedIn(): Promise<boolean> {
+    return (await this.accounts()).accounts.some((account) => account.configured);
+  }
+
+  /** Throws unless `ref` (`provider/modelId`) is a known model. */
+  checkModel(ref: string): void {
+    let parsed: ReturnType<typeof parseModelRef>;
+    try {
+      parsed = parseModelRef(ref);
+    } catch {
+      throw new SettingsError(`invalid model "${ref}": expected provider/modelId`);
+    }
+    if (!this.#models.getModel(parsed.provider, parsed.modelId)) {
+      throw new SettingsError(`unknown model "${ref}"`);
+    }
   }
 
   async setKey(accountId: string, rawKey: string): Promise<void> {
@@ -511,7 +494,7 @@ export class SettingsService {
     exists: boolean;
     restartRequired: boolean;
     /** Values the structured forms edit: from the file when it parses, else the running config. */
-    effective: Pick<PiBotConfig, "bot_to_bot" | "extraction" | "search" | "git" | "bots">;
+    effective: Pick<PiBotConfig, "bot_to_bot" | "extraction" | "search" | "git">;
   }> {
     const path = this.#config.source;
     const restartRequired = this.#configChanged;
@@ -520,7 +503,6 @@ export class SettingsService {
       extraction: config.extraction,
       search: config.search,
       git: config.git,
-      bots: config.bots,
     });
     if (!path)
       return { text: "", exists: false, restartRequired, effective: effective(this.#config) };
@@ -647,26 +629,6 @@ export class SettingsService {
       ...(effective.git.user_name ? { name: effective.git.user_name } : {}),
       ...(effective.git.user_email ? { email: effective.git.user_email } : {}),
     };
-  }
-
-  async orchestrator(
-    bots: readonly { readonly id: string; readonly createdAt: string }[],
-  ): Promise<OrchestratorStatus> {
-    const { effective } = await this.readConfig();
-    return resolveOrchestrator(bots, effective.bots.orchestrator);
-  }
-
-  /** Confirm or change the orchestrator bot (`[bots] orchestrator`); applies immediately. */
-  async setOrchestrator(
-    botId: string,
-    bots: readonly { readonly id: string; readonly createdAt: string }[],
-  ): Promise<OrchestratorStatus> {
-    if (!bots.some((bot) => bot.id === botId)) throw new SettingsError(`unknown bot ${botId}`);
-    // Read live from config.toml, so this needs no restart.
-    const restartRequired = this.#configChanged;
-    await this.updateConfig([{ path: ["bots", "orchestrator"], value: botId }]);
-    this.#configChanged = restartRequired;
-    return resolveOrchestrator(bots, botId);
   }
 
   async setGitIdentity(identity: { name: string; email: string }): Promise<void> {

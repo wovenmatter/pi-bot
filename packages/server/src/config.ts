@@ -157,12 +157,6 @@ export const configSchema = z.strictObject({
       image: z.string().min(1).optional(),
     })
     .prefault({}),
-  /** Which bot orchestrates the others (Settings → Bots). Unset: the first-created bot. */
-  bots: z
-    .strictObject({
-      orchestrator: z.string().uuid().optional(),
-    })
-    .prefault({}),
   credentials: z
     .strictObject({
       /** `auto`: Keychain on macOS, encrypted SQLite elsewhere. */

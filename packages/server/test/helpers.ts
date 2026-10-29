@@ -68,8 +68,7 @@ export async function openTestManager(
     ...managerOptions,
     harnessOptions: (bot) =>
       createBotHarnessOptions({
-        botId: bot.id,
-        botName: bot.name,
+        bot,
         models,
         orchestrator: FAUX_MODEL,
       }),

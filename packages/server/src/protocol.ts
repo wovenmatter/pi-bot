@@ -12,13 +12,39 @@ const requestId = z.union([z.string().max(64), z.number().int()]);
 /** Client → server requests. Every request carries an `id` echoed in its result or error. */
 export const requestSchema = z.discriminatedUnion("type", [
   z.object({ id: requestId, type: z.literal("bots.list") }),
-  z.object({ id: requestId, type: z.literal("bots.create"), name: z.string().min(1).max(80) }),
+  z.object({
+    id: requestId,
+    type: z.literal("bots.create"),
+    name: z.string().min(1).max(80),
+    managerId: botId.optional(),
+  }),
+  // The Admin bot is rejected: it cannot be deleted.
   z.object({ id: requestId, type: z.literal("bots.delete"), botId }),
-  // User-only, from Settings → Deleted bots. Never exposed to agent or orchestrator tools.
+  // User-only, from Settings → Deleted bots. Never exposed to agent tools.
   z.object({ id: requestId, type: z.literal("bots.listDeleted") }),
   z.object({ id: requestId, type: z.literal("bots.restore"), botId }),
-  z.object({ id: requestId, type: z.literal("bots.orchestrator") }),
-  z.object({ id: requestId, type: z.literal("bots.setOrchestrator"), botId }),
+  // Teams (Settings → Bots). One level: managers have no manager; Admin is never on a team.
+  z.strictObject({
+    id: requestId,
+    type: z.literal("bots.setManager"),
+    botId,
+    manager: z.boolean(),
+  }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("bots.setTeam"),
+    botId,
+    managerId: botId.nullable(),
+  }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("bots.replaceManager"),
+    managerId: botId,
+    newManagerId: botId,
+  }),
+  // First-run onboarding: sign in to a provider, then pick Admin's model.
+  z.strictObject({ id: requestId, type: z.literal("onboarding.status") }),
+  z.strictObject({ id: requestId, type: z.literal("admin.setModel"), model: modelRefText }),
   z.object({
     id: requestId,
     type: z.literal("conversation.open"),
@@ -131,7 +157,24 @@ export const requestSchema = z.discriminatedUnion("type", [
 export type Request = z.infer<typeof requestSchema>;
 export type RequestType = Request["type"];
 
-export type BotSummary = { id: string; name: string; createdAt: string };
+export type BotSummary = {
+  id: string;
+  name: string;
+  createdAt: string;
+  kind: "admin" | "bot";
+  manager: boolean;
+  managerId?: string;
+  model?: string;
+};
+
+export type OnboardingStatus = {
+  adminId: string;
+  adminModel?: string;
+  /** Any model provider account is configured. */
+  signedIn: boolean;
+  /** Show onboarding: Admin has no model yet or no provider is signed in. */
+  needed: boolean;
+};
 export type DeletedBotSummary = BotSummary & { deletedAt: string };
 export type ThreadSummary = {
   conversationId: number;
@@ -166,5 +209,7 @@ export type ServerMessage =
   | { type: "result"; id: string | number; data: unknown }
   | { type: "error"; id?: string | number; message: string }
   | { type: "event"; botId: string; conversationId: number; event: StreamEvent }
+  /** The bot list changed (a bot created one, a team changed): clients refetch `bots.list`. */
+  | { type: "bots.changed" }
   /** Progress of a sign-in started by this connection (`login.start`). */
   | { type: "login"; loginId: string; event: LoginEvent };

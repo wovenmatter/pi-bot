@@ -24,7 +24,6 @@ import {
   volumeName,
 } from "../src/environment/docker.ts";
 import { AgentConnection, RemoteExecutionEnv } from "../src/environment/remote.ts";
-import { resolveOrchestrator } from "../src/settings/service.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
 import { FAUX_MODEL, tempDir } from "./helpers.ts";
 
@@ -363,8 +362,7 @@ describe("bot tools", () => {
       db,
       harnessOptions: (bot) =>
         createBotHarnessOptions({
-          botId: bot.id,
-          botName: bot.name,
+          bot,
           models,
           orchestrator: FAUX_MODEL,
           env,
@@ -386,35 +384,5 @@ describe("bot tools", () => {
       await db.close();
       await dir.cleanup();
     }
-  });
-});
-
-describe("orchestrator bot", () => {
-  const bot = (id: string, createdAt: string) => ({ id, createdAt });
-  it("is the only bot, else the configured one, else the first created (unconfirmed)", () => {
-    expect(resolveOrchestrator([], undefined)).toEqual({
-      source: "none",
-      needsConfirmation: false,
-    });
-    expect(resolveOrchestrator([bot(BOT_A, "2026-01-02")], BOT_B)).toEqual({
-      botId: BOT_A,
-      source: "single",
-      needsConfirmation: false,
-    });
-    const two = [bot(BOT_B, "2026-01-03"), bot(BOT_A, "2026-01-02")];
-    expect(resolveOrchestrator(two, undefined)).toEqual({
-      botId: BOT_A,
-      source: "default",
-      needsConfirmation: true,
-    });
-    expect(resolveOrchestrator(two, BOT_B)).toEqual({
-      botId: BOT_B,
-      source: "configured",
-      needsConfirmation: false,
-    });
-    // A configured bot that was deleted falls back to the default and asks again.
-    expect(resolveOrchestrator(two, "33333333-3333-4333-8333-333333333333").needsConfirmation).toBe(
-      true,
-    );
   });
 });

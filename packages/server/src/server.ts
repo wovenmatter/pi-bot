@@ -54,6 +54,8 @@ export type RestartAccepted = {
 export type PiBotServer = {
   readonly url: string;
   readonly port: number;
+  /** Tell every client the bot list changed. */
+  botsChanged(): void;
   close(): Promise<void>;
 };
 
@@ -61,6 +63,10 @@ const bot = (record: BotRecord): BotSummary => ({
   id: record.id,
   name: record.name,
   createdAt: record.createdAt,
+  kind: record.kind,
+  manager: record.manager,
+  ...(record.managerId ? { managerId: record.managerId } : {}),
+  ...(record.model ? { model: record.model } : {}),
 });
 
 const thread = (record: ThreadRecord): ThreadSummary => ({
@@ -237,7 +243,14 @@ class Connection {
       case "bots.list":
         return { bots: (await manager.list()).map(bot) };
       case "bots.create":
-        return { bot: bot(await manager.create(request.name)) };
+        return {
+          bot: bot(
+            await manager.create(
+              request.name,
+              request.managerId ? { managerId: request.managerId } : {},
+            ),
+          ),
+        };
       case "bots.delete": {
         for (const connection of this.#server.connections) {
           await connection.unsubscribeBot(request.botId);
@@ -255,10 +268,29 @@ class Connection {
         const restored = await manager.restore(request.botId);
         return restored ? { restored: true, bot: bot(restored) } : { restored: false };
       }
-      case "bots.orchestrator":
-        return this.#settings().orchestrator(await manager.list());
-      case "bots.setOrchestrator":
-        return this.#settings().setOrchestrator(request.botId, await manager.list());
+      case "bots.setManager":
+        return { bot: bot(await manager.setManager(request.botId, request.manager)) };
+      case "bots.setTeam":
+        return { bot: bot(await manager.setTeam(request.botId, request.managerId ?? undefined)) };
+      case "bots.replaceManager":
+        return { bot: bot(await manager.replaceManager(request.managerId, request.newManagerId)) };
+      case "onboarding.status": {
+        const admin = await manager.admin();
+        if (!admin) throw new Error("this server has no Admin bot");
+        const signedIn = await this.#settings().signedIn();
+        return {
+          adminId: admin.id,
+          ...(admin.model ? { adminModel: admin.model } : {}),
+          signedIn,
+          needed: !signedIn || !admin.model,
+        };
+      }
+      case "admin.setModel": {
+        const admin = await manager.admin();
+        if (!admin) throw new Error("this server has no Admin bot");
+        this.#settings().checkModel(request.model);
+        return { bot: bot(await manager.setModel(admin.id, request.model)) };
+      }
       case "settings.accounts":
         return this.#settings().accounts();
       case "credentials.set":
@@ -464,6 +496,9 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
   return {
     url,
     port,
+    botsChanged() {
+      for (const connection of state.connections) connection.send({ type: "bots.changed" });
+    },
     async close() {
       await Promise.all([...state.connections].map((connection) => connection.dispose()));
       for (const client of wss.clients) client.terminate();

@@ -11,7 +11,17 @@ export type BotRecord = {
   /** Table prefix of this bot's Pi Durable session, `pibot_<id without dashes>_`. */
   readonly prefix: string;
   readonly createdAt: string;
+  /** `admin`: the one built-in account/config bot (never deleted, renamed or on a team). */
+  readonly kind: BotKind;
+  /** Manages a team (one level: a manager has no manager). */
+  readonly manager: boolean;
+  /** The bot's team manager, if it is on a team. */
+  readonly managerId?: string;
+  /** Model the bot's main channel uses, `provider/modelId`; unset: `[models] orchestrator`. */
+  readonly model?: string;
 };
+
+export type BotKind = "admin" | "bot";
 
 /** A soft-deleted bot, as listed in Settings → Deleted bots. */
 export type DeletedBotRecord = BotRecord & { readonly deletedAt: string };
@@ -30,7 +40,17 @@ export type ThreadRecord = {
   readonly createdAt: string;
 };
 
-type BotRow = { id: string; name: string; schema_prefix: string; created_at: string };
+type BotRow = {
+  id: string;
+  name: string;
+  schema_prefix: string;
+  created_at: string;
+  kind: string;
+  is_manager: number;
+  manager_id: string | null;
+  model: string | null;
+};
+const BOT_COLUMNS = "id, name, schema_prefix, created_at, kind, is_manager, manager_id, model";
 type ThreadRow = {
   bot_id: string;
   conversation_id: number;
@@ -51,7 +71,16 @@ export function botPrefix(botId: string): string {
 }
 
 function toBot(row: BotRow): BotRecord {
-  return { id: row.id, name: row.name, prefix: row.schema_prefix, createdAt: row.created_at };
+  return {
+    id: row.id,
+    name: row.name,
+    prefix: row.schema_prefix,
+    createdAt: row.created_at,
+    kind: row.kind === "admin" ? "admin" : "bot",
+    manager: row.is_manager === 1,
+    ...(row.manager_id ? { managerId: row.manager_id } : {}),
+    ...(row.model ? { model: row.model } : {}),
+  };
 }
 
 function toThread(row: ThreadRow): ThreadRecord {
@@ -104,17 +133,65 @@ export class BotRegistry {
         PRIMARY KEY (bot_id, conversation_id)
       ) STRICT;
     `);
-    // Databases from before soft delete lack `deleted_at`.
-    const columns = await this.#db.all<{ name: string }>(`PRAGMA table_info(${BOTS_TABLE})`);
-    if (!columns.some((column) => column.name === "deleted_at")) {
-      await this.#db.exec(`ALTER TABLE ${BOTS_TABLE} ADD COLUMN deleted_at TEXT`);
+    // Older databases lack later columns: add each missing one (existing bots are plain bots).
+    const columns = new Set(
+      (await this.#db.all<{ name: string }>(`PRAGMA table_info(${BOTS_TABLE})`)).map(
+        (column) => column.name,
+      ),
+    );
+    const added: [string, string][] = [
+      ["deleted_at", "TEXT"],
+      ["kind", "TEXT NOT NULL DEFAULT 'bot'"],
+      ["is_manager", "INTEGER NOT NULL DEFAULT 0"],
+      ["manager_id", "TEXT"],
+      ["model", "TEXT"],
+    ];
+    for (const [name, type] of added) {
+      if (!columns.has(name))
+        await this.#db.exec(`ALTER TABLE ${BOTS_TABLE} ADD COLUMN ${name} ${type}`);
     }
+    // At most one Admin bot.
+    await this.#db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS pibot_bots_one_admin ON ${BOTS_TABLE}(kind) WHERE kind = 'admin'`,
+    );
+  }
+
+  /** The Admin bot, live or not; undefined before it is created. */
+  async admin(): Promise<BotRecord | undefined> {
+    const row = await this.#db.get<BotRow>(
+      `SELECT ${BOT_COLUMNS} FROM ${BOTS_TABLE} WHERE kind = 'admin'`,
+    );
+    return row ? toBot(row) : undefined;
+  }
+
+  /** Set or clear a bot's manager flag and team (no rule checks: see `BotManager`). */
+  async setTeam(id: string, team: { manager: boolean; managerId?: string }): Promise<void> {
+    await this.#db.run(
+      `UPDATE ${BOTS_TABLE} SET is_manager = ?, manager_id = ? WHERE id = ?`,
+      team.manager ? 1 : 0,
+      team.managerId ?? null,
+      id,
+    );
+  }
+
+  /** Move every member of `managerId`'s team to `to` (undefined: off any team). */
+  async moveMembers(managerId: string, to: string | undefined, except?: string): Promise<void> {
+    await this.#db.run(
+      `UPDATE ${BOTS_TABLE} SET manager_id = ? WHERE manager_id = ? AND id != ?`,
+      to ?? null,
+      managerId,
+      except ?? "",
+    );
+  }
+
+  async setModel(id: string, model: string | undefined): Promise<void> {
+    await this.#db.run(`UPDATE ${BOTS_TABLE} SET model = ? WHERE id = ?`, model ?? null, id);
   }
 
   /** Live bots only; soft-deleted bots are hidden. */
   async list(): Promise<BotRecord[]> {
     const rows = await this.#db.all<BotRow>(
-      `SELECT id, name, schema_prefix, created_at FROM ${BOTS_TABLE} WHERE deleted_at IS NULL ORDER BY created_at, id`,
+      `SELECT ${BOT_COLUMNS} FROM ${BOTS_TABLE} WHERE deleted_at IS NULL ORDER BY created_at, id`,
     );
     return rows.map(toBot);
   }
@@ -122,7 +199,7 @@ export class BotRegistry {
   /** A live bot; undefined for an unknown or soft-deleted one. */
   async get(id: string): Promise<BotRecord | undefined> {
     const row = await this.#db.get<BotRow>(
-      `SELECT id, name, schema_prefix, created_at FROM ${BOTS_TABLE} WHERE id = ? AND deleted_at IS NULL`,
+      `SELECT ${BOT_COLUMNS} FROM ${BOTS_TABLE} WHERE id = ? AND deleted_at IS NULL`,
       id,
     );
     return row ? toBot(row) : undefined;
@@ -139,11 +216,15 @@ export class BotRegistry {
 
   async insert(record: BotRecord): Promise<void> {
     await this.#db.run(
-      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at) VALUES (?, ?, ?, ?)`,
+      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at, kind, is_manager, manager_id, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       record.id,
       record.name,
       record.prefix,
       record.createdAt,
+      record.kind,
+      record.manager ? 1 : 0,
+      record.managerId ?? null,
+      record.model ?? null,
     );
   }
 
@@ -165,7 +246,7 @@ export class BotRegistry {
   /** Soft-deleted bots, most recently deleted first. */
   async listDeleted(): Promise<DeletedBotRecord[]> {
     const rows = await this.#db.all<BotRow & { deleted_at: string }>(
-      `SELECT id, name, schema_prefix, created_at, deleted_at FROM ${BOTS_TABLE} WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id`,
+      `SELECT ${BOT_COLUMNS}, deleted_at FROM ${BOTS_TABLE} WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id`,
     );
     return rows.map((row) => ({ ...toBot(row), deletedAt: row.deleted_at }));
   }

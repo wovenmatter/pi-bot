@@ -329,6 +329,29 @@ describe("settings over the websocket", () => {
     intruder.close();
   });
 
+  it("onboards Admin: needs a model, then a valid one sets it live", async () => {
+    type Status = { adminId: string; adminModel?: string; signedIn: boolean; needed: boolean };
+    const before = await client.request<Status>("onboarding.status");
+    // OPENROUTER_API_KEY counts as signed in; Admin still needs a model.
+    expect(before).toMatchObject({ signedIn: true, needed: true });
+    expect(before.adminModel).toBeUndefined();
+    await expect(client.request("admin.setModel", { model: "openai/missing" })).rejects.toThrow(
+      /unknown model/,
+    );
+    await client.request("credentials.set", { accountId: "openai", key: OPENAI_KEY });
+    const { bot } = await client.request<{ bot: { kind: string; model?: string } }>(
+      "admin.setModel",
+      { model: "openai/openai-model" },
+    );
+    expect(bot).toMatchObject({ kind: "admin", model: "openai/openai-model" });
+    expect(await client.request<Status>("onboarding.status")).toEqual({
+      adminId: before.adminId,
+      adminModel: "openai/openai-model",
+      signedIn: true,
+      needed: false,
+    });
+  });
+
   it("lists models for signed-in providers and writes roles to config.toml", async () => {
     let catalog = await client.request<{
       providers: { id: string; models: { id: string }[] }[];

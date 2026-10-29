@@ -33,6 +33,13 @@ export class NotFoundError extends Error {
   override name = "NotFoundError";
 }
 
+/** A request that breaks a bot rule (Admin is locked; teams are one level deep). */
+export class BotRuleError extends Error {
+  override name = "BotRuleError";
+}
+
+export const ADMIN_NAME = "Admin";
+
 /** One bot: one Pi Durable session (Harness) over its prefixed tables in the shared database. */
 export class Bot {
   readonly record: BotRecord;
@@ -245,6 +252,12 @@ export type BotManagerOptions = {
   readonly onReport?: (error: unknown) => void;
   /** Called once per opened bot with what startup recovery found. */
   readonly onRecovered?: (bot: BotRecord, report: RecoveryReport) => void;
+  /** Create the Admin bot on open when there is none (the app does; most tests do not). */
+  readonly ensureAdmin?: boolean;
+  /** A bot was created, deleted, restored or moved between teams (pushes a refresh to clients). */
+  readonly onBotsChanged?: () => void;
+  /** Applies a model to a bot's open main channel (`setModel`); see `agent.ts`. */
+  readonly applyModel?: (bot: Bot, model: string) => Promise<void>;
 };
 
 /**
@@ -270,6 +283,9 @@ export class BotManager {
   static async open(options: BotManagerOptions): Promise<BotManager> {
     const manager = new BotManager(options);
     await manager.registry.migrate();
+    if (options.ensureAdmin && !(await manager.registry.admin())) {
+      await manager.#insert(ADMIN_NAME, { kind: "admin", manager: false });
+    }
     // Live bots only: soft-deleted bots are neither loaded nor recovered.
     for (const record of await manager.registry.list()) await manager.get(record.id);
     return manager;
@@ -279,7 +295,45 @@ export class BotManager {
     return this.registry.list();
   }
 
-  async create(name: string): Promise<BotRecord> {
+  /** The Admin bot (undefined only without `ensureAdmin`). */
+  admin(): Promise<BotRecord | undefined> {
+    return this.registry.admin();
+  }
+
+  /** A live bot's record, or a NotFoundError. */
+  async record(id: string): Promise<BotRecord> {
+    const record = await this.registry.get(id);
+    if (!record) throw new NotFoundError(`no bot ${id}`);
+    return record;
+  }
+
+  /**
+   * Create a bot. With `managerId` it joins that manager's team. `createdBy` is the bot that
+   * asked for it (an agent tool): a bot created by a manager or a team member joins that team.
+   */
+  async create(
+    name: string,
+    options: { readonly managerId?: string; readonly createdBy?: string } = {},
+  ): Promise<BotRecord> {
+    let managerId = options.managerId;
+    if (managerId === undefined && options.createdBy) {
+      const creator = await this.record(options.createdBy);
+      managerId = creator.manager ? creator.id : creator.managerId;
+    }
+    if (managerId !== undefined) await this.#requireManager(managerId);
+    const record = await this.#insert(name, {
+      kind: "bot",
+      manager: false,
+      ...(managerId ? { managerId } : {}),
+    });
+    this.#options.onBotsChanged?.();
+    return record;
+  }
+
+  async #insert(
+    name: string,
+    team: Pick<BotRecord, "kind" | "manager" | "managerId">,
+  ): Promise<BotRecord> {
     const trimmed = name.trim();
     if (!trimmed) throw new Error("bot name is required");
     if (trimmed.length > 80) throw new Error("bot name is too long");
@@ -289,6 +343,7 @@ export class BotManager {
       name: trimmed,
       prefix: botPrefix(id),
       createdAt: new Date().toISOString(),
+      ...team,
     };
     await this.registry.insert(record);
     try {
@@ -383,7 +438,12 @@ export class BotManager {
   async delete(id: string): Promise<boolean> {
     const record = await this.registry.get(id);
     if (!record) return false;
+    if (record.kind === "admin") throw new BotRuleError("the Admin bot cannot be deleted");
     if (!(await this.registry.markDeleted(id))) return false;
+    // Deleting a manager ungroups its team; a deleted bot comes back on no team.
+    if (record.manager) await this.registry.moveMembers(id, undefined);
+    await this.registry.setTeam(id, { manager: false });
+    this.#options.onBotsChanged?.();
     const open = this.#bots.get(id);
     this.#bots.delete(id);
     if (open) {
@@ -410,7 +470,78 @@ export class BotManager {
     if (!(await this.registry.restore(id))) return undefined;
     const bot = await this.get(id);
     await this.#options.onBotRestored?.(bot.record);
-    return bot.record;
+    this.#options.onBotsChanged?.();
+    return this.record(id);
+  }
+
+  async #requireManager(id: string): Promise<BotRecord> {
+    const manager = await this.registry.get(id);
+    if (!manager) throw new NotFoundError(`no bot ${id}`);
+    if (!manager.manager) throw new BotRuleError(`${manager.name} is not a manager`);
+    return manager;
+  }
+
+  async #requireTeamable(id: string): Promise<BotRecord> {
+    const record = await this.record(id);
+    if (record.kind === "admin") throw new BotRuleError("the Admin bot is never on a team");
+    return record;
+  }
+
+  /**
+   * Promote a bot to manager (it leaves any team it was on: managers have no manager) or demote
+   * it (its team is ungrouped).
+   */
+  async setManager(id: string, manager: boolean): Promise<BotRecord> {
+    const record = await this.#requireTeamable(id);
+    if (manager) {
+      await this.registry.setTeam(id, { manager: true });
+    } else if (record.manager) {
+      await this.registry.moveMembers(id, undefined);
+      await this.registry.setTeam(id, { manager: false });
+    }
+    this.#options.onBotsChanged?.();
+    return this.record(id);
+  }
+
+  /** Put a bot on `managerId`'s team, or off any team with `undefined`. */
+  async setTeam(id: string, managerId: string | undefined): Promise<BotRecord> {
+    const record = await this.#requireTeamable(id);
+    if (managerId !== undefined) {
+      if (record.manager) throw new BotRuleError(`${record.name} is a manager; demote it first`);
+      if (managerId === id) throw new BotRuleError("a bot cannot manage itself");
+      await this.#requireManager(managerId);
+    }
+    await this.registry.setTeam(id, {
+      manager: record.manager,
+      ...(managerId ? { managerId } : {}),
+    });
+    this.#options.onBotsChanged?.();
+    return this.record(id);
+  }
+
+  /**
+   * Give a team a new manager: `newManagerId` is promoted and takes over every member, and the old
+   * manager stays on the team as a member.
+   */
+  async replaceManager(managerId: string, newManagerId: string): Promise<BotRecord> {
+    const old = await this.#requireManager(managerId);
+    const next = await this.#requireTeamable(newManagerId);
+    if (next.id === old.id) return old;
+    if (next.manager) throw new BotRuleError(`${next.name} already manages a team`);
+    await this.registry.setTeam(next.id, { manager: true });
+    await this.registry.moveMembers(old.id, next.id, next.id);
+    await this.registry.setTeam(old.id, { manager: false, managerId: next.id });
+    this.#options.onBotsChanged?.();
+    return this.record(next.id);
+  }
+
+  /** Set the model of a bot's main channel (`provider/modelId`); used for the Admin model. */
+  async setModel(id: string, model: string): Promise<BotRecord> {
+    const bot = await this.get(id);
+    await this.#options.applyModel?.(bot, model);
+    await this.registry.setModel(id, model);
+    this.#options.onBotsChanged?.();
+    return this.record(id);
   }
 
   /**

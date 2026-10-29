@@ -63,8 +63,7 @@ async function open(
     db,
     harnessOptions: (bot) =>
       createBotHarnessOptions({
-        botId: bot.id,
-        botName: bot.name,
+        bot,
         models: shared,
         orchestrator,
         compaction,
@@ -415,8 +414,7 @@ describe.each(variants)("compaction: $name", ({ thread }) => {
       db,
       harnessOptions: (bot) =>
         createBotHarnessOptions({
-          botId: bot.id,
-          botName: bot.name,
+          bot,
           models,
           orchestrator: model,
           // Fake usage reports ~110 tokens per turn; leave 50 before the threshold.
@@ -488,8 +486,7 @@ describe("beforeCompact memory hook", () => {
       db,
       harnessOptions: (bot) =>
         createBotHarnessOptions({
-          botId: bot.id,
-          botName: bot.name,
+          bot,
           models: combinedModels(new FakeProviders(), join(dir.path, "claude-agent")),
           orchestrator: FAUX_MODEL,
           compaction,

@@ -41,8 +41,10 @@ describe("websocket server", () => {
         name: "Scout",
       },
     );
+    // Admin always exists and is listed first (oldest).
     expect((await client.request<{ bots: { id: string }[] }>("bots.list")).bots).toEqual([
-      expect.objectContaining({ id: bot.id, name: "Scout" }),
+      expect.objectContaining({ name: "Admin", kind: "admin", manager: false }),
+      expect.objectContaining({ id: bot.id, name: "Scout", kind: "bot", manager: false }),
     ]);
 
     const main = await client.request<ConversationSnapshot>("conversation.open", {
@@ -129,7 +131,9 @@ describe("websocket server", () => {
     expect(mainAgain.entries).toHaveLength(4);
 
     expect(await other.request("bots.delete", { botId: bot.id })).toEqual({ deleted: true });
-    expect((await other.request<{ bots: unknown[] }>("bots.list")).bots).toEqual([]);
+    expect((await other.request<{ bots: { name: string }[] }>("bots.list")).bots).toEqual([
+      expect.objectContaining({ name: "Admin" }),
+    ]);
     // Soft-deleted: it cannot be opened or messaged any more.
     await expect(other.request("conversation.open", { botId: bot.id })).rejects.toThrow(
       /was deleted/,
@@ -139,15 +143,23 @@ describe("websocket server", () => {
       "bots.listDeleted",
     );
     expect(deleted.bots).toEqual([
-      { id: bot.id, name: bot.name, createdAt: bot.createdAt, deletedAt: expect.any(String) },
+      {
+        id: bot.id,
+        name: bot.name,
+        createdAt: bot.createdAt,
+        kind: "bot",
+        manager: false,
+        deletedAt: expect.any(String),
+      },
     ]);
     expect(await other.request("bots.restore", { botId: bot.id })).toEqual({
       restored: true,
-      bot: { id: bot.id, name: bot.name, createdAt: bot.createdAt },
+      bot: { id: bot.id, name: bot.name, createdAt: bot.createdAt, kind: "bot", manager: false },
     });
     expect(await other.request("bots.restore", { botId: bot.id })).toEqual({ restored: false });
     expect((await other.request<{ bots: unknown[] }>("bots.listDeleted")).bots).toEqual([]);
     expect((await other.request<{ bots: { id: string }[] }>("bots.list")).bots).toEqual([
+      expect.objectContaining({ name: "Admin" }),
       expect.objectContaining({ id: bot.id }),
     ]);
     const reopened = await other.request<ConversationSnapshot>("conversation.open", {
@@ -156,6 +168,67 @@ describe("websocket server", () => {
     expect(reopened.entries).toHaveLength(4);
     client.close();
     other.close();
+  });
+
+  it("manages one-level teams, keeps Admin off them, and pushes bot changes", async () => {
+    type Summary = { id: string; name: string; kind: string; manager: boolean; managerId?: string };
+    const client = await Client.open(wsUrl);
+    const watcher = await Client.open(wsUrl);
+    const create = async (name: string, managerId?: string) =>
+      (
+        await client.request<{ bot: Summary }>("bots.create", {
+          name,
+          ...(managerId ? { managerId } : {}),
+        })
+      ).bot;
+    const list = async () => (await client.request<{ bots: Summary[] }>("bots.list")).bots;
+    const admin = (await list())[0];
+    if (!admin) throw new Error("no Admin");
+
+    const lead = await create("Lead");
+    await watcher.waitFor((message) => message.type === "bots.changed");
+    await expect(create("Early", lead.id)).rejects.toThrow(/not a manager/);
+    expect(
+      (await client.request<{ bot: Summary }>("bots.setManager", { botId: lead.id, manager: true }))
+        .bot,
+    ).toMatchObject({ manager: true });
+    const member = await create("Member", lead.id);
+    expect(member.managerId).toBe(lead.id);
+    const loose = await create("Loose");
+    await client.request("bots.setTeam", { botId: loose.id, managerId: lead.id });
+
+    // Admin is not deletable and never on a team; managers have no manager.
+    await expect(client.request("bots.delete", { botId: admin.id })).rejects.toThrow(/Admin/);
+    await expect(
+      client.request("bots.setManager", { botId: admin.id, manager: true }),
+    ).rejects.toThrow(/Admin/);
+    await expect(
+      client.request("bots.setTeam", { botId: admin.id, managerId: lead.id }),
+    ).rejects.toThrow(/Admin/);
+    await expect(
+      client.request("bots.setTeam", { botId: lead.id, managerId: lead.id }),
+    ).rejects.toThrow();
+
+    // A member takes over the team; the old manager becomes a member.
+    await client.request("bots.replaceManager", { managerId: lead.id, newManagerId: member.id });
+    let bots = await list();
+    expect(bots.find((entry) => entry.id === member.id)).toMatchObject({ manager: true });
+    expect(bots.find((entry) => entry.id === member.id)?.managerId).toBeUndefined();
+    expect(bots.find((entry) => entry.id === lead.id)).toMatchObject({
+      manager: false,
+      managerId: member.id,
+    });
+    expect(bots.find((entry) => entry.id === loose.id)?.managerId).toBe(member.id);
+
+    // Deleting a manager ungroups its team; restored, it comes back without one.
+    await client.request("bots.delete", { botId: member.id });
+    bots = await list();
+    expect(bots.filter((entry) => entry.managerId)).toEqual([]);
+    const restored = await client.request<{ bot: Summary }>("bots.restore", { botId: member.id });
+    expect(restored.bot).toMatchObject({ manager: false });
+    expect((await list()).filter((entry) => entry.managerId)).toEqual([]);
+    client.close();
+    watcher.close();
   });
 
   it("rejects invalid requests and unknown bots", async () => {
