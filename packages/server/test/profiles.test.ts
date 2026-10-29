@@ -80,12 +80,30 @@ describe("ProfileStore", () => {
     expect(changes).toEqual(["1->2", "2->2", "2->1"]);
   });
 
+  it("validates main-model fallbacks", async () => {
+    const profiles = store();
+    const save = (fallbacks: string[]) =>
+      profiles.save({ id: "default", name: "Default", main: "faux/faux-1", fallbacks });
+    await expect(save(["faux/faux-1"])).rejects.toThrow(/main model/);
+    await expect(save(["faux/faux-2", "faux/faux-2"])).rejects.toThrow(/twice/);
+    await expect(save(["openai/gpt"])).rejects.toThrow(/unknown model/);
+    await expect(
+      save(["faux/a", "faux/b", "faux/c", "faux/d", "faux/e", "faux/f"]),
+    ).rejects.toThrow(/at most 5/);
+    expect((await save(["faux/faux-2"])).fallbacks).toEqual(["faux/faux-2"]);
+    expect((await save([])).fallbacks).toBeUndefined();
+    expect(() =>
+      parseConfig('[profiles.p]\nname = "P"\nmain = "faux/a"\nfallbacks = ["faux/a"]\n'),
+    ).toThrow(/fallbacks/);
+  });
+
   it("writes profiles to config.toml, dropping legacy roles and keeping the rest", async () => {
     const profiles = store();
     await profiles.save({
       id: "default",
       name: "Default",
       main: "faux/faux-1",
+      fallbacks: ["faux/faux-3", "faux/faux-2"],
       guidance: 'Say "hi"\nthen work.',
       pool: [{ model: "faux/faux-2", useFor: "Background", background: true }],
     });
@@ -93,6 +111,7 @@ describe("ProfileStore", () => {
     expect(text).toContain("# mine");
     expect(text).not.toContain("orchestrator");
     expect(text).toContain('[models.titles]\nmodel = "faux/faux-2"');
+    expect(text).toContain('fallbacks = ["faux/faux-3", "faux/faux-2"]');
     const parsed = parseConfig(text);
     expect(parsed.modelProfiles).toEqual(profiles.snapshot());
     expect(parseToml(text)).toMatchObject({ models: { default_profile: "default" } });
