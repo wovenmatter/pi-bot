@@ -5,7 +5,7 @@ import type { OnboardingStatus, ProviderModels } from "../protocol.ts";
 import { AccountsSection } from "./Settings.tsx";
 import { AdminModelPicker } from "./settings/Teams.tsx";
 
-/** First run: 1. sign in to a provider, 2. pick Admin's model. Then chat with Admin. */
+/** First run: 1. sign in to a provider, 2. pick Admin Bot's model. Then chat with Admin Bot. */
 export function Onboarding({
   client,
   connected,
@@ -39,8 +39,8 @@ export function Onboarding({
     <div className="onboarding">
       <h2>Welcome to Pi Bot</h2>
       <p className="muted">
-        Two quick steps, then you chat with <strong>Admin</strong>: your account and config bot. It
-        will explain the platform and set up the bots and teams you want.
+        Two quick steps, then you chat with <strong>Admin Bot</strong>: your account and config bot.
+        It will explain the platform and set up the bots and teams you want.
       </p>
       <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
       <h3>1. Sign in {status.signedIn ? "✓" : null}</h3>
@@ -54,7 +54,7 @@ export function Onboarding({
           onChanged={() => void refresh()}
         />
       )}
-      <h3>2. Pick Admin's model</h3>
+      <h3>2. Pick Admin Bot's model</h3>
       {status.signedIn ? (
         <AdminModelPicker
           providers={providers}

@@ -329,10 +329,10 @@ describe("settings over the websocket", () => {
     intruder.close();
   });
 
-  it("onboards Admin: needs a model, then a valid one sets it live", async () => {
+  it("onboards Admin Bot: needs a model, then a valid one sets it live", async () => {
     type Status = { adminId: string; adminModel?: string; signedIn: boolean; needed: boolean };
     const before = await client.request<Status>("onboarding.status");
-    // OPENROUTER_API_KEY counts as signed in; Admin still needs a model.
+    // OPENROUTER_API_KEY counts as signed in; Admin Bot still needs a model.
     expect(before).toMatchObject({ signedIn: true, needed: true });
     expect(before.adminModel).toBeUndefined();
     await expect(client.request("admin.setModel", { model: "openai/missing" })).rejects.toThrow(

@@ -41,7 +41,7 @@ the working agreement for every human or agent who changes this repository.
   threads or data; purging is deferred and needs its own decision.
 - Only the user deletes or restores bots (WebSocket `bots.delete`, `bots.listDeleted`,
   `bots.restore`). Bot tools may create bots but must never get a delete or restore tool.
-- Exactly one Admin bot (`kind = 'admin'`, auto-created): only it gets account/config tools; it is
+- Exactly one Admin Bot (`kind = 'admin'`, auto-created): only it gets account/config tools; it is
   never on a team and can't be deleted or renamed. Teams are one level (`manager`, `manager_id`);
   rules live in `BotManager` (`BotRuleError`). There is no orchestrator setting.
 - Deleted bots are listed and restored only in the web app's Settings → Bots section,

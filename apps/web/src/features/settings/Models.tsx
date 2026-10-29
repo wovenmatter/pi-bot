@@ -6,7 +6,7 @@ const ROLES = [
   {
     key: "orchestrator",
     label: "Bots",
-    help: "Default chat model for every bot except Admin (set Admin's under Bots).",
+    help: "Default chat model for every bot except Admin Bot (set Admin Bot's under Bots).",
   },
   { key: "background", label: "Background", help: "Memory extraction and other quiet jobs." },
   { key: "titles", label: "Titles", help: "Names threads and conversations." },

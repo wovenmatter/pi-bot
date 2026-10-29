@@ -19,12 +19,12 @@ const bot = (id: string, extra: Partial<BotSummary> = {}): BotSummary => ({
 const bots = [
   bot("loose"),
   bot("lead", { manager: true }),
-  bot("admin", { kind: "admin", model: "openai/gpt-x" }),
+  bot("admin", { name: "Admin Bot", kind: "admin", model: "openai/gpt-x" }),
   bot("member", { managerId: "lead" }),
 ];
 
 describe("bot groups", () => {
-  it("pins Admin and nests members under their manager", () => {
+  it("pins Admin Bot and nests members under their manager", () => {
     const groups = groupBots(bots);
     expect(groups.admin?.id).toBe("admin");
     expect(groups.teams.map((t) => [t.manager.id, t.members.map((m) => m.id)])).toEqual([
@@ -33,7 +33,7 @@ describe("bot groups", () => {
     expect(groups.ungrouped.map((b) => b.id)).toEqual(["loose"]);
   });
 
-  it("sidebar lists Admin first without a delete button", () => {
+  it("sidebar lists Admin Bot first without a delete button", () => {
     const html = renderToStaticMarkup(
       <Sidebar
         bots={bots}
@@ -48,21 +48,21 @@ describe("bot groups", () => {
         onDelete={noop}
       />,
     );
-    const order = ["Admin", "Lead", "Member", "Loose"].map((name) => html.indexOf(`>${name}<`));
+    const order = ["Admin Bot", "Lead", "Member", "Loose"].map((name) => html.indexOf(`>${name}<`));
     expect(order.every((at, i) => at > 0 && (i === 0 || at > (order[i - 1] ?? 0)))).toBe(true);
-    expect(html).not.toContain("Delete Admin");
+    expect(html).not.toContain("Delete Admin Bot");
     expect(html).toContain("Delete Lead");
     expect(html).toContain("rail-member");
   });
 });
 
 describe("teams panel", () => {
-  it("maps bots to placements and hides Admin", () => {
+  it("maps bots to placements and hides Admin Bot", () => {
     expect(bots.map(placementOf)).toEqual(["none", "manager", "none", "lead"]);
     const html = renderToStaticMarkup(
       <TeamsPanel bots={bots} onPlace={noop} onReplaceManager={noop} />,
     );
-    expect(html).not.toContain("Team for Admin");
+    expect(html).not.toContain("Team for Admin Bot");
     expect(html).toContain("Team: Member");
     expect(html).toContain("On Lead&#x27;s team");
     expect(html).toContain("Hand Lead&#x27;s team to");

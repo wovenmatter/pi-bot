@@ -19,12 +19,12 @@ export type BotSummary = {
   /** Leads a team (one level: managers have no manager). */
   manager: boolean;
   managerId?: string;
-  /** Admin's own model (`provider/modelId`); other bots use the default model role. */
+  /** Admin Bot's own model (`provider/modelId`); other bots use the default model role. */
   model?: string;
 };
 export type DeletedBotSummary = BotSummary & { deletedAt: string };
 
-/** First run: sign in to a provider, then pick Admin's model. */
+/** First run: sign in to a provider, then pick Admin Bot's model. */
 export type OnboardingStatus = {
   adminId: string;
   adminModel?: string;

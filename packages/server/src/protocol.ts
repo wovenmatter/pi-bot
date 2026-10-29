@@ -18,12 +18,12 @@ export const requestSchema = z.discriminatedUnion("type", [
     name: z.string().min(1).max(80),
     managerId: botId.optional(),
   }),
-  // The Admin bot is rejected: it cannot be deleted.
+  // The Admin Bot is rejected: it cannot be deleted.
   z.object({ id: requestId, type: z.literal("bots.delete"), botId }),
   // User-only, from Settings → Deleted bots. Never exposed to agent tools.
   z.object({ id: requestId, type: z.literal("bots.listDeleted") }),
   z.object({ id: requestId, type: z.literal("bots.restore"), botId }),
-  // Teams (Settings → Bots). One level: managers have no manager; Admin is never on a team.
+  // Teams (Settings → Bots). One level: managers have no manager; Admin Bot is never on a team.
   z.strictObject({
     id: requestId,
     type: z.literal("bots.setManager"),
@@ -42,7 +42,7 @@ export const requestSchema = z.discriminatedUnion("type", [
     managerId: botId,
     newManagerId: botId,
   }),
-  // First-run onboarding: sign in to a provider, then pick Admin's model.
+  // First-run onboarding: sign in to a provider, then pick Admin Bot's model.
   z.strictObject({ id: requestId, type: z.literal("onboarding.status") }),
   z.strictObject({ id: requestId, type: z.literal("admin.setModel"), model: modelRefText }),
   z.object({
@@ -172,7 +172,7 @@ export type OnboardingStatus = {
   adminModel?: string;
   /** Any model provider account is configured. */
   signedIn: boolean;
-  /** Show onboarding: Admin has no model yet or no provider is signed in. */
+  /** Show onboarding: Admin Bot has no model yet or no provider is signed in. */
   needed: boolean;
 };
 export type DeletedBotSummary = BotSummary & { deletedAt: string };

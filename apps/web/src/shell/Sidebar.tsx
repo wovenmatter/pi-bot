@@ -48,7 +48,7 @@ export function Sidebar({
           href={routeHref({ botId: bot.id })}
           className={`nav-link${active ? " active" : ""}`}
           aria-current={active ? "page" : undefined}
-          title={bot.kind === "admin" ? "Admin: accounts, models and config" : undefined}
+          title={bot.kind === "admin" ? "Admin Bot: accounts, models and config" : undefined}
         >
           <Icon icon={icon} />
           <span className="rail-title">{bot.name}</span>

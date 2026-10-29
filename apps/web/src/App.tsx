@@ -60,7 +60,7 @@ export function App() {
     return client.onBotsChanged(() => void load());
   }, [client, connection]);
 
-  // Default to Admin; drop routes to bots that no longer exist.
+  // Default to Admin Bot; drop routes to bots that no longer exist.
   useEffect(() => {
     if (!bots || route.settings) return;
     const fallback = bots.find((item) => item.kind === "admin") ?? bots[0];

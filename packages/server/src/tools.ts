@@ -6,7 +6,7 @@ import type { SettingsService } from "./settings/service.ts";
 import type { BotRecord } from "./storage/registry.ts";
 
 /**
- * What bot tools reach: the bot manager, and (for Admin) settings and restart. Late-bound,
+ * What bot tools reach: the bot manager, and (for Admin Bot) settings and restart. Late-bound,
  * because the app opens the manager before settings and the server exist.
  */
 export type BotPlatform = {
@@ -86,7 +86,7 @@ function commonTools(botId: string, platform: BotPlatform) {
     defineTool({
       name: "list_bots",
       description:
-        "List every bot on this Pi Bot: id, name, whether it is Admin or a team manager, and its manager.",
+        "List every bot on this Pi Bot: id, name, whether it is Admin Bot or a team manager, and its manager.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: () => run(async () => (await platform.manager().list()).map(describeBot)),
@@ -129,7 +129,7 @@ function commonTools(botId: string, platform: BotPlatform) {
   ];
 }
 
-/** Non-Admin bots: start a team under themselves and add or remove members. */
+/** Non-Admin Bots: start a team under themselves and add or remove members. */
 function teamTools(botId: string, platform: BotPlatform) {
   return [
     defineTool({
@@ -162,7 +162,7 @@ function teamTools(botId: string, platform: BotPlatform) {
   ];
 }
 
-/** Admin only: teams on the user's behalf, its own model, and account/config management. */
+/** Admin Bot only: teams on the user's behalf, its own model, and account/config management. */
 function adminTools(botId: string, platform: BotPlatform) {
   const settings = () => {
     const found = platform.settings?.();
@@ -288,13 +288,13 @@ function adminTools(botId: string, platform: BotPlatform) {
     defineTool({
       name: "set_my_model",
       description:
-        "Change the model you (Admin) use, as provider/modelId from settings_status. Applies from your next reply.",
+        "Change the model you (Admin Bot) use, as provider/modelId from settings_status. Applies from your next reply.",
       parameters: Type.Object({ model: Type.String() }),
       execute: (args) =>
         run(async () => {
           settings().checkModel(args.model);
           await platform.manager().setModel(botId, args.model);
-          return `Admin now uses ${args.model}.`;
+          return `Admin Bot now uses ${args.model}.`;
         }),
     }),
   ];

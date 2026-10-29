@@ -41,9 +41,9 @@ describe("websocket server", () => {
         name: "Scout",
       },
     );
-    // Admin always exists and is listed first (oldest).
+    // Admin Bot always exists and is listed first (oldest).
     expect((await client.request<{ bots: { id: string }[] }>("bots.list")).bots).toEqual([
-      expect.objectContaining({ name: "Admin", kind: "admin", manager: false }),
+      expect.objectContaining({ name: "Admin Bot", kind: "admin", manager: false }),
       expect.objectContaining({ id: bot.id, name: "Scout", kind: "bot", manager: false }),
     ]);
 
@@ -132,7 +132,7 @@ describe("websocket server", () => {
 
     expect(await other.request("bots.delete", { botId: bot.id })).toEqual({ deleted: true });
     expect((await other.request<{ bots: { name: string }[] }>("bots.list")).bots).toEqual([
-      expect.objectContaining({ name: "Admin" }),
+      expect.objectContaining({ name: "Admin Bot" }),
     ]);
     // Soft-deleted: it cannot be opened or messaged any more.
     await expect(other.request("conversation.open", { botId: bot.id })).rejects.toThrow(
@@ -159,7 +159,7 @@ describe("websocket server", () => {
     expect(await other.request("bots.restore", { botId: bot.id })).toEqual({ restored: false });
     expect((await other.request<{ bots: unknown[] }>("bots.listDeleted")).bots).toEqual([]);
     expect((await other.request<{ bots: { id: string }[] }>("bots.list")).bots).toEqual([
-      expect.objectContaining({ name: "Admin" }),
+      expect.objectContaining({ name: "Admin Bot" }),
       expect.objectContaining({ id: bot.id }),
     ]);
     const reopened = await other.request<ConversationSnapshot>("conversation.open", {
@@ -170,7 +170,7 @@ describe("websocket server", () => {
     other.close();
   });
 
-  it("manages one-level teams, keeps Admin off them, and pushes bot changes", async () => {
+  it("manages one-level teams, keeps Admin Bot off them, and pushes bot changes", async () => {
     type Summary = { id: string; name: string; kind: string; manager: boolean; managerId?: string };
     const client = await Client.open(wsUrl);
     const watcher = await Client.open(wsUrl);
@@ -183,7 +183,7 @@ describe("websocket server", () => {
       ).bot;
     const list = async () => (await client.request<{ bots: Summary[] }>("bots.list")).bots;
     const admin = (await list())[0];
-    if (!admin) throw new Error("no Admin");
+    if (!admin) throw new Error("no Admin Bot");
 
     const lead = await create("Lead");
     await watcher.waitFor((message) => message.type === "bots.changed");
@@ -197,14 +197,14 @@ describe("websocket server", () => {
     const loose = await create("Loose");
     await client.request("bots.setTeam", { botId: loose.id, managerId: lead.id });
 
-    // Admin is not deletable and never on a team; managers have no manager.
-    await expect(client.request("bots.delete", { botId: admin.id })).rejects.toThrow(/Admin/);
+    // Admin Bot is not deletable and never on a team; managers have no manager.
+    await expect(client.request("bots.delete", { botId: admin.id })).rejects.toThrow(/Admin Bot/);
     await expect(
       client.request("bots.setManager", { botId: admin.id, manager: true }),
-    ).rejects.toThrow(/Admin/);
+    ).rejects.toThrow(/Admin Bot/);
     await expect(
       client.request("bots.setTeam", { botId: admin.id, managerId: lead.id }),
-    ).rejects.toThrow(/Admin/);
+    ).rejects.toThrow(/Admin Bot/);
     await expect(
       client.request("bots.setTeam", { botId: lead.id, managerId: lead.id }),
     ).rejects.toThrow();

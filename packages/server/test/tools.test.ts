@@ -20,6 +20,7 @@ describe("bot tools", () => {
   let dir: Awaited<ReturnType<typeof tempDir>>;
   let db: Awaited<ReturnType<typeof openSharedDatabase>>;
   let manager: BotManager;
+  let openManager: () => Promise<BotManager>;
   const faux = fauxProvider({ tokensPerSecond: 5000 });
   // Each request's context as JSON: the prompt and tool declarations ride in system messages.
   const seen: string[] = [];
@@ -44,12 +45,14 @@ describe("bot tools", () => {
     models.setProvider(faux.provider);
     db = await openSharedDatabase(join(dir.path, "db.sqlite"));
     const platform: BotPlatform = { manager: () => manager, maxMessagesPerHourPerPair: 1 };
-    manager = await BotManager.open({
-      db,
-      ensureAdmin: true,
-      harnessOptions: (bot) =>
-        createBotHarnessOptions({ bot, models, orchestrator: FAUX_MODEL, platform }),
-    });
+    openManager = () =>
+      BotManager.open({
+        db,
+        ensureAdmin: true,
+        harnessOptions: (bot) =>
+          createBotHarnessOptions({ bot, models, orchestrator: FAUX_MODEL, platform }),
+      });
+    manager = await openManager();
   });
 
   afterEach(async () => {
@@ -65,9 +68,18 @@ describe("bot tools", () => {
   const hasTool = (context: string | undefined, name: string) =>
     (context ?? "").includes(`"name":"${name}"`);
 
-  it("gives Admin the config tools and prompt; other bots get bot tools", async () => {
+  it("names the admin bot Admin Bot and renames an older admin row on open", async () => {
     const admin = await manager.admin();
-    if (!admin) throw new Error("no Admin");
+    expect(admin?.name).toBe("Admin Bot");
+    await manager.close();
+    await db.run("UPDATE pibot_bots SET name = 'Admin' WHERE kind = 'admin'");
+    manager = await openManager();
+    expect((await manager.list()).map((bot) => bot.name)).toEqual(["Admin Bot"]);
+  });
+
+  it("gives Admin Bot the config tools and prompt; other bots get bot tools", async () => {
+    const admin = await manager.admin();
+    if (!admin) throw new Error("no Admin Bot");
     faux.setResponses([reply, reply]);
     await say(await manager.get(admin.id), "hi");
     expect(seen[0]).toContain(JSON.stringify(ADMIN_PROMPT).slice(1, 60));

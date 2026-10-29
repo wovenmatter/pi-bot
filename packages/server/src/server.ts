@@ -276,7 +276,7 @@ class Connection {
         return { bot: bot(await manager.replaceManager(request.managerId, request.newManagerId)) };
       case "onboarding.status": {
         const admin = await manager.admin();
-        if (!admin) throw new Error("this server has no Admin bot");
+        if (!admin) throw new Error("this server has no Admin Bot");
         const signedIn = await this.#settings().signedIn();
         return {
           adminId: admin.id,
@@ -287,7 +287,7 @@ class Connection {
       }
       case "admin.setModel": {
         const admin = await manager.admin();
-        if (!admin) throw new Error("this server has no Admin bot");
+        if (!admin) throw new Error("this server has no Admin Bot");
         this.#settings().checkModel(request.model);
         return { bot: bot(await manager.setModel(admin.id, request.model)) };
       }

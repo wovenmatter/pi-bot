@@ -33,12 +33,12 @@ export class NotFoundError extends Error {
   override name = "NotFoundError";
 }
 
-/** A request that breaks a bot rule (Admin is locked; teams are one level deep). */
+/** A request that breaks a bot rule (Admin Bot is locked; teams are one level deep). */
 export class BotRuleError extends Error {
   override name = "BotRuleError";
 }
 
-export const ADMIN_NAME = "Admin";
+export const ADMIN_NAME = "Admin Bot";
 
 /** One bot: one Pi Durable session (Harness) over its prefixed tables in the shared database. */
 export class Bot {
@@ -252,7 +252,7 @@ export type BotManagerOptions = {
   readonly onReport?: (error: unknown) => void;
   /** Called once per opened bot with what startup recovery found. */
   readonly onRecovered?: (bot: BotRecord, report: RecoveryReport) => void;
-  /** Create the Admin bot on open when there is none (the app does; most tests do not). */
+  /** Create the Admin Bot on open when there is none (the app does; most tests do not). */
   readonly ensureAdmin?: boolean;
   /** A bot was created, deleted, restored or moved between teams (pushes a refresh to clients). */
   readonly onBotsChanged?: () => void;
@@ -283,8 +283,9 @@ export class BotManager {
   static async open(options: BotManagerOptions): Promise<BotManager> {
     const manager = new BotManager(options);
     await manager.registry.migrate();
-    if (options.ensureAdmin && !(await manager.registry.admin())) {
-      await manager.#insert(ADMIN_NAME, { kind: "admin", manager: false });
+    if (options.ensureAdmin) {
+      if (await manager.registry.admin()) await manager.registry.renameAdmin(ADMIN_NAME);
+      else await manager.#insert(ADMIN_NAME, { kind: "admin", manager: false });
     }
     // Live bots only: soft-deleted bots are neither loaded nor recovered.
     for (const record of await manager.registry.list()) await manager.get(record.id);
@@ -295,7 +296,7 @@ export class BotManager {
     return this.registry.list();
   }
 
-  /** The Admin bot (undefined only without `ensureAdmin`). */
+  /** The Admin Bot (undefined only without `ensureAdmin`). */
   admin(): Promise<BotRecord | undefined> {
     return this.registry.admin();
   }
@@ -438,7 +439,7 @@ export class BotManager {
   async delete(id: string): Promise<boolean> {
     const record = await this.registry.get(id);
     if (!record) return false;
-    if (record.kind === "admin") throw new BotRuleError("the Admin bot cannot be deleted");
+    if (record.kind === "admin") throw new BotRuleError("the Admin Bot cannot be deleted");
     if (!(await this.registry.markDeleted(id))) return false;
     // Deleting a manager ungroups its team; a deleted bot comes back on no team.
     if (record.manager) await this.registry.moveMembers(id, undefined);
@@ -483,7 +484,7 @@ export class BotManager {
 
   async #requireTeamable(id: string): Promise<BotRecord> {
     const record = await this.record(id);
-    if (record.kind === "admin") throw new BotRuleError("the Admin bot is never on a team");
+    if (record.kind === "admin") throw new BotRuleError("the Admin Bot is never on a team");
     return record;
   }
 
@@ -535,7 +536,7 @@ export class BotManager {
     return this.record(next.id);
   }
 
-  /** Set the model of a bot's main channel (`provider/modelId`); used for the Admin model. */
+  /** Set the model of a bot's main channel (`provider/modelId`); used for the Admin Bot model. */
   async setModel(id: string, model: string): Promise<BotRecord> {
     const bot = await this.get(id);
     await this.#options.applyModel?.(bot, model);

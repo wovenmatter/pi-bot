@@ -8,7 +8,7 @@ export type Placement = "none" | "manager" | string;
 export const placementOf = (bot: BotSummary): Placement =>
   bot.manager ? "manager" : (bot.managerId ?? "none");
 
-/** Settings → Bots: one-level teams. Admin is never on a team, so it is not listed. */
+/** Settings → Bots: one-level teams. Admin Bot is never on a team, so it is not listed. */
 export function TeamsPanel({
   bots,
   disabled,
@@ -27,12 +27,12 @@ export function TeamsPanel({
       <h3 id="teams-heading">Teams</h3>
       <p className="muted">
         Optional, one level: a manager assigns work to the bots on its team. Bots a manager or team
-        member creates join that team. You can also ask Admin or a bot to set this up.
+        member creates join that team. You can also ask Admin Bot or a bot to set this up.
       </p>
       {teamable === undefined ? (
         <Loading />
       ) : teamable.length === 0 ? (
-        <p className="settings-empty muted">No bots yet. Create one, or ask Admin.</p>
+        <p className="settings-empty muted">No bots yet. Create one, or ask Admin Bot.</p>
       ) : (
         <div className="settings-fields">
           {teamable.map((bot) => {
@@ -93,7 +93,7 @@ export function TeamsPanel({
   );
 }
 
-/** Pick Admin's model from signed-in providers (onboarding and Settings → Bots). */
+/** Pick Admin Bot's model from signed-in providers (onboarding and Settings → Bots). */
 export function AdminModelPicker({
   providers,
   current,
@@ -133,8 +133,8 @@ export function AdminModelPicker({
     <form className="settings-fields" onSubmit={(event) => void submit(event)}>
       <label className="settings-field">
         <span>
-          Admin model
-          <small className="muted">Admin manages accounts, models, config and your bots.</small>
+          Admin Bot model
+          <small className="muted">Admin Bot manages accounts, models, config and your bots.</small>
         </span>
         <select
           value={value}

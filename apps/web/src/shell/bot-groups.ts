@@ -8,7 +8,7 @@ export type BotGroups = {
   ungrouped: BotSummary[];
 };
 
-/** Sidebar order: Admin pinned first, then each team under its manager, then the rest. */
+/** Sidebar order: Admin Bot pinned first, then each team under its manager, then the rest. */
 export function groupBots(bots: readonly BotSummary[]): BotGroups {
   const admin = bots.find((bot) => bot.kind === "admin");
   const managers = bots.filter((bot) => bot.kind !== "admin" && bot.manager);

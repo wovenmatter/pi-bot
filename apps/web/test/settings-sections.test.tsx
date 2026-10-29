@@ -180,7 +180,7 @@ describe("Settings sections", () => {
         onSave={async () => {}}
       />,
     );
-    expect(html).toContain("Default chat model for every bot except Admin");
+    expect(html).toContain("Default chat model for every bot except Admin Bot");
     expect(html).toContain('value="openai/gpt-x"');
     expect(html).toContain("gone/model (not signed in)");
     expect(html).toContain("200k context");

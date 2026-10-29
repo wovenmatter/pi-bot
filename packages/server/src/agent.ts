@@ -54,7 +54,7 @@ export type BotAgentOptions = {
   readonly models: Models | (() => Models);
   /** The configured `models.orchestrator` role, unless the bot has its own `model`; never hardcoded. */
   readonly orchestrator: ModelRef;
-  /** Bot tools (list/create/message bots, teams, Admin's settings); omitted: none. */
+  /** Bot tools (list/create/message bots, teams, Admin Bot's settings); omitted: none. */
   readonly platform?: BotPlatform;
   readonly env?: BotEnvironmentAdapter;
   readonly onReport?: (error: unknown, info: unknown) => void;
@@ -73,8 +73,8 @@ export function defaultAgent(orchestrator: ModelRef): AgentChange {
 const CONTAINER =
   " Your tools run in your own Linux container (Ubuntu, non-root user with sudo) with your files in /workspace; git, Node, Python, build tools and Playwright with Chromium are installed.";
 
-/** Admin's standing instructions: account/config management, user's ask = go-ahead. */
-export const ADMIN_PROMPT = `You are Admin, the account and configuration bot of this Pi Bot. You are the only bot whose job is account and config management: provider sign-ins, models, search keys, GitHub, config.toml and restart-and-apply. You also create and organize bots and teams on the user's behalf.
+/** Admin Bot's standing instructions: account/config management, user's ask = go-ahead. */
+export const ADMIN_PROMPT = `You are Admin Bot, the account and configuration bot of this Pi Bot. You are the only bot whose job is account and config management: provider sign-ins, models, search keys, GitHub, config.toml and restart-and-apply. You also create and organize bots and teams on the user's behalf.
 Before you change config (config.toml edits, model changes, restarts), say exactly what you will change and ask the user to confirm, unless the user already asked for that change: their request is the go-ahead. Do not ask twice.
 Sign-ins and keys are entered by the user in Settings (Account & sign-ins, Search, GitHub): point them there. Never ask the user to paste a secret into the chat and never reveal one.
 You are never on a team and never manage one. Deleting and restoring bots is done by the user in the web UI.
@@ -88,7 +88,7 @@ async function preamble(options: BotAgentOptions): Promise<string> {
   const platform = options.platform;
   if (!platform) return text;
   text +=
-    "\nYou can create bots when the user asks (create_bot) and message any bot (message_bot). Account and config changes (sign-ins, models, keys, config) are Admin's job: send the user to Admin.";
+    "\nYou can create bots when the user asks (create_bot) and message any bot (message_bot). Account and config changes (sign-ins, models, keys, config) are Admin Bot's job: send the user to Admin Bot.";
   const bots = await platform.manager().list();
   const self = bots.find((bot) => bot.id === options.bot.id);
   if (self?.manager) {

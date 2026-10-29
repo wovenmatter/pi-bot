@@ -150,18 +150,27 @@ export class BotRegistry {
       if (!columns.has(name))
         await this.#db.exec(`ALTER TABLE ${BOTS_TABLE} ADD COLUMN ${name} ${type}`);
     }
-    // At most one Admin bot.
+    // At most one Admin Bot.
     await this.#db.exec(
       `CREATE UNIQUE INDEX IF NOT EXISTS pibot_bots_one_admin ON ${BOTS_TABLE}(kind) WHERE kind = 'admin'`,
     );
   }
 
-  /** The Admin bot, live or not; undefined before it is created. */
+  /** The Admin Bot, live or not; undefined before it is created. */
   async admin(): Promise<BotRecord | undefined> {
     const row = await this.#db.get<BotRow>(
       `SELECT ${BOT_COLUMNS} FROM ${BOTS_TABLE} WHERE kind = 'admin'`,
     );
     return row ? toBot(row) : undefined;
+  }
+
+  /** Startup migration: give the admin-kind bot its current built-in name. */
+  async renameAdmin(name: string): Promise<void> {
+    await this.#db.run(
+      `UPDATE ${BOTS_TABLE} SET name = ? WHERE kind = 'admin' AND name <> ?`,
+      name,
+      name,
+    );
   }
 
   /** Set or clear a bot's manager flag and team (no rule checks: see `BotManager`). */

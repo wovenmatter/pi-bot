@@ -410,10 +410,10 @@ function BotsSection({
   return (
     <>
       <section className="settings-section" aria-labelledby="admin-heading">
-        <h3 id="admin-heading">Admin</h3>
+        <h3 id="admin-heading">Admin Bot</h3>
         <p className="muted">
-          Admin is your account and config bot: sign-ins, models, keys, GitHub and config.toml, and
-          creating and organizing bots. It cannot be deleted and is never on a team.
+          Admin Bot is your account and config bot: sign-ins, models, keys, GitHub and config.toml,
+          and creating and organizing bots. It cannot be deleted and is never on a team.
         </p>
         <AdminModelPicker
           providers={providers}
