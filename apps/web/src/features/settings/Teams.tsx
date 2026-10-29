@@ -1,6 +1,5 @@
-import { type FormEvent, useState } from "react";
 import { Loading } from "../../components/ui.tsx";
-import type { BotSummary, ProviderModels } from "../../protocol.ts";
+import type { BotSummary } from "../../protocol.ts";
 
 /** A bot's place: "none" (no team), "manager" (leads a team) or the id of its manager. */
 export type Placement = "none" | "manager" | string;
@@ -90,78 +89,5 @@ export function TeamsPanel({
         </div>
       )}
     </section>
-  );
-}
-
-/** Pick Admin Bot's model from signed-in providers (onboarding and Settings → Bots). */
-export function AdminModelPicker({
-  providers,
-  current,
-  disabled,
-  submitLabel = "Save",
-  onSave,
-}: {
-  providers: readonly ProviderModels[] | undefined;
-  current?: string;
-  disabled?: boolean;
-  submitLabel?: string;
-  onSave: (model: string) => Promise<void>;
-}) {
-  const [draft, setDraft] = useState<string>();
-  const [saving, setSaving] = useState(false);
-  if (!providers) return <Loading />;
-  if (providers.length === 0) {
-    return <p className="settings-empty muted">Sign in to a model provider first.</p>;
-  }
-  const known = providers.some((p) => p.models.some((m) => `${p.id}/${m.id}` === current));
-  const first = providers[0]?.models[0];
-  const value = draft ?? current ?? (first ? `${providers[0]?.id}/${first.id}` : "");
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!value) return;
-    setSaving(true);
-    try {
-      await onSave(value);
-      setDraft(undefined);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form className="settings-fields" onSubmit={(event) => void submit(event)}>
-      <label className="settings-field">
-        <span>
-          Admin Bot model
-          <small className="muted">Admin Bot manages accounts, models, config and your bots.</small>
-        </span>
-        <select
-          value={value}
-          disabled={disabled || saving}
-          onChange={(event) => setDraft(event.target.value)}
-        >
-          {current && !known ? <option value={current}>{current} (not signed in)</option> : null}
-          {providers.map((provider) => (
-            <optgroup key={provider.id} label={provider.name}>
-              {provider.models.map((model) => (
-                <option key={model.id} value={`${provider.id}/${model.id}`}>
-                  {model.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
-      <div className="settings-actions">
-        <button
-          type="submit"
-          className="primary"
-          disabled={disabled || saving || !value || value === current}
-        >
-          {saving ? "Saving…" : submitLabel}
-        </button>
-      </div>
-    </form>
   );
 }

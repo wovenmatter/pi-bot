@@ -58,6 +58,7 @@ describe("Settings sections", () => {
   it("routes each section and keeps #/settings for the first one", () => {
     expect(parseRoute("#/settings/models")).toEqual({ settings: true, section: "models" });
     expect(parseRoute("#/settings/github")).toEqual({ settings: true, section: "github" });
+    expect(parseRoute("#/settings/profiles")).toEqual({ settings: true, section: "profiles" });
     expect(parseRoute("#/settings/nope")).toEqual({ settings: true });
     expect(routeHref({ settings: true, section: "accounts" })).toBe("#/settings");
     expect(routeHref({ settings: true, section: "config" })).toBe("#/settings/config");
@@ -65,6 +66,7 @@ describe("Settings sections", () => {
     for (const label of [
       "Account &amp; sign-ins",
       "Models",
+      "Profiles",
       "Search",
       "GitHub",
       "Bots",
@@ -160,7 +162,7 @@ describe("Settings sections", () => {
     expect(html).toContain("Browser");
   });
 
-  it("offers models from signed-in providers for each role", () => {
+  it("offers the global title model from signed-in providers", () => {
     const html = renderToStaticMarkup(
       <ModelSettings
         providers={[
@@ -170,17 +172,13 @@ describe("Settings sections", () => {
             models: [{ id: "gpt-x", name: "GPT X", reasoning: true, contextWindow: 200_000 }],
           },
         ]}
-        roles={{
-          orchestrator: "openai/gpt-x",
-          background: "gone/model",
-          titles: "openai/gpt-x",
-          titlesReasoning: "high",
-        }}
+        roles={{ titles: "gone/model", titlesReasoning: "high" }}
         reasoningLevels={["low", "high"]}
         onSave={async () => {}}
       />,
     );
-    expect(html).toContain("Default chat model for every bot except Admin Bot");
+    expect(html).toContain("Names threads");
+    expect(html).not.toContain("Background");
     expect(html).toContain('value="openai/gpt-x"');
     expect(html).toContain("gone/model (not signed in)");
     expect(html).toContain("200k context");

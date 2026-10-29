@@ -2,8 +2,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PiBotClient } from "../src/api.ts";
 import { Onboarding } from "../src/features/Onboarding.tsx";
-import { AdminModelPicker, placementOf, TeamsPanel } from "../src/features/settings/Teams.tsx";
-import type { BotSummary } from "../src/protocol.ts";
+import {
+  AccountNotes,
+  BotProfilesPanel,
+  MainModelPicker,
+  ProfileEditor,
+  ProfilesPanel,
+} from "../src/features/settings/Profiles.tsx";
+import { placementOf, TeamsPanel } from "../src/features/settings/Teams.tsx";
+import type { BotSummary, ProfileSummary, ProviderModels } from "../src/protocol.ts";
 import { groupBots } from "../src/shell/bot-groups.ts";
 import { Sidebar } from "../src/shell/Sidebar.tsx";
 
@@ -14,12 +21,21 @@ const bot = (id: string, extra: Partial<BotSummary> = {}): BotSummary => ({
   createdAt: "2026-10-29T00:00:00Z",
   kind: "bot",
   manager: false,
+  profileId: "default",
+  profileName: "Default",
+  defaultProfile: true,
   ...extra,
 });
 const bots = [
   bot("loose"),
   bot("lead", { manager: true }),
-  bot("admin", { name: "Admin Bot", kind: "admin", model: "openai/gpt-x" }),
+  bot("admin", {
+    name: "Admin Bot",
+    kind: "admin",
+    profileId: "fast",
+    profileName: "Fast",
+    defaultProfile: false,
+  }),
   bot("member", { managerId: "lead" }),
 ];
 
@@ -67,52 +83,130 @@ describe("teams panel", () => {
     expect(html).toContain("On Lead&#x27;s team");
     expect(html).toContain("Hand Lead&#x27;s team to");
   });
+});
 
-  it("admin model picker needs a signed-in provider", () => {
+const providers: ProviderModels[] = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    models: [{ id: "gpt-x", name: "GPT X", reasoning: false, contextWindow: 1 }],
+  },
+];
+const profiles: ProfileSummary[] = [
+  {
+    id: "default",
+    name: "Default",
+    main: "openai/gpt-x",
+    pool: [{ model: "openai/gpt-x", useFor: "Lookups", background: true }],
+    default: true,
+  },
+  { id: "fast", name: "Fast", main: "gone/model", guidance: "Be quick.", pool: [] },
+];
+
+describe("profiles", () => {
+  it("main model picker needs a signed-in provider and an available model", () => {
     expect(
-      renderToStaticMarkup(<AdminModelPicker providers={[]} onSave={async () => {}} />),
+      renderToStaticMarkup(<MainModelPicker providers={[]} onSave={async () => {}} />),
     ).toContain("Sign in to a model provider first");
     const html = renderToStaticMarkup(
-      <AdminModelPicker
-        providers={[
-          {
-            id: "openai",
-            name: "OpenAI",
-            models: [{ id: "gpt-x", name: "GPT X", reasoning: false, contextWindow: 1 }],
-          },
-        ]}
-        current="openai/gpt-x"
+      <MainModelPicker providers={providers} current="gone/model" onSave={async () => {}} />,
+    );
+    // An unavailable current model isn't preselected: the first signed-in model is.
+    expect(html).toContain('value="openai/gpt-x" selected=""');
+  });
+
+  it("lists profiles with their pool, default and bots", () => {
+    const html = renderToStaticMarkup(
+      <ProfilesPanel
+        profiles={profiles}
+        bots={bots}
+        providers={providers}
         onSave={async () => {}}
+        onDelete={noop}
+        onSetDefault={noop}
       />,
     );
-    expect(html).toContain('value="openai/gpt-x" selected=""');
+    expect(html).toContain('Default<small class="muted"> · default</small>');
+    expect(html).toContain("openai/gpt-x (background)");
+    expect(html).toContain("Used by Admin Bot");
+    expect(html).toContain("Delete profile Fast");
+    expect(html).not.toContain("Delete profile Default");
+    expect(html).toContain("New profile");
+  });
+
+  it("edits a profile's main model, pool notes and guidance", () => {
+    const html = renderToStaticMarkup(
+      <ProfileEditor
+        profile={profiles[1]}
+        providers={providers}
+        onSave={async () => {}}
+        onCancel={noop}
+      />,
+    );
+    expect(html).toContain("gone/model (not signed in)");
+    expect(html).toContain("Be quick.");
+    expect(html).toContain("Add pool model");
+    expect(html).not.toContain("Can&#x27;t be changed");
+    const fresh = renderToStaticMarkup(
+      <ProfileEditor providers={providers} onSave={async () => {}} onCancel={noop} />,
+    );
+    expect(fresh).toContain("Can&#x27;t be changed");
+    expect(fresh).toContain("Create profile");
+  });
+
+  it("picks a profile per bot, with the default as the empty choice", () => {
+    const html = renderToStaticMarkup(
+      <BotProfilesPanel bots={bots} profiles={profiles} onSet={noop} />,
+    );
+    expect(html).toContain("Profile for Admin Bot");
+    expect(html).toContain('<option value="">Default (Default)</option>');
+    expect(html).toContain('value="fast" selected=""');
+  });
+
+  it("keeps account notes as guidance", () => {
+    const html = renderToStaticMarkup(<AccountNotes notes="Codex $200" onSave={async () => {}} />);
+    expect(html).toContain("Codex $200");
+    expect(html).toContain("Guidance, not hard limits");
   });
 });
 
 describe("onboarding", () => {
   const client = new PiBotClient("ws://127.0.0.1:9/ws");
+  const status = {
+    adminId: "admin",
+    profileId: "default",
+    mainModel: "openai/gpt-x",
+    mainModelAvailable: false,
+    signedIn: true,
+    needed: true,
+  };
   it("asks to sign in before picking a model", () => {
     const html = renderToStaticMarkup(
       <Onboarding
         client={client}
         connected={false}
-        status={{ adminId: "admin", signedIn: false, needed: true }}
+        status={{ ...status, signedIn: false }}
         onStatus={noop}
       />,
     );
     expect(html).toContain("1. Sign in");
     expect(html).toContain("Sign in first.");
   });
-  it("offers the model step once signed in", () => {
+  it("offers the main-model step once signed in, only if the model is unavailable", () => {
     const html = renderToStaticMarkup(
+      <Onboarding client={client} connected={false} status={status} onStatus={noop} />,
+    );
+    expect(html).toContain("Signed in.");
+    expect(html).toContain("2. Pick Admin Bot");
+    expect(html).not.toContain("Sign in first.");
+    const ready = renderToStaticMarkup(
       <Onboarding
         client={client}
         connected={false}
-        status={{ adminId: "admin", signedIn: true, needed: true }}
+        status={{ ...status, mainModelAvailable: true }}
         onStatus={noop}
       />,
     );
-    expect(html).toContain("Signed in.");
-    expect(html).not.toContain("Sign in first.");
+    expect(ready).not.toContain("2. Pick Admin Bot");
   });
 });

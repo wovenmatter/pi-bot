@@ -5,6 +5,7 @@
 export const SETTINGS_SECTIONS = [
   "accounts",
   "models",
+  "profiles",
   "search",
   "github",
   "bots",

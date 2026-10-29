@@ -2,14 +2,9 @@ import { type FormEvent, useState } from "react";
 import { Loading } from "../../components/ui.tsx";
 import type { ProviderModels, Roles } from "../../protocol.ts";
 
+// Bots' models come from their profiles (Settings → Profiles); only the title model is global.
 const ROLES = [
-  {
-    key: "orchestrator",
-    label: "Bots",
-    help: "Default chat model for every bot except Admin Bot (set Admin Bot's under Bots).",
-  },
-  { key: "background", label: "Background", help: "Memory extraction and other quiet jobs." },
-  { key: "titles", label: "Titles", help: "Names threads and conversations." },
+  { key: "titles", label: "Titles", help: "Names threads (one model for every bot)." },
 ] as const;
 
 /** Whether a ref is offered by a signed-in provider (otherwise it's shown as "not signed in"). */
@@ -56,7 +51,9 @@ export function ModelSettings({
         onSubmit={(e) => void submit(e)}
       >
         <h3 id="roles-heading">Roles</h3>
-        <p className="muted">Which model does what. Saved to config.toml.</p>
+        <p className="muted">
+          Global models. Bots' models come from their profiles (see Profiles). Saved to config.toml.
+        </p>
         <div className="settings-fields">
           {ROLES.map((role) => {
             const known = isKnown(providers, value[role.key]);

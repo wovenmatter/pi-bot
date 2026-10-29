@@ -1473,6 +1473,35 @@ input[type="file"] {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* Settings → Profiles */
+.profile-row {
+  flex-wrap: wrap;
+}
+.profile-editor {
+  flex: 1 1 100%;
+}
+.profile-pool {
+  align-items: start;
+}
+.profile-pool-rows {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.profile-pool-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.profile-background {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
 .settings-fields {
   display: grid;
   gap: 12px;

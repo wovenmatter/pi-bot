@@ -169,6 +169,9 @@ export function Conversation({
             </span>
           ) : null}
           <div className="thread-header-actions">
+            <span className="thread-subtitle" title="Model profile">
+              {bot.profileName}
+            </span>
             {isThread ? (
               <a className="text-button" href={routeHref({ botId: bot.id })}>
                 <Icon icon={CornerUpLeft} size={13} weight="control" />

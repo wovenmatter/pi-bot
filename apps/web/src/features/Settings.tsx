@@ -8,6 +8,8 @@ import type {
   BotSummary,
   DeletedBotSummary,
   GitHubStatus,
+  ProfileSummary,
+  ProfilesList,
   Requests,
 } from "../protocol.ts";
 import { routeHref, type SettingsSection } from "../routes.ts";
@@ -16,9 +18,10 @@ import { ConfigEditor, LimitsForm, type ValidationState } from "./settings/Confi
 import { GitHubSettings } from "./settings/GitHub.tsx";
 import type { LoginState } from "./settings/Login.tsx";
 import { ModelSettings } from "./settings/Models.tsx";
+import { AccountNotes, BotProfilesPanel, ProfilesPanel } from "./settings/Profiles.tsx";
 import { SearchSettings } from "./settings/Search.tsx";
 import { RESTART_TIMEOUT_MS, RestartNotice, type RestartState } from "./settings/shared.tsx";
-import { AdminModelPicker, type Placement, TeamsPanel } from "./settings/Teams.tsx";
+import { type Placement, TeamsPanel } from "./settings/Teams.tsx";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
@@ -87,6 +90,7 @@ type SectionProps = {
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "accounts", label: "Account & sign-ins" },
   { id: "models", label: "Models" },
+  { id: "profiles", label: "Profiles" },
   { id: "search", label: "Search" },
   { id: "github", label: "GitHub" },
   { id: "bots", label: "Bots" },
@@ -223,6 +227,87 @@ function ModelsSection({ client, connected, onError, onConfigSaved }: SectionPro
   );
 }
 
+function ProfilesSection({ client, connected, onError }: SectionProps) {
+  const [profiles, setProfiles] = useState<ProfileSummary[]>();
+  const [bots, setBots] = useState<BotSummary[]>();
+  const [providers, setProviders] = useState<Requests["models.catalog"]["result"]["providers"]>();
+  const [notes, setNotes] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(
+    () =>
+      Promise.all([client.request("profiles.list", {}), client.request("bots.list", {})])
+        .then(([listed, active]) => {
+          setProfiles(listed.profiles);
+          setBots(active.bots);
+        })
+        .catch((e: unknown) => onError(errorMessage(e))),
+    [client, onError],
+  );
+  useEffect(() => {
+    if (!connected) return;
+    void refresh();
+    client
+      .request("models.catalog", {})
+      .then((catalog) => setProviders(catalog.providers))
+      .catch((e: unknown) => onError(errorMessage(e)));
+    client
+      .request("account.notes", {})
+      .then((result) => setNotes(result.notes))
+      .catch((e: unknown) => onError(errorMessage(e)));
+    return client.onBotsChanged(() => void refresh());
+  }, [client, connected, refresh, onError]);
+
+  async function act(work: () => Promise<ProfilesList>, rethrow = false) {
+    onError(undefined);
+    setBusy(true);
+    try {
+      setProfiles((await work()).profiles);
+      await refresh();
+    } catch (e) {
+      onError(errorMessage(e));
+      if (rethrow) throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <ProfilesPanel
+        profiles={profiles}
+        bots={bots}
+        providers={providers}
+        disabled={!connected || busy}
+        onSave={(profile, create) =>
+          act(() => client.request("profiles.save", { profile, create }), true)
+        }
+        onSetDefault={(profile) =>
+          void act(() => client.request("profiles.setDefault", { profileId: profile.id }))
+        }
+        onDelete={(profile) => {
+          const using = bots?.filter((bot) => bot.profileId === profile.id).length ?? 0;
+          const note = using ? ` ${using} bot(s) on it move to the default profile.` : "";
+          if (!window.confirm(`Delete profile ${profile.name}?${note}`)) return;
+          void act(() => client.request("profiles.delete", { profileId: profile.id }));
+        }}
+      />
+      <AccountNotes
+        notes={notes}
+        disabled={!connected}
+        onSave={async (text) => {
+          onError(undefined);
+          try {
+            await client.request("account.setNotes", { notes: text });
+            setNotes(text);
+          } catch (e) {
+            onError(errorMessage(e));
+            throw e;
+          }
+        }}
+      />
+    </>
+  );
+}
+
 function SearchSection({ client, connected, onError, onConfigSaved }: SectionProps) {
   const [search, setSearch] = useState<Requests["settings.accounts"]["result"]["search"]>();
   const refresh = useCallback(
@@ -342,14 +427,19 @@ function BotsSection({
   const [deleted, setDeleted] = useState<DeletedBotSummary[]>();
   const [restoring, setRestoring] = useState<string>();
   const [live, setLive] = useState<BotSummary[]>();
-  const [providers, setProviders] = useState<Requests["models.catalog"]["result"]["providers"]>();
+  const [profiles, setProfiles] = useState<ProfileSummary[]>();
   const [busy, setBusy] = useState(false);
   const refresh = useCallback(
     () =>
-      Promise.all([client.request("bots.listDeleted", {}), client.request("bots.list", {})])
-        .then(([removed, active]) => {
+      Promise.all([
+        client.request("bots.listDeleted", {}),
+        client.request("bots.list", {}),
+        client.request("profiles.list", {}),
+      ])
+        .then(([removed, active, listed]) => {
           setDeleted(removed.bots);
           setLive(active.bots);
+          setProfiles(listed.profiles);
         })
         .catch((e: unknown) => onError(errorMessage(e))),
     [client, onError],
@@ -357,12 +447,8 @@ function BotsSection({
   useEffect(() => {
     if (!connected) return;
     void refresh();
-    client
-      .request("models.catalog", {})
-      .then((catalog) => setProviders(catalog.providers))
-      .catch((e: unknown) => onError(errorMessage(e)));
     return client.onBotsChanged(() => void refresh());
-  }, [client, connected, refresh, onError]);
+  }, [client, connected, refresh]);
 
   async function act(work: () => Promise<unknown>) {
     onError(undefined);
@@ -406,7 +492,6 @@ function BotsSection({
       setRestoring(undefined);
     }
   }
-  const admin = live?.find((bot) => bot.kind === "admin");
   return (
     <>
       <section className="settings-section" aria-labelledby="admin-heading">
@@ -415,13 +500,15 @@ function BotsSection({
           Admin Bot is your account and config bot: sign-ins, models, keys, GitHub and config.toml,
           and creating and organizing bots. It cannot be deleted and is never on a team.
         </p>
-        <AdminModelPicker
-          providers={providers}
-          {...(admin?.model ? { current: admin.model } : {})}
-          disabled={!connected || busy}
-          onSave={(model) => act(() => client.request("admin.setModel", { model }))}
-        />
       </section>
+      <BotProfilesPanel
+        bots={live}
+        profiles={profiles}
+        disabled={!connected || busy}
+        onSet={(bot, profileId) =>
+          void act(() => client.request("bots.setProfile", { botId: bot.id, profileId }))
+        }
+      />
       <TeamsPanel
         bots={live}
         disabled={!connected || busy}
@@ -597,6 +684,7 @@ export function Settings({
       />
       {section === "accounts" ? <AccountsSection {...props} /> : null}
       {section === "models" ? <ModelsSection {...props} /> : null}
+      {section === "profiles" ? <ProfilesSection {...props} /> : null}
       {section === "search" ? <SearchSection {...props} /> : null}
       {section === "github" ? <GitHubSection {...props} /> : null}
       {section === "bots" ? <BotsSection {...props} onRestored={onRestored} /> : null}

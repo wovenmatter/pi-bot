@@ -11,6 +11,9 @@ const deleted = [
     deletedAt: "2026-10-26T15:30:00.000Z",
     kind: "bot" as const,
     manager: false,
+    profileId: "default",
+    profileName: "Default",
+    defaultProfile: true,
   },
 ];
 

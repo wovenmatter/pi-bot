@@ -19,15 +19,39 @@ export type BotSummary = {
   /** Leads a team (one level: managers have no manager). */
   manager: boolean;
   managerId?: string;
-  /** Admin Bot's own model (`provider/modelId`); other bots use the default model role. */
-  model?: string;
+  /** The model profile this bot runs (its own or the default). Models stay server-side. */
+  profileId: string;
+  profileName: string;
+  /** Runs the default profile (no profile of its own). */
+  defaultProfile: boolean;
+};
+
+export type PoolModelSummary = { model: string; useFor: string; background?: boolean };
+/** A model profile: a main model for the main channel and threads, plus a pool for subagents. */
+export type ProfileSummary = {
+  id: string;
+  name: string;
+  main: string;
+  guidance?: string;
+  pool: PoolModelSummary[];
+  default?: boolean;
+};
+export type ProfilesList = { defaultId: string; profiles: ProfileSummary[] };
+export type ProfileInput = {
+  id: string;
+  name: string;
+  main: string;
+  guidance?: string;
+  pool: { model: string; useFor?: string; background?: boolean }[];
 };
 export type DeletedBotSummary = BotSummary & { deletedAt: string };
 
-/** First run: sign in to a provider, then pick Admin Bot's model. */
+/** First run: sign in to a provider, then (if needed) pick the main model of Admin Bot's profile. */
 export type OnboardingStatus = {
   adminId: string;
-  adminModel?: string;
+  profileId: string;
+  mainModel: string;
+  mainModelAvailable: boolean;
   signedIn: boolean;
   needed: boolean;
 };
@@ -103,9 +127,8 @@ export type LoginMessage = { type: "login"; loginId: string; event: LoginEvent }
 
 export type ModelOption = { id: string; name: string; reasoning: boolean; contextWindow: number };
 export type ProviderModels = { id: string; name: string; models: ModelOption[] };
+/** Global model roles; bots' models come from their profiles. */
 export type Roles = {
-  orchestrator: string;
-  background: string;
   titles: string;
   titlesReasoning: string;
 };
@@ -156,7 +179,17 @@ export type Requests = {
     result: { bot: BotSummary };
   };
   "onboarding.status": { body: Record<never, never>; result: OnboardingStatus };
-  "admin.setModel": { body: { model: string }; result: { bot: BotSummary } };
+  "onboarding.setMainModel": { body: { model: string }; result: { profile: ProfileSummary } };
+  "profiles.list": { body: Record<never, never>; result: ProfilesList };
+  "profiles.save": { body: { create?: boolean; profile: ProfileInput }; result: ProfilesList };
+  "profiles.delete": { body: { profileId: string }; result: ProfilesList };
+  "profiles.setDefault": { body: { profileId: string }; result: ProfilesList };
+  "bots.setProfile": {
+    body: { botId: string; profileId: string | null };
+    result: { bot: BotSummary };
+  };
+  "account.notes": { body: Record<never, never>; result: { notes: string; updatedAt?: string } };
+  "account.setNotes": { body: { notes: string }; result: { saved: true } };
   "conversation.open": {
     body: { botId: string; conversationId?: number };
     result: ConversationSnapshot;
