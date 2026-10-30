@@ -181,9 +181,11 @@ The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
   thread-title model plus title reasoning (`[models.titles]`, validated and written to
   `config.toml`); and the models each signed-in provider offers. The old `#/settings/models` tab
   folded in here and its links land on Profiles.
-- **Bots** — an optional **Top bot** picker (None or any bot but Admin Bot), then one row per bot
-  with its profile and team (move, promote/demote, hand a team to a member), then deleted bots and
-  Restore. The top bot is listed right after Admin Bot with a small "Top bot" label.
+- **Bots** — an optional **Orchestrator** picker (None or any bot but Admin Bot), then one row per
+  bot with its name, a role label (**Admin**, **Orchestrator**, **Manager** or **Bot**), a
+  **Rename** link (every bot but Admin Bot), its profile and team (No team / Manager / On X's team,
+  hand a team to a member), then deleted bots and Restore. The orchestrator is listed right after
+  Admin Bot; in the sidebar it carries a small "Orchestrator" label.
 - **Search** — Exa (default), Brave and Firecrawl keys, and `[search] provider`.
 - **GitHub** — an SSH key for git over SSH (generate an ed25519 key server-side, or paste an
   unencrypted OpenSSH private key; only the public key and SHA256 fingerprint are shown back) and
@@ -247,11 +249,18 @@ built-in tools, and Pi Bot's tool calls execute in the container).
 
 ### Admin Bot, bots and teams
 
+- **Roles** describe what a bot does and are separate from its name: **Admin** (Admin Bot),
+  **Orchestrator** (optional, at most one), **Manager** (leads a team) and **Bot** (everyone else,
+  team members included). Taking or leaving a role never changes a name.
+- **Names**: Admin Bot is always "Admin Bot" and can't be renamed. Any other bot (the orchestrator
+  and managers included) can be renamed in Settings → Bots (Rename), by telling the bot itself
+  (`rename_me`) or by asking Admin Bot (`rename_bot`). Names are trimmed, 1-80 characters; a rename
+  shows live in the sidebar (`bots.changed`) and in the bot's next system prompt.
 - **Admin Bot** is created on first start (exactly one; it can't be deleted, renamed or put on a
   team). It is the only bot with account/config tools: settings status, `config.toml` read/update,
   restart, model profiles (`list_profiles`, `save_profile`, `delete_profile`,
   `set_default_profile`, `set_bot_profile`), account notes (`read_account_notes`,
-  `write_account_notes`) and teams (`set_team`). It confirms config changes unless you asked for
+  `write_account_notes`), renaming other bots (`rename_bot`) and teams (`set_team`). It confirms config changes unless you asked for
   them, and never asks for secrets in chat (sign-ins and keys stay in Settings).
 - **Onboarding**: on first run the web app asks you to sign in and, only if the default profile's
   main model isn't available, to pick one (`onboarding.status`, `onboarding.setMainModel`). Admin
@@ -259,26 +268,31 @@ built-in tools, and Pi Bot's tool calls execute in the container).
   comfortable monthly spend (saved as account notes; guidance, not caps), proposes profiles (or
   goes step by step) and creates the bots/teams you want.
 - **Bots** each run one model profile (new bots get the default). Every bot has `list_bots`, `create_bot`
-  and `message_bot` (delivers to the target's main conversation as a follow-up, rate limited by
-  `[bot_to_bot] max_messages_per_hour_per_pair`). A bot created by a manager or team member joins
+  and `message_bot`; every bot but Admin Bot also has `rename_me` and `my_team`. `message_bot`
+  delivers to the target's main conversation as a follow-up, rate limited by
+  `[bot_to_bot] max_messages_per_hour_per_pair`. A bot created by a manager or team member joins
   that team.
 - **Teams** are optional and one level: any non-Admin Bot can be a manager (managers have no
   manager). Move bots, promote/demote and hand a team to a member in Settings → Bots, by asking
   Admin Bot, or by telling a bot to start a team. Demoting or deleting a manager ungroups its team; a
-  restored manager comes back without one. The sidebar pins Admin Bot, then the top bot (if any),
-  then nests members under their manager.
-- **Top bot** (optional, at most one) sits above every team: up to three levels (top bot → managers
-  → members), Admin Bot always apart and never the top bot. Pick one (or None) in Settings → Bots,
-  ask Admin Bot (`set_team` `make_top`/`clear_top`), or tell a bot to take or give up the role
-  (`my_team` `become_top`/`stop_top`). Setting a new top bot replaces the old one, which stays a
-  normal bot and keeps its team. Design choice: the top bot is never a member of a team (becoming
-  top takes it off one) but **may lead its own team**, which it keeps; handing that team to a member
-  leaves it top and ungrouped. Deleting the top bot clears the slot; a restored bot isn't top. Its
-  system prompt says it oversees every bot and team and lists them; other bots are told who it is.
-  Stored as `is_top` with a partial unique index (one row at most); older databases gain the column
-  on start with every bot kept.
-- WebSocket: `bots.create {name, managerId?}`, `bots.setManager`, `bots.setTeam`,
-  `bots.replaceManager`, `bots.setTop {botId | null}`; the server pushes `{type: "bots.changed"}` when the list changes.
+  restored manager comes back without one. The sidebar pins Admin Bot, then the orchestrator (if
+  any), then nests members under their manager.
+- **Orchestrator** (optional, at most one) sits above every team: up to three levels (orchestrator →
+  managers → members), Admin Bot always apart and never the orchestrator. Pick one (or None) in
+  Settings → Bots, ask Admin Bot (`set_team` `make_orchestrator`/`clear_orchestrator`), or tell a
+  bot to take or give up the role (`my_team` `become_orchestrator`/`stop_orchestrator`). Setting a
+  new orchestrator replaces the old one, which stays a normal bot and keeps its team. Design choice:
+  the orchestrator is never a member of a team (becoming orchestrator takes it off one) but **may
+  lead its own team**, which it keeps (its role label stays Orchestrator); handing that team to a
+  member leaves it orchestrator and ungrouped. Deleting the orchestrator clears the slot; a restored
+  bot isn't orchestrator. Its system prompt says it oversees every bot and team and lists them;
+  other bots are told who it is. Stored as `is_orchestrator` with a partial unique index
+  (`pibot_bots_one_orchestrator`, one row at most). The role was first called "top bot": on start,
+  a database with the old `is_top` column has it renamed in place (`ALTER TABLE … RENAME COLUMN`,
+  values kept) and the old index replaced; databases without it gain the column with every bot kept.
+- WebSocket: `bots.create {name, managerId?}`, `bots.rename {botId, name}` (rejected for Admin
+  Bot), `bots.setManager`, `bots.setTeam`, `bots.replaceManager`, `bots.setOrchestrator {botId |
+  null}`; the server pushes `{type: "bots.changed"}` when the list changes (renames included).
 
 ### Model profiles
 
