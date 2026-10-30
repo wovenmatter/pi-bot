@@ -1534,6 +1534,10 @@ input[type="file"] {
   align-items: center;
   justify-content: center;
 }
+/* Beats the plain-link hover underline (a:not([class]):hover) in every state. */
+.settings-tabs > a:any-link {
+  text-decoration: none;
+}
 .settings-intro {
   margin: 0 0 16px;
   font-size: 12.5px;
