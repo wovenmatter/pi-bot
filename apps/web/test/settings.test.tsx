@@ -17,7 +17,7 @@ const deleted = [
   },
 ];
 
-describe("Settings → Deleted bots", () => {
+describe("Settings → Bots → Deleted bots", () => {
   it("lists each deleted bot with its deleted date and a Restore button", () => {
     const html = renderToStaticMarkup(<DeletedBotsList bots={deleted} onRestore={() => {}} />);
     expect(html).toContain("Deleted bots");

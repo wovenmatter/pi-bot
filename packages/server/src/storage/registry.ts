@@ -30,7 +30,7 @@ export type BotRecord = {
 
 export type BotKind = "admin" | "bot";
 
-/** A soft-deleted bot, as listed in Settings → Deleted bots. */
+/** A soft-deleted bot, as listed in Settings → Bots → Deleted bots. */
 export type DeletedBotRecord = BotRecord & { readonly deletedAt: string };
 
 export type ThreadRecord = {
