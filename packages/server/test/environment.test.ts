@@ -217,6 +217,7 @@ function fakeDocker(options: { imageExists?: boolean } = {}) {
 
 const BOT_A = "11111111-1111-4111-8111-111111111111";
 const BOT_B = "22222222-2222-4222-8222-222222222222";
+const BOT_C = "33333333-3333-4333-8333-333333333333";
 const KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAfake\n-----END OPENSSH PRIVATE KEY-----";
 
 describe("DockerEnvironmentAdapter", () => {
@@ -308,15 +309,18 @@ describe("DockerEnvironmentAdapter", () => {
     await adapter.restore(BOT_A);
     expect(fake.containers.get(containerName(BOT_A))?.running).toBe(true);
 
-    // Startup: A active (stopped → started), B soft-deleted (running → stopped).
+    // Startup: A active (stopped → started), B soft-deleted (running → stopped), C unknown to this
+    // server (another instance's bot on the same Docker daemon) left running.
+    await adapter.ensure(BOT_C);
     fake.containers.set(containerName(BOT_A), {
       ...(fake.containers.get(containerName(BOT_A)) as Container),
       running: false,
     });
     const fresh = new DockerEnvironmentAdapter({ docker: fake.docker });
-    await fresh.reconcile([BOT_A]);
+    await fresh.reconcile([BOT_A], [BOT_B]);
     expect(fake.containers.get(containerName(BOT_A))?.running).toBe(true);
     expect(fake.containers.get(containerName(BOT_B))?.running).toBe(false);
+    expect(fake.containers.get(containerName(BOT_C))?.running).toBe(true);
     fresh.close();
   });
 

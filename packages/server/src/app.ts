@@ -37,13 +37,14 @@ export type PiBotApp = {
  */
 async function reconcileWithRetry(
   env: BotEnvironmentAdapter,
-  activeBots: () => Promise<string[]>,
+  bots: () => Promise<{ active: string[]; deleted: string[] }>,
   log: (message: string) => void,
   attempts = 6,
 ): Promise<void> {
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      await env.reconcile?.(await activeBots());
+      const { active, deleted } = await bots();
+      await env.reconcile?.(active, deleted);
       return;
     } catch (error) {
       log(`environment reconcile (attempt ${attempt}/${attempts}): ${String(error)}`);
@@ -223,7 +224,14 @@ export async function startPiBot(
         : {}),
     });
     const reconciled = env?.reconcile
-      ? reconcileWithRetry(env, async () => (await opened.list()).map((bot) => bot.id), log)
+      ? reconcileWithRetry(
+          env,
+          async () => ({
+            active: (await opened.list()).map((bot) => bot.id),
+            deleted: (await opened.listDeleted()).map((bot) => bot.id),
+          }),
+          log,
+        )
       : Promise.resolve();
     const webDir = options.webDir ?? config.paths.webDir;
     server = await startServer({

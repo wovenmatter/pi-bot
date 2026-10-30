@@ -22,8 +22,11 @@ export interface BotEnvironmentAdapter {
   purge?(botId: string): Promise<void>;
   /** A soft-deleted bot came back: bring its runtime back up. */
   restore?(botId: string): Promise<void>;
-  /** Server startup: every active bot's runtime exists and runs; others are stopped. */
-  reconcile?(activeBotIds: readonly string[]): Promise<void>;
+  /**
+   * Server startup: every active bot's runtime exists and runs; the soft-deleted bots' runtimes
+   * are stopped. Runtimes of bots this server doesn't know are left alone.
+   */
+  reconcile?(activeBotIds: readonly string[], deletedBotIds: readonly string[]): Promise<void>;
   /** The GitHub SSH key or git identity changed in Settings. */
   gitChanged?(): Promise<void>;
   /** Server shutdown: drop connections; runtimes keep running. */

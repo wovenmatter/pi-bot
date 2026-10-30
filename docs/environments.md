@@ -30,8 +30,9 @@ containers, while existing containers keep their image.
 ## Lifecycle
 
 Created on first use. At startup, the server makes sure every active bot's container exists and
-runs (retrying while Docker starts) and stops containers of deleted bots. Soft delete stops the
-container; restore starts it again. Pi Bot removes a container and its volume only when you
+runs (retrying while Docker starts) and stops containers of its own deleted bots; containers of
+bots it does not know, such as another Pi Bot instance on the same Docker daemon, are left alone.
+Soft delete stops the container; restore starts it again. Pi Bot removes a container and its volume only when you
 permanently delete a deleted bot (`docker rm -f pi-bot-<id>`, then `docker volume rm
 pi-bot-<id>-workspace`; either already missing is fine). If Docker is unavailable then, the bot's
 data is still purged and Settings says the workspace was not removed, so you can remove it by hand.

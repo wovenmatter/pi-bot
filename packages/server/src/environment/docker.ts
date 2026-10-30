@@ -319,11 +319,15 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
   }
 
   /**
-   * Startup: every active bot's container exists and runs; containers of bots that are not
-   * active (soft-deleted) are stopped. Never removes containers or volumes.
+   * Startup: every active bot's container exists and runs; containers of this server's
+   * soft-deleted bots are stopped. Containers of bots this server doesn't know (another Pi Bot
+   * instance on the same Docker daemon) are left alone. Never removes containers or volumes.
    */
-  async reconcile(activeBotIds: readonly string[]): Promise<void> {
-    const active = new Set(activeBotIds);
+  async reconcile(
+    activeBotIds: readonly string[],
+    deletedBotIds: readonly string[] = [],
+  ): Promise<void> {
+    const deleted = new Set(deletedBotIds);
     const ping = await this.#docker.run(["version", "--format", "{{.Server.Version}}"]);
     if (ping.code !== 0) throw new Error(`docker is not reachable: ${ping.stderr.trim()}`);
     for (const botId of activeBotIds) {
@@ -342,7 +346,7 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
     ]);
     if (listed.code !== 0) return;
     for (const botId of listed.stdout.split("\n").map((line) => line.trim())) {
-      if (botId && !active.has(botId)) await this.dispose(botId).catch(() => {});
+      if (botId && deleted.has(botId)) await this.dispose(botId).catch(() => {});
     }
   }
 
