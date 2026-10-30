@@ -19,6 +19,7 @@ export class PiBotClient {
   #events = new Set<(message: EventMessage) => void>();
   #states = new Set<(state: ConnectionState) => void>();
   #botsChanged = new Set<() => void>();
+  #threadsChanged = new Set<(botId: string) => void>();
   #state: ConnectionState = "closed";
   #attempt = 0;
   #reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -128,6 +129,12 @@ export class PiBotClient {
     return () => this.#botsChanged.delete(listener);
   }
 
+  /** A bot's thread list changed on the server (a thread was titled). */
+  onThreadsChanged(listener: (botId: string) => void): () => void {
+    this.#threadsChanged.add(listener);
+    return () => this.#threadsChanged.delete(listener);
+  }
+
   onState(listener: (state: ConnectionState) => void): () => void {
     this.#states.add(listener);
     return () => this.#states.delete(listener);
@@ -167,6 +174,10 @@ export class PiBotClient {
     }
     if (message.type === "bots.changed") {
       for (const listener of this.#botsChanged) listener();
+      return;
+    }
+    if (message.type === "threads.changed") {
+      for (const listener of this.#threadsChanged) listener(message.botId);
       return;
     }
     if (message.type === "result" || message.type === "error") {

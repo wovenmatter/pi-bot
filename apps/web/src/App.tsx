@@ -84,6 +84,15 @@ export function App() {
     if (connection === "open" && route.botId) void refreshThreads(route.botId);
   }, [connection, route.botId, refreshThreads]);
 
+  // A title was generated: refresh the sidebar, thread header and reply links for this bot.
+  useEffect(() => {
+    const botId = route.botId;
+    if (connection !== "open" || !botId) return;
+    return client.onThreadsChanged((changed) => {
+      if (changed === botId) void refreshThreads(botId);
+    });
+  }, [client, connection, route.botId, refreshThreads]);
+
   // Opening a thread picks up titles generated since the list was loaded.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refetch on each thread switch
   useEffect(() => {

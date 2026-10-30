@@ -183,6 +183,8 @@ export type ServerMessage =
   | { type: "error"; id?: string | number; message: string }
   /** The bot list changed (a bot created one, a team changed): refetch `bots.list`. */
   | { type: "bots.changed" }
+  /** A bot's thread list changed (a title was generated): refetch `threads.list`. */
+  | { type: "threads.changed"; botId: string }
   | EventMessage
   | LoginMessage;
 
