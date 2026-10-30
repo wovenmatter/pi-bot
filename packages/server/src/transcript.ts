@@ -10,6 +10,8 @@ export type DisplayEntry = {
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly error?: string;
+  /** An assistant reply the user stopped part-way (`conversation.abort`). */
+  readonly stopped?: true;
 };
 
 function messageText(message: Message): string {
@@ -30,8 +32,9 @@ export function displayEntry(entry: EntryRecord): DisplayEntry | undefined {
   for (const message of entry.model ?? []) {
     if (message.role !== "user" && message.role !== "assistant") continue;
     const text = messageText(message);
+    const stopReason = message.role === "assistant" ? message.stopReason : undefined;
     const error =
-      message.role === "assistant" && (message as AssistantMessage).stopReason === "error"
+      stopReason === "error"
         ? ((message as AssistantMessage).errorMessage ?? "model error")
         : undefined;
     if (!text && !error) continue;
@@ -41,6 +44,7 @@ export function displayEntry(entry: EntryRecord): DisplayEntry | undefined {
       role: message.role,
       text,
       ...(error ? { error } : {}),
+      ...(stopReason === "aborted" ? { stopped: true as const } : {}),
     };
   }
   return undefined;

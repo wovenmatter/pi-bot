@@ -112,7 +112,6 @@ from a throwaway instance with a faux "demo" provider and sample bots.
   pre-compaction extraction hook is a no-op.
 - **Background pool work.** The pool's `background = true` flag is stored but no background job
   uses it yet.
-- **Stop/abort** of a running reply, in the UI or the protocol.
 - **Purging deleted bots.** Deletion is soft; data stays in the database.
 
 ## Credits and caveats

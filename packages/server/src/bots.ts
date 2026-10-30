@@ -141,6 +141,19 @@ export class Bot {
   }
 
   /**
+   * Stop the main channel's or a thread's reply with Pi Durable's `Conversation.abort()`: queued
+   * follow-ups are withdrawn (settled unanswered, never placed), the run and its tools and
+   * subagents are aborted, and this resolves once the conversation is idle. A committed partial
+   * reply stays in the transcript as an aborted assistant entry. Background work (compaction) is
+   * left alone. A no-op on an idle conversation.
+   */
+  async abort(conversationId?: number): Promise<Conversation> {
+    const conversation = await this.conversation(conversationId);
+    await conversation.abort(ctx);
+    return conversation;
+  }
+
+  /**
    * Fork a thread off any message of the main channel or another thread. The fork inherits the
    * context up to and including `entryId` as is: no compaction, no rewriting. Threads have no
    * user-visible name and cannot be renamed; a title is generated later from the first message.

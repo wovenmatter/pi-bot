@@ -8,6 +8,8 @@ export type DisplayEntry = {
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly error?: string;
+  /** An assistant reply the user stopped part-way. */
+  readonly stopped?: true;
 };
 
 export type BotSummary = {
@@ -236,6 +238,11 @@ export type Requests = {
   "conversation.close": {
     body: { botId: string; conversationId: number };
     result: { closed: boolean };
+  };
+  /** Stop the running reply and drop queued follow-ups; resolves once the conversation is idle. */
+  "conversation.abort": {
+    body: { botId: string; conversationId?: number };
+    result: { conversationId: number; stopped: true };
   };
   "message.send": {
     body: { botId: string; conversationId?: number; text: string };

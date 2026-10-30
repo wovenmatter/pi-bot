@@ -120,6 +120,14 @@ export const requestSchema = z.discriminatedUnion("type", [
     botId,
     conversationId,
   }),
+  // Stop the conversation's reply (the main channel when `conversationId` is omitted) and drop
+  // its queued follow-ups. The partial reply stays, marked `stopped`.
+  z.strictObject({
+    id: requestId,
+    type: z.literal("conversation.abort"),
+    botId,
+    conversationId: conversationId.optional(),
+  }),
   z.object({
     id: requestId,
     type: z.literal("message.send"),

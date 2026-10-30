@@ -1,4 +1,11 @@
-import { ArrowDown, ArrowUp, CornerUpLeft, GitBranch, MessageSquareReply } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CornerUpLeft,
+  GitBranch,
+  MessageSquareReply,
+  Square,
+} from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
@@ -45,6 +52,7 @@ export function Conversation({
   const [error, setError] = useState<string>();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [following, setFollowing] = useState(true);
   const follow = useRef(true);
   const scroll = useRef<HTMLDivElement>(null);
@@ -133,6 +141,21 @@ export function Conversation({
       setError(errorMessage(e));
     } finally {
       setSending(false);
+    }
+  }
+
+  async function stop() {
+    if (stopping || viewed === undefined) return;
+    setStopping(true);
+    setError(undefined);
+    try {
+      await stopReply(client, bot.id, viewed);
+      // Queued follow-ups were dropped with the reply: they never become entries.
+      setState((current) => ({ ...current, pending: [] }));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setStopping(false);
     }
   }
 
@@ -281,20 +304,20 @@ export function Conversation({
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   void send();
+                } else if (event.key === "Escape" && state.running) {
+                  event.preventDefault();
+                  void stop();
                 }
               }}
             />
             <div className="composer-controls">
-              <div className="composer-send-actions">
-                <button
-                  type="submit"
-                  className="send-button"
-                  aria-label="Send message"
-                  disabled={!ready || sending || !draft.trim()}
-                >
-                  <Icon icon={ArrowUp} size={16} weight="send" />
-                </button>
-              </div>
+              <ComposerActions
+                running={state.running}
+                stopping={stopping}
+                canSend={ready && !sending && draft.trim() !== ""}
+                canStop={ready}
+                onStop={() => void stop()}
+              />
             </div>
           </form>
           <div className="composer-status" role="status">
@@ -302,6 +325,50 @@ export function Conversation({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Ask the server to stop the conversation's running reply (and drop its queued follow-ups). */
+export function stopReply(
+  client: Pick<PiBotClient, "request">,
+  botId: string,
+  conversationId: number,
+) {
+  return client.request("conversation.abort", { botId, conversationId });
+}
+
+/** Send, with Stop beside it while a reply is streaming. */
+export function ComposerActions({
+  running,
+  stopping,
+  canSend,
+  canStop,
+  onStop,
+}: {
+  running: boolean;
+  stopping: boolean;
+  canSend: boolean;
+  canStop: boolean;
+  onStop: () => void;
+}) {
+  return (
+    <div className="composer-send-actions">
+      {running ? (
+        <button
+          type="button"
+          className="stop-button"
+          aria-label="Stop reply"
+          title="Stop reply (Esc)"
+          disabled={!canStop || stopping}
+          onClick={onStop}
+        >
+          <Icon icon={Square} size={12} weight="send" />
+        </button>
+      ) : null}
+      <button type="submit" className="send-button" aria-label="Send message" disabled={!canSend}>
+        <Icon icon={ArrowUp} size={16} weight="send" />
+      </button>
     </div>
   );
 }
@@ -336,6 +403,7 @@ function Message({
             {entry.role === "assistant" ? <RichText>{entry.text}</RichText> : entry.text}
           </div>
         ) : null}
+        {entry.stopped ? <small className="muted">Stopped</small> : null}
         {entry.error ? <MessageError message={entry.error} /> : null}
         {replies.length > 0 ? (
           <div className="thread-replies">

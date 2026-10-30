@@ -468,6 +468,11 @@ class Connection {
         );
         return { conversationId: conversation.id, submissionId: submission.id };
       }
+      case "conversation.abort": {
+        const target = await manager.get(request.botId);
+        const conversation = await target.abort(request.conversationId);
+        return { conversationId: conversation.id, stopped: true };
+      }
       case "conversation.close": {
         const key = `${request.botId}:${request.conversationId}`;
         const stream = this.#subscriptions.get(key);

@@ -55,6 +55,12 @@ any message of the main channel or another thread and inherits the context up to
 Threads are titled automatically from their first message and can't be renamed. Both compact the
 same way ([configuration](configuration.md#compaction)).
 
+**Stop** (the square button beside Send, or Esc in the composer) ends the reply streaming in the
+open main channel or thread (`conversation.abort`). It uses Pi Durable's `Conversation.abort()`:
+the run, its tool calls and subagents are aborted, messages queued behind the reply are dropped
+(never answered), and the partial reply stays in the transcript marked "Stopped". Claude Agent
+SDK turns are cancelled through the SDK's abort controller. The next message starts a fresh reply.
+
 ![A thread forked off a reply](images/thread.png)
 
 ## Deleting and restoring

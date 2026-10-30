@@ -166,6 +166,52 @@ describe("Claude Agent SDK provider", () => {
     }
   });
 
+  it("stops the Claude Code turn when Pi aborts the request", async () => {
+    let sdkAbort: AbortController | undefined;
+    let closed = false;
+    const all = createPiBotModels(
+      new MemoryCredentials({
+        [CLAUDE_SUBSCRIPTION_PROVIDER]: { type: "api_key", key: "sk-ant-oat01-test-claude" },
+      }),
+      {
+        claude: {
+          directory: join(dir.path, "claude"),
+          // A turn that never finishes on its own: it only ends when its abort controller fires.
+          query: ({ options }) => {
+            sdkAbort = options.abortController as AbortController;
+            const signal = sdkAbort.signal;
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield {
+                  type: "stream_event",
+                  parent_tool_use_id: null,
+                  event: { type: "message_start", message: { id: "msg_long" } },
+                };
+                await new Promise((resolve) =>
+                  signal.addEventListener("abort", resolve, { once: true }),
+                );
+                throw new Error("Claude Code process aborted");
+              },
+              close: () => {
+                closed = true;
+              },
+            };
+          },
+        },
+      },
+    );
+    const controller = new AbortController();
+    const stream = all.stream(model(all), { messages: [user("hi")] }, {
+      signal: controller.signal,
+    } as never);
+    while (!sdkAbort) await new Promise((resolve) => setTimeout(resolve, 5));
+    controller.abort();
+    const result = await stream.result();
+    expect(sdkAbort.signal.aborted).toBe(true);
+    expect(closed).toBe(true);
+    expect(result.stopReason).toBe("aborted");
+  });
+
   const lookup = {
     name: "lookup",
     description: "Look something up.",
