@@ -23,6 +23,13 @@ export const requestSchema = z.discriminatedUnion("type", [
   // User-only, from Settings → Bots → Deleted bots. Never exposed to agent tools.
   z.object({ id: requestId, type: z.literal("bots.listDeleted") }),
   z.object({ id: requestId, type: z.literal("bots.restore"), botId }),
+  // Rename any bot but Admin Bot (its name is fixed).
+  z.strictObject({
+    id: requestId,
+    type: z.literal("bots.rename"),
+    botId,
+    name: z.string().min(1).max(80),
+  }),
   // Teams (Settings → Bots). One level: managers have no manager; Admin Bot is never on a team.
   z.strictObject({
     id: requestId,
@@ -42,10 +49,10 @@ export const requestSchema = z.discriminatedUnion("type", [
     managerId: botId,
     newManagerId: botId,
   }),
-  // The optional top bot (at most one, above every team; never Admin Bot). null clears it.
+  // The optional orchestrator (at most one, above every team; never Admin Bot). null clears it.
   z.strictObject({
     id: requestId,
-    type: z.literal("bots.setTop"),
+    type: z.literal("bots.setOrchestrator"),
     botId: botId.nullable(),
   }),
   // First-run onboarding: sign in to a provider, then (if Admin Bot's profile's main model is
@@ -218,8 +225,8 @@ export type BotSummary = {
   kind: "admin" | "bot";
   manager: boolean;
   managerId?: string;
-  /** The one optional top bot, above every team. */
-  top: boolean;
+  /** The one optional orchestrator, above every team. */
+  orchestrator: boolean;
   /** The profile this bot runs (its own or the default). */
   profileId: string;
   profileName: string;

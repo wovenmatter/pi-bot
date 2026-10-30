@@ -42,7 +42,7 @@ export function describeBot(record: BotRecord) {
     ...(record.kind === "admin" ? { admin: true } : {}),
     ...(record.manager ? { manager: true } : {}),
     ...(record.managerId ? { managerId: record.managerId } : {}),
-    ...(record.top ? { top: true } : {}),
+    ...(record.orchestrator ? { orchestrator: true } : {}),
   };
 }
 
@@ -88,7 +88,7 @@ function commonTools(botId: string, platform: BotPlatform) {
     defineTool({
       name: "list_bots",
       description:
-        "List every bot on this Pi Bot: id, name, whether it is Admin Bot, the top bot or a team manager, and its manager.",
+        "List every bot on this Pi Bot: id, name, whether it is Admin Bot, the orchestrator or a team manager, and its manager.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: () => run(async () => (await platform.manager().list()).map(describeBot)),
@@ -125,27 +125,37 @@ function commonTools(botId: string, platform: BotPlatform) {
             );
           }
           await target.send(`[Message from bot "${sender.name}" (id ${sender.id})]\n${args.text}`);
-          return `Delivered to ${target.record.name}.`;
+          return `Delivered to ${(await manager.record(args.botId)).name}.`;
         }),
     }),
   ];
 }
 
-/** Non-Admin Bots: start a team under themselves and add or remove members. */
+/** Non-Admin Bots: rename themselves, start a team under themselves and add or remove members. */
 function teamTools(botId: string, platform: BotPlatform) {
   return [
     defineTool({
+      name: "rename_me",
+      description:
+        "Change your own name when the user asks. Your role (orchestrator, manager or bot) stays as it is.",
+      parameters: Type.Object({
+        name: Type.String({ description: "Your new name (1-80 characters)" }),
+      }),
+      execute: (args) =>
+        run(async () => describeBot(await platform.manager().rename(botId, args.name))),
+    }),
+    defineTool({
       name: "my_team",
       description:
-        "Manage your own team or role when the user asks. start: become a team manager (you leave any team you are on). add/remove: put another bot on or off your team (you must be a manager). stop: stop managing (your team is ungrouped). become_top: become the top bot, which oversees every bot and team (replaces the current top bot; you leave any team you are on, a team you manage stays). stop_top: stop being the top bot.",
+        "Manage your own team or role when the user asks. start: become a team manager (you leave any team you are on). add/remove: put another bot on or off your team (you must be a manager). stop: stop managing (your team is ungrouped). become_orchestrator: become the orchestrator, which oversees every bot and team (replaces the current orchestrator; you leave any team you are on, a team you manage stays). stop_orchestrator: stop being the orchestrator.",
       parameters: Type.Object({
         action: Type.Union([
           Type.Literal("start"),
           Type.Literal("add"),
           Type.Literal("remove"),
           Type.Literal("stop"),
-          Type.Literal("become_top"),
-          Type.Literal("stop_top"),
+          Type.Literal("become_orchestrator"),
+          Type.Literal("stop_orchestrator"),
         ]),
         botId: Type.Optional(Type.String({ description: "The bot to add or remove" })),
       }),
@@ -154,13 +164,14 @@ function teamTools(botId: string, platform: BotPlatform) {
           const manager = platform.manager();
           if (args.action === "start") return describeBot(await manager.setManager(botId, true));
           if (args.action === "stop") return describeBot(await manager.setManager(botId, false));
-          if (args.action === "become_top") {
-            await manager.setTop(botId);
+          if (args.action === "become_orchestrator") {
+            await manager.setOrchestrator(botId);
             return describeBot(await manager.record(botId));
           }
-          if (args.action === "stop_top") {
-            if (!(await manager.record(botId)).top) throw new Error("you are not the top bot");
-            await manager.setTop(undefined);
+          if (args.action === "stop_orchestrator") {
+            if (!(await manager.record(botId)).orchestrator)
+              throw new Error("you are not the orchestrator");
+            await manager.setOrchestrator(undefined);
             return describeBot(await manager.record(botId));
           }
           if (!args.botId) throw new Error("botId is required");
@@ -184,9 +195,20 @@ function adminTools(platform: BotPlatform) {
   };
   return [
     defineTool({
+      name: "rename_bot",
+      description:
+        "Rename a bot (id from list_bots) when the user asks. Any bot but Admin Bot, whose name is fixed; roles stay as they are.",
+      parameters: Type.Object({
+        botId: Type.String(),
+        name: Type.String({ description: "The new name (1-80 characters)" }),
+      }),
+      execute: (args) =>
+        run(async () => describeBot(await platform.manager().rename(args.botId, args.name))),
+    }),
+    defineTool({
       name: "set_team",
       description:
-        "Organize teams for the user. promote/demote: make a bot a team manager or not (demoting ungroups its team). join: put botId on managerId's team. leave: take botId off its team. replace_manager: make botId the new manager of managerId's team (the old manager stays as a member). make_top: make botId the one optional top bot, which oversees every bot and team (replaces the current one, which keeps its team; the new one leaves any team it is on and keeps a team it manages). clear_top: no top bot (botId is ignored).",
+        "Organize teams for the user. promote/demote: make a bot a team manager or not (demoting ungroups its team). join: put botId on managerId's team. leave: take botId off its team. replace_manager: make botId the new manager of managerId's team (the old manager stays as a member). make_orchestrator: make botId the one optional orchestrator, which oversees every bot and team (replaces the current one, which keeps its team; the new one leaves any team it is on and keeps a team it manages). clear_orchestrator: no orchestrator (botId is ignored).",
       parameters: Type.Object({
         action: Type.Union([
           Type.Literal("promote"),
@@ -194,8 +216,8 @@ function adminTools(platform: BotPlatform) {
           Type.Literal("join"),
           Type.Literal("leave"),
           Type.Literal("replace_manager"),
-          Type.Literal("make_top"),
-          Type.Literal("clear_top"),
+          Type.Literal("make_orchestrator"),
+          Type.Literal("clear_orchestrator"),
         ]),
         botId: Type.Optional(Type.String()),
         managerId: Type.Optional(Type.String()),
@@ -203,14 +225,14 @@ function adminTools(platform: BotPlatform) {
       execute: (args) =>
         run(async () => {
           const manager = platform.manager();
-          if (args.action === "clear_top") {
-            await manager.setTop(undefined);
-            return "There is no top bot now.";
+          if (args.action === "clear_orchestrator") {
+            await manager.setOrchestrator(undefined);
+            return "There is no orchestrator now.";
           }
           if (!args.botId) throw new Error("botId is required");
           switch (args.action) {
-            case "make_top":
-              await manager.setTop(args.botId);
+            case "make_orchestrator":
+              await manager.setOrchestrator(args.botId);
               return describeBot(await manager.record(args.botId));
             case "promote":
               return describeBot(await manager.setManager(args.botId, true));

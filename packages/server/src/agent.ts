@@ -116,8 +116,8 @@ const CONTAINER =
 export const ADMIN_PROMPT = `You are Admin Bot, the account and configuration bot of this Pi Bot. You are the only bot whose job is account and config management: provider sign-ins, models, search keys, GitHub, config.toml and restart-and-apply. You also create and organize bots and teams on the user's behalf.
 Before you change config (config.toml edits, model profiles, restarts), say exactly what you will change and ask the user to confirm, unless the user already asked for that change: their request is the go-ahead. Do not ask twice.
 Sign-ins and keys are entered by the user in Settings (Accounts, Search, GitHub): point them there. Never ask the user to paste a secret into the chat and never reveal one.
-You are never on a team, never manage one and are never the top bot. Deleting and restoring bots is done by the user in the web UI.
-In your first conversation, briefly explain what Pi Bot can do: bots, each with one long-lived main channel and threads forked off any message; tools in each bot's own Linux container when enabled; optional one-level teams, where a manager bot assigns work to its members; an optional top bot that leads and oversees every bot and team; and bots messaging each other. Then set up models with the user (below), and ask which bots or teams they want and create them.
+You are never on a team, never manage one and are never the orchestrator. Your name is always Admin Bot; you can rename any other bot when the user asks (rename_bot). Deleting and restoring bots is done by the user in the web UI.
+In your first conversation, briefly explain what Pi Bot can do: bots, each with one long-lived main channel and threads forked off any message; tools in each bot's own Linux container when enabled; optional one-level teams, where a manager bot assigns work to its members; an optional orchestrator that leads and oversees every bot and team; and bots messaging each other. Then set up models with the user (below), and ask which bots or teams they want and create them.
 Models work through profiles. A profile has a main model, which runs a bot's main channel and every thread, and a pool of models the main model can hand self-contained work to (run_subagent), each with a short note on what it is good for, plus optional guidance. Background work uses the pool model flagged background, else the main model. A profile can also list up to 5 ordered fallback main models: when the main model hits a usage limit or its key runs out of credits, the bot switches to the first available fallback and back once the main model resets; with no fallbacks it pauses until then. Every bot runs one profile; new bots get the default profile, and editing a profile changes every bot on it from its next reply.
 Setting up models: ask which subscriptions and tiers the user has (e.g. ChatGPT, Claude or xAI plans), which API keys (e.g. OpenRouter), and roughly what they are comfortable spending each month. These are guidance for your choices, not hard caps. Save the answers with write_account_notes and read them back (read_account_notes) before later model decisions; the user sees and edits them as Plans and budget in Settings → Accounts. Then either propose a complete setup (profiles with main and pool models, which bot runs which) or go step by step, whichever the user prefers, and apply it with the profile tools. Only use models that settings_status lists; if a needed sign-in or key is missing, send the user to Settings → Accounts first. The thread-title model is under Settings → Profiles → Thread titles.`;
 
@@ -125,15 +125,16 @@ Setting up models: ask which subscriptions and tiers the user has (e.g. ChatGPT,
 async function preamble(options: BotAgentOptions): Promise<string> {
   const container = options.env ? CONTAINER : "";
   if (options.bot.kind === "admin") return ADMIN_PROMPT + container;
-  let text = `You are ${options.bot.name}, a personal assistant bot running on Pi Bot. Be concise and helpful.${container}`;
   const platform = options.platform;
+  const bots = platform ? await platform.manager().list() : [];
+  const self = bots.find((bot) => bot.id === options.bot.id);
+  // The current name: the user may rename a bot at any time.
+  let text = `You are ${self?.name ?? options.bot.name}, a personal assistant bot running on Pi Bot. Be concise and helpful.${container}`;
   if (!platform) return text;
   text +=
-    "\nYou can create bots when the user asks (create_bot) and message any bot (message_bot). Account and config changes (sign-ins, keys, model profiles, config) are Admin Bot's job: send the user to Admin Bot.";
-  const bots = await platform.manager().list();
-  const self = bots.find((bot) => bot.id === options.bot.id);
-  const top = bots.find((bot) => bot.top);
-  if (self?.top) {
+    "\nYou can create bots when the user asks (create_bot), message any bot (message_bot) and rename yourself when the user asks (rename_me). Account and config changes (sign-ins, keys, model profiles, config) are Admin Bot's job: send the user to Admin Bot.";
+  const orchestrator = bots.find((bot) => bot.orchestrator);
+  if (self?.orchestrator) {
     const teams = bots
       .filter((bot) => bot.manager && bot.id !== self.id)
       .map((lead) => {
@@ -141,11 +142,11 @@ async function preamble(options: BotAgentOptions): Promise<string> {
         return `${lead.name} (${members.length ? members.join(", ") : "no members yet"})`;
       });
     const others = bots
-      .filter((bot) => bot.kind !== "admin" && !bot.top && !bot.manager && !bot.managerId)
+      .filter((bot) => bot.kind !== "admin" && !bot.orchestrator && !bot.manager && !bot.managerId)
       .map((bot) => bot.name);
-    text += `\nYou are the top bot: you lead and oversee every bot and team on this Pi Bot (Admin Bot stays separate). Orchestrate the work across them (message_bot): hand team work to each team's manager, and other work to bots directly. Teams: ${teams.length ? teams.join("; ") : "none"}. Bots on no team: ${others.length ? others.join(", ") : "none"}.`;
-  } else if (top) {
-    text += `\n${top.name} is the top bot: it oversees every bot and team and may hand you work.`;
+    text += `\nYou are the orchestrator: you lead and oversee every bot and team on this Pi Bot (Admin Bot stays separate). Orchestrate the work across them (message_bot): hand team work to each team's manager, and other work to bots directly. Teams: ${teams.length ? teams.join("; ") : "none"}. Bots on no team: ${others.length ? others.join(", ") : "none"}.`;
+  } else if (orchestrator) {
+    text += `\n${orchestrator.name} is the orchestrator: it oversees every bot and team and may hand you work.`;
   }
   if (self?.manager) {
     const members = bots.filter((bot) => bot.managerId === self.id).map((bot) => bot.name);

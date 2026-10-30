@@ -148,7 +148,7 @@ describe("bot tools", () => {
     expect(history).not.toContain("again");
   });
 
-  it("sets and clears the top bot from Admin Bot or a bot, and tells the top bot its role", async () => {
+  it("sets and clears the orchestrator from Admin Bot or a bot, and tells the orchestrator its role", async () => {
     const admin = await manager.admin();
     if (!admin) throw new Error("no Admin Bot");
     const chief = await manager.create("Chief");
@@ -157,41 +157,80 @@ describe("bot tools", () => {
     await manager.create("Member", { managerId: lead.id });
     await manager.create("Loose");
 
-    faux.setResponses([tool("set_team", { action: "make_top", botId: chief.id }), reply]);
-    await say(await manager.get(admin.id), "make Chief the top bot");
-    expect((await manager.record(chief.id)).top).toBe(true);
-    faux.setResponses([tool("set_team", { action: "make_top", botId: admin.id }), reply]);
-    await say(await manager.get(admin.id), "make yourself the top bot");
-    expect(seen.at(-1)).toContain("the Admin Bot can't be the top bot");
+    faux.setResponses([tool("set_team", { action: "make_orchestrator", botId: chief.id }), reply]);
+    await say(await manager.get(admin.id), "make Chief the orchestrator");
+    expect((await manager.record(chief.id)).orchestrator).toBe(true);
+    faux.setResponses([tool("set_team", { action: "make_orchestrator", botId: admin.id }), reply]);
+    await say(await manager.get(admin.id), "make yourself the orchestrator");
+    expect(seen.at(-1)).toContain("the Admin Bot can't be the orchestrator");
 
-    // The top bot's prompt names its role, the teams and the bots on no team.
+    // The orchestrator's prompt names its role, the teams and the bots on no team.
     let before = seen.length;
     faux.setResponses([reply]);
     await say(await manager.get(chief.id), "hi");
-    expect(seen[before]).toContain("You are the top bot: you lead and oversee every bot and team");
+    expect(seen[before]).toContain(
+      "You are the orchestrator: you lead and oversee every bot and team",
+    );
     expect(seen[before]).toContain("Teams: Lead (Member). Bots on no team: Loose.");
-    // Other bots know who the top bot is.
+    // Other bots know who the orchestrator is.
     before = seen.length;
     faux.setResponses([reply]);
     await say(await manager.get(lead.id), "hi");
-    expect(seen[before]).toContain("Chief is the top bot");
+    expect(seen[before]).toContain("Chief is the orchestrator");
 
     // A bot can take over the slot itself, and give it up.
-    faux.setResponses([tool("my_team", { action: "become_top" }), reply]);
-    await say(await manager.get(lead.id), "be the top bot");
-    expect((await manager.list()).filter((bot) => bot.top).map((bot) => bot.name)).toEqual([
-      "Lead",
-    ]);
+    faux.setResponses([tool("my_team", { action: "become_orchestrator" }), reply]);
+    await say(await manager.get(lead.id), "be the orchestrator");
+    expect((await manager.list()).filter((bot) => bot.orchestrator).map((bot) => bot.name)).toEqual(
+      ["Lead"],
+    );
     expect(await manager.record(lead.id)).toMatchObject({ manager: true });
-    faux.setResponses([tool("my_team", { action: "stop_top" }), reply]);
-    await say(await manager.get(lead.id), "stop being the top bot");
-    expect((await manager.list()).some((bot) => bot.top)).toBe(false);
+    faux.setResponses([tool("my_team", { action: "stop_orchestrator" }), reply]);
+    await say(await manager.get(lead.id), "stop being the orchestrator");
+    expect((await manager.list()).some((bot) => bot.orchestrator)).toBe(false);
 
-    faux.setResponses([tool("set_team", { action: "make_top", botId: chief.id }), reply]);
+    faux.setResponses([tool("set_team", { action: "make_orchestrator", botId: chief.id }), reply]);
     await say(await manager.get(admin.id), "Chief again");
-    faux.setResponses([tool("set_team", { action: "clear_top" }), reply]);
-    await say(await manager.get(admin.id), "no top bot");
-    expect((await manager.list()).some((bot) => bot.top)).toBe(false);
+    faux.setResponses([tool("set_team", { action: "clear_orchestrator" }), reply]);
+    await say(await manager.get(admin.id), "no orchestrator");
+    expect((await manager.list()).some((bot) => bot.orchestrator)).toBe(false);
+  });
+
+  it("renames bots by telling the bot itself or Admin Bot, never Admin Bot", async () => {
+    const admin = await manager.admin();
+    if (!admin) throw new Error("no Admin Bot");
+    const scout = await manager.create("Scout");
+    await manager.setOrchestrator(scout.id);
+
+    faux.setResponses([tool("rename_me", { name: "Ranger" }), reply]);
+    await say(await manager.get(scout.id), "call yourself Ranger");
+    expect(await manager.record(scout.id)).toMatchObject({ name: "Ranger", orchestrator: true });
+    // The next prompt uses the new name.
+    let before = seen.length;
+    faux.setResponses([reply]);
+    await say(await manager.get(scout.id), "hi");
+    expect(seen[before]).toContain("You are Ranger,");
+
+    faux.setResponses([tool("rename_bot", { botId: scout.id, name: "Scout Two" }), reply]);
+    await say(await manager.get(admin.id), "rename Ranger to Scout Two");
+    expect((await manager.record(scout.id)).name).toBe("Scout Two");
+
+    faux.setResponses([tool("rename_bot", { botId: admin.id, name: "Boss" }), reply]);
+    await say(await manager.get(admin.id), "rename yourself Boss");
+    expect(seen.at(-1)).toContain("the Admin Bot is always");
+    expect((await manager.record(admin.id)).name).toBe("Admin Bot");
+
+    // Admin Bot has no rename_me; other bots have no rename_bot.
+    before = seen.length;
+    faux.setResponses([reply]);
+    await say(await manager.get(admin.id), "tools?");
+    expect(hasTool(seen[before], "rename_bot")).toBe(true);
+    expect(hasTool(seen[before], "rename_me")).toBe(false);
+    before = seen.length;
+    faux.setResponses([reply]);
+    await say(await manager.get(scout.id), "tools?");
+    expect(hasTool(seen[before], "rename_me")).toBe(true);
+    expect(hasTool(seen[before], "rename_bot")).toBe(false);
   });
 
   it("limits messages per pair over a sliding hour", () => {

@@ -130,12 +130,12 @@ describe("shared storage", () => {
     }
   });
 
-  it("adds the top-bot column to a team-era database and keeps its bots", async () => {
+  it("adds the orchestrator column to a team-era database and keeps its bots", async () => {
     const dbPath = join(dir.path, "pi-bot.sqlite");
     const db = await openSharedDatabase(dbPath);
     const ids = ["0b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4", "1b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4"];
     const [adminId, botId] = ids as [string, string];
-    // The registry as it was before the top bot: kind, teams, profiles, no is_top.
+    // The registry as it was before the orchestrator: kind, teams, profiles, no is_orchestrator.
     await db.exec(
       `CREATE TABLE ${BOTS_TABLE} (id TEXT PRIMARY KEY, name TEXT NOT NULL, schema_prefix TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, deleted_at TEXT, kind TEXT NOT NULL DEFAULT 'bot', is_manager INTEGER NOT NULL DEFAULT 0, manager_id TEXT, model TEXT, profile TEXT) STRICT`,
     );
@@ -158,17 +158,80 @@ describe("shared storage", () => {
       await registry.migrate();
       await registry.migrate();
       expect(await registry.list()).toEqual([
-        expect.objectContaining({ id: adminId, kind: "admin", profile: "fast", top: false }),
-        expect.objectContaining({ id: botId, name: "Lead", manager: true, top: false }),
+        expect.objectContaining({
+          id: adminId,
+          kind: "admin",
+          profile: "fast",
+          orchestrator: false,
+        }),
+        expect.objectContaining({ id: botId, name: "Lead", manager: true, orchestrator: false }),
       ]);
-      await registry.setTop(botId);
-      expect(await registry.get(botId)).toMatchObject({ top: true, manager: true });
-      // The unique index allows at most one top bot.
+      await registry.setOrchestrator(botId);
+      expect(await registry.get(botId)).toMatchObject({ orchestrator: true, manager: true });
+      // The unique index allows at most one orchestrator.
       await expect(
-        db.run(`UPDATE ${BOTS_TABLE} SET is_top = 1 WHERE id = ?`, adminId),
+        db.run(`UPDATE ${BOTS_TABLE} SET is_orchestrator = 1 WHERE id = ?`, adminId),
       ).rejects.toThrow();
-      await registry.setTop(undefined);
-      expect((await registry.list()).filter((bot) => bot.top)).toEqual([]);
+      await registry.setOrchestrator(undefined);
+      expect((await registry.list()).filter((bot) => bot.orchestrator)).toEqual([]);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("renames the top-bot column to is_orchestrator and keeps who holds it", async () => {
+    const dbPath = join(dir.path, "pi-bot.sqlite");
+    const db = await openSharedDatabase(dbPath);
+    const ids = ["0b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4", "1b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4"];
+    const [adminId, botId] = ids as [string, string];
+    // The registry as it was with the first "top bot": is_top and its unique index.
+    await db.exec(
+      `CREATE TABLE ${BOTS_TABLE} (id TEXT PRIMARY KEY, name TEXT NOT NULL, schema_prefix TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, deleted_at TEXT, kind TEXT NOT NULL DEFAULT 'bot', is_manager INTEGER NOT NULL DEFAULT 0, manager_id TEXT, model TEXT, profile TEXT, is_top INTEGER NOT NULL DEFAULT 0) STRICT;
+      CREATE UNIQUE INDEX pibot_bots_one_top ON ${BOTS_TABLE}(is_top) WHERE is_top = 1`,
+    );
+    await db.run(
+      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at, kind) VALUES (?, ?, ?, ?, 'admin')`,
+      adminId,
+      "Admin Bot",
+      botPrefix(adminId),
+      "2026-01-01T00:00:00.000Z",
+    );
+    await db.run(
+      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at, is_manager, is_top, profile) VALUES (?, ?, ?, ?, 1, 1, 'fast')`,
+      botId,
+      "Chief",
+      botPrefix(botId),
+      "2026-01-02T00:00:00.000Z",
+    );
+    const registry = new BotRegistry(db);
+    try {
+      await registry.migrate();
+      await registry.migrate();
+      const columns = (await db.all<{ name: string }>(`PRAGMA table_info(${BOTS_TABLE})`)).map(
+        (column) => column.name,
+      );
+      expect(columns).toContain("is_orchestrator");
+      expect(columns).not.toContain("is_top");
+      const indexes = (
+        await db.all<{ name: string }>(
+          `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = '${BOTS_TABLE}'`,
+        )
+      ).map((index) => index.name);
+      expect(indexes).toContain("pibot_bots_one_orchestrator");
+      expect(indexes).not.toContain("pibot_bots_one_top");
+      expect(await registry.list()).toEqual([
+        expect.objectContaining({ id: adminId, name: "Admin Bot", orchestrator: false }),
+        expect.objectContaining({
+          id: botId,
+          name: "Chief",
+          manager: true,
+          orchestrator: true,
+          profile: "fast",
+        }),
+      ]);
+      await expect(
+        db.run(`UPDATE ${BOTS_TABLE} SET is_orchestrator = 1 WHERE id = ?`, adminId),
+      ).rejects.toThrow();
     } finally {
       await db.close();
     }
@@ -193,7 +256,7 @@ describe("shared storage", () => {
       await registry.migrate();
       await registry.migrate();
       expect(await registry.list()).toEqual([
-        expect.objectContaining({ name: "Old", kind: "bot", manager: false, top: false }),
+        expect.objectContaining({ name: "Old", kind: "bot", manager: false, orchestrator: false }),
       ]);
       expect(await registry.admin()).toBeUndefined();
       await registry.setTeam(id, { manager: true });

@@ -79,7 +79,7 @@ const botSummary = (
     kind: record.kind,
     manager: record.manager,
     ...(record.managerId ? { managerId: record.managerId } : {}),
-    top: record.top,
+    orchestrator: record.orchestrator,
     profileId: profile?.id ?? record.profile ?? "",
     profileName: profile?.name ?? "",
     defaultProfile: !record.profile || !profiles?.get(record.profile),
@@ -316,15 +316,17 @@ class Connection {
         const restored = await manager.restore(request.botId);
         return restored ? { restored: true, bot: bot(restored) } : { restored: false };
       }
+      case "bots.rename":
+        return { bot: bot(await manager.rename(request.botId, request.name)) };
       case "bots.setManager":
         return { bot: bot(await manager.setManager(request.botId, request.manager)) };
       case "bots.setTeam":
         return { bot: bot(await manager.setTeam(request.botId, request.managerId ?? undefined)) };
       case "bots.replaceManager":
         return { bot: bot(await manager.replaceManager(request.managerId, request.newManagerId)) };
-      case "bots.setTop": {
-        const top = await manager.setTop(request.botId ?? undefined);
-        return { bot: top ? bot(top) : null };
+      case "bots.setOrchestrator": {
+        const orchestrator = await manager.setOrchestrator(request.botId ?? undefined);
+        return { bot: orchestrator ? bot(orchestrator) : null };
       }
       case "onboarding.status": {
         const admin = await manager.admin();

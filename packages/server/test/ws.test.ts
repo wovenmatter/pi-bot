@@ -150,7 +150,7 @@ describe("websocket server", () => {
         createdAt: bot.createdAt,
         kind: "bot",
         manager: false,
-        top: false,
+        orchestrator: false,
         profileId: "default",
         profileName: "Default",
         defaultProfile: true,
@@ -165,7 +165,7 @@ describe("websocket server", () => {
         createdAt: bot.createdAt,
         kind: "bot",
         manager: false,
-        top: false,
+        orchestrator: false,
         profileId: "default",
         profileName: "Default",
         defaultProfile: true,
@@ -246,24 +246,27 @@ describe("websocket server", () => {
     watcher.close();
   });
 
-  it("keeps at most one top bot, never Admin Bot, and clears it on delete", async () => {
+  it("keeps at most one orchestrator, never Admin Bot, and clears it on delete", async () => {
     type Summary = {
       id: string;
       name: string;
       manager: boolean;
       managerId?: string;
-      top: boolean;
+      orchestrator: boolean;
     };
     const client = await Client.open(wsUrl);
     const create = async (name: string) =>
       (await client.request<{ bot: Summary }>("bots.create", { name })).bot;
     const list = async () => (await client.request<{ bots: Summary[] }>("bots.list")).bots;
     const byId = async (id: string) => (await list()).find((entry) => entry.id === id);
-    const tops = async () => (await list()).filter((entry) => entry.top).map((entry) => entry.id);
+    const orchestrators = async () =>
+      (await list()).filter((entry) => entry.orchestrator).map((entry) => entry.id);
     const admin = (await list())[0];
     if (!admin) throw new Error("no Admin Bot");
-    expect(admin).toMatchObject({ top: false });
-    await expect(client.request("bots.setTop", { botId: admin.id })).rejects.toThrow(/Admin Bot/);
+    expect(admin).toMatchObject({ orchestrator: false });
+    await expect(client.request("bots.setOrchestrator", { botId: admin.id })).rejects.toThrow(
+      /Admin Bot/,
+    );
 
     const chief = await create("Chief");
     const lead = await create("Lead");
@@ -271,47 +274,81 @@ describe("websocket server", () => {
     const member = await create("Member");
     await client.request("bots.setTeam", { botId: member.id, managerId: lead.id });
 
-    const set = await client.request<{ bot: Summary | null }>("bots.setTop", { botId: chief.id });
-    expect(set.bot).toMatchObject({ id: chief.id, top: true });
-    expect(await tops()).toEqual([chief.id]);
-    // The top bot is above every team: it can't join one.
+    const set = await client.request<{ bot: Summary | null }>("bots.setOrchestrator", {
+      botId: chief.id,
+    });
+    expect(set.bot).toMatchObject({ id: chief.id, orchestrator: true });
+    expect(await orchestrators()).toEqual([chief.id]);
+    // The orchestrator is above every team: it can't join one.
     await expect(
       client.request("bots.setTeam", { botId: chief.id, managerId: lead.id }),
-    ).rejects.toThrow(/top bot/);
+    ).rejects.toThrow(/orchestrator/);
 
-    // A new top bot replaces the old one; a manager keeps its team, and the old one keeps its.
+    // A new orchestrator replaces the old one; a manager keeps its team, and the old one keeps its.
     await client.request("bots.setManager", { botId: chief.id, manager: true });
-    await client.request("bots.setTop", { botId: lead.id });
-    expect(await tops()).toEqual([lead.id]);
-    expect(await byId(chief.id)).toMatchObject({ top: false, manager: true });
+    await client.request("bots.setOrchestrator", { botId: lead.id });
+    expect(await orchestrators()).toEqual([lead.id]);
+    expect(await byId(chief.id)).toMatchObject({ orchestrator: false, manager: true });
     expect(await byId(member.id)).toMatchObject({ managerId: lead.id });
 
-    // A team member made top bot leaves its team.
-    await client.request("bots.setTop", { botId: member.id });
-    expect(await tops()).toEqual([member.id]);
+    // A team member made orchestrator leaves its team.
+    await client.request("bots.setOrchestrator", { botId: member.id });
+    expect(await orchestrators()).toEqual([member.id]);
     expect((await byId(member.id))?.managerId).toBeUndefined();
 
-    // Handing the top bot's team to a member: the top bot stays top and off the team.
-    await client.request("bots.setTop", { botId: lead.id });
+    // Handing the orchestrator's team to a member: the orchestrator stays orchestrator and off the team.
+    await client.request("bots.setOrchestrator", { botId: lead.id });
     await client.request("bots.setTeam", { botId: member.id, managerId: lead.id });
     await client.request("bots.replaceManager", { managerId: lead.id, newManagerId: member.id });
-    expect(await byId(lead.id)).toMatchObject({ top: true, manager: false });
+    expect(await byId(lead.id)).toMatchObject({ orchestrator: true, manager: false });
     expect((await byId(lead.id))?.managerId).toBeUndefined();
     expect(await byId(member.id)).toMatchObject({ manager: true });
 
-    // Clearing and deleting both empty the slot; a restored top bot comes back as a normal bot.
+    // Clearing and deleting both empty the slot; a restored orchestrator comes back as a normal bot.
     expect(
-      (await client.request<{ bot: Summary | null }>("bots.setTop", { botId: null })).bot,
+      (await client.request<{ bot: Summary | null }>("bots.setOrchestrator", { botId: null })).bot,
     ).toBeNull();
-    expect(await tops()).toEqual([]);
-    await client.request("bots.setTop", { botId: chief.id });
+    expect(await orchestrators()).toEqual([]);
+    await client.request("bots.setOrchestrator", { botId: chief.id });
     await client.request("bots.delete", { botId: chief.id });
-    expect(await tops()).toEqual([]);
+    expect(await orchestrators()).toEqual([]);
     const restored = await client.request<{ bot: Summary }>("bots.restore", { botId: chief.id });
-    expect(restored.bot).toMatchObject({ top: false });
-    expect(await tops()).toEqual([]);
-    expect(await byId(admin.id)).toMatchObject({ top: false });
+    expect(restored.bot).toMatchObject({ orchestrator: false });
+    expect(await orchestrators()).toEqual([]);
+    expect(await byId(admin.id)).toMatchObject({ orchestrator: false });
     client.close();
+  });
+
+  it("renames any bot but Admin Bot and pushes bots.changed", async () => {
+    type Summary = { id: string; name: string; kind: string; orchestrator: boolean };
+    const client = await Client.open(wsUrl);
+    const list = async () => (await client.request<{ bots: Summary[] }>("bots.list")).bots;
+    const admin = (await list()).find((entry) => entry.kind === "admin");
+    if (!admin) throw new Error("no Admin Bot");
+    await expect(client.request("bots.rename", { botId: admin.id, name: "Boss" })).rejects.toThrow(
+      /Admin Bot/,
+    );
+    expect((await list()).find((entry) => entry.id === admin.id)?.name).toBe("Admin Bot");
+
+    const scout = (await client.request<{ bot: Summary }>("bots.create", { name: "Scout" })).bot;
+    await client.request("bots.setOrchestrator", { botId: scout.id });
+    const watcher = await Client.open(wsUrl);
+    const renamed = await client.request<{ bot: Summary }>("bots.rename", {
+      botId: scout.id,
+      name: "  Ranger  ",
+    });
+    // Roles stay; the name is trimmed; every client is told to refresh.
+    expect(renamed.bot).toMatchObject({ id: scout.id, name: "Ranger", orchestrator: true });
+    await watcher.waitFor((message) => message.type === "bots.changed");
+    expect((await list()).find((entry) => entry.id === scout.id)?.name).toBe("Ranger");
+    await expect(client.request("bots.rename", { botId: scout.id, name: "" })).rejects.toThrow();
+    await expect(
+      client.request("bots.rename", { botId: scout.id, name: "x".repeat(81) }),
+    ).rejects.toThrow();
+    await client.request("bots.setOrchestrator", { botId: null });
+    expect((await list()).find((entry) => entry.id === scout.id)?.name).toBe("Ranger");
+    client.close();
+    watcher.close();
   });
 
   it("rejects invalid requests and unknown bots", async () => {

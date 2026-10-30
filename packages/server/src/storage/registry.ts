@@ -20,10 +20,10 @@ export type BotRecord = {
   /** The bot's team manager, if it is on a team. */
   readonly managerId?: string;
   /**
-   * The optional top bot: at most one, above every team (never on one, but it may manage its
+   * The optional orchestrator: at most one, above every team (never on one, but it may manage its
    * own). Never Admin Bot.
    */
-  readonly top: boolean;
+  readonly orchestrator: boolean;
   /** The model profile the bot runs (`[profiles.<id>]`); unset: the default profile. */
   readonly profile?: string;
   /**
@@ -60,12 +60,12 @@ type BotRow = {
   kind: string;
   is_manager: number;
   manager_id: string | null;
-  is_top: number;
+  is_orchestrator: number;
   model: string | null;
   profile: string | null;
 };
 const BOT_COLUMNS =
-  "id, name, schema_prefix, created_at, kind, is_manager, manager_id, is_top, model, profile";
+  "id, name, schema_prefix, created_at, kind, is_manager, manager_id, is_orchestrator, model, profile";
 type ThreadRow = {
   bot_id: string;
   conversation_id: number;
@@ -94,7 +94,7 @@ function toBot(row: BotRow): BotRecord {
     kind: row.kind === "admin" ? "admin" : "bot",
     manager: row.is_manager === 1,
     ...(row.manager_id ? { managerId: row.manager_id } : {}),
-    top: row.is_top === 1,
+    orchestrator: row.is_orchestrator === 1,
     ...(row.profile ? { profile: row.profile } : {}),
     ...(row.model ? { legacyModel: row.model } : {}),
   };
@@ -161,6 +161,13 @@ export class BotRegistry {
         (column) => column.name,
       ),
     );
+    // The orchestrator was first stored as `is_top`: rename it in place (values kept) and drop the
+    // old index, which is recreated below under its new name.
+    if (columns.has("is_top") && !columns.has("is_orchestrator")) {
+      await this.#db.exec("DROP INDEX IF EXISTS pibot_bots_one_top");
+      await this.#db.exec(`ALTER TABLE ${BOTS_TABLE} RENAME COLUMN is_top TO is_orchestrator`);
+      columns.add("is_orchestrator");
+    }
     const added: [string, string][] = [
       ["deleted_at", "TEXT"],
       ["kind", "TEXT NOT NULL DEFAULT 'bot'"],
@@ -168,7 +175,7 @@ export class BotRegistry {
       ["manager_id", "TEXT"],
       ["model", "TEXT"],
       ["profile", "TEXT"],
-      ["is_top", "INTEGER NOT NULL DEFAULT 0"],
+      ["is_orchestrator", "INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [name, type] of added) {
       if (!columns.has(name))
@@ -178,9 +185,9 @@ export class BotRegistry {
     await this.#db.exec(
       `CREATE UNIQUE INDEX IF NOT EXISTS pibot_bots_one_admin ON ${BOTS_TABLE}(kind) WHERE kind = 'admin'`,
     );
-    // At most one top bot.
+    // At most one orchestrator.
     await this.#db.exec(
-      `CREATE UNIQUE INDEX IF NOT EXISTS pibot_bots_one_top ON ${BOTS_TABLE}(is_top) WHERE is_top = 1`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS pibot_bots_one_orchestrator ON ${BOTS_TABLE}(is_orchestrator) WHERE is_orchestrator = 1`,
     );
   }
 
@@ -190,6 +197,15 @@ export class BotRegistry {
       `SELECT ${BOT_COLUMNS} FROM ${BOTS_TABLE} WHERE kind = 'admin'`,
     );
     return row ? toBot(row) : undefined;
+  }
+
+  /** Rename a live bot (no rule checks: see `BotManager`). */
+  async rename(id: string, name: string): Promise<void> {
+    await this.#db.run(
+      `UPDATE ${BOTS_TABLE} SET name = ? WHERE id = ? AND deleted_at IS NULL`,
+      name,
+      id,
+    );
   }
 
   /** Startup migration: give the admin-kind bot its current built-in name. */
@@ -212,16 +228,19 @@ export class BotRegistry {
   }
 
   /**
-   * Make `id` the top bot, taking it off any team it was on, or clear the top bot with
-   * `undefined`. The previous top bot becomes a normal bot (no rule checks: see `BotManager`).
+   * Make `id` the orchestrator, taking it off any team it was on, or clear the orchestrator with
+   * `undefined`. The previous orchestrator becomes a normal bot (no rule checks: see `BotManager`).
    */
-  async setTop(id: string | undefined): Promise<void> {
+  async setOrchestrator(id: string | undefined): Promise<void> {
     await this.#db.run(
-      `UPDATE ${BOTS_TABLE} SET is_top = 0 WHERE is_top = 1 AND id != ?`,
+      `UPDATE ${BOTS_TABLE} SET is_orchestrator = 0 WHERE is_orchestrator = 1 AND id != ?`,
       id ?? "",
     );
     if (id !== undefined) {
-      await this.#db.run(`UPDATE ${BOTS_TABLE} SET is_top = 1, manager_id = NULL WHERE id = ?`, id);
+      await this.#db.run(
+        `UPDATE ${BOTS_TABLE} SET is_orchestrator = 1, manager_id = NULL WHERE id = ?`,
+        id,
+      );
     }
   }
 

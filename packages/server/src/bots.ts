@@ -48,9 +48,18 @@ export class BotRuleError extends Error {
 
 export const ADMIN_NAME = "Admin Bot";
 
+/** A bot name: trimmed, 1-80 characters. */
+function checkName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("bot name is required");
+  if (trimmed.length > 80) throw new Error("bot name is too long");
+  return trimmed;
+}
+
 /** One bot: one Pi Durable session (Harness) over its prefixed tables in the shared database. */
 export class Bot {
-  readonly record: BotRecord;
+  /** The record as of opening, with the name kept current on rename. */
+  record: BotRecord;
   readonly harness: Harness;
   readonly #registry: BotRegistry;
   readonly #titles: ThreadTitles | undefined;
@@ -615,16 +624,14 @@ export class BotManager {
     name: string,
     team: Pick<BotRecord, "kind" | "manager" | "managerId">,
   ): Promise<BotRecord> {
-    const trimmed = name.trim();
-    if (!trimmed) throw new Error("bot name is required");
-    if (trimmed.length > 80) throw new Error("bot name is too long");
+    const trimmed = checkName(name);
     const id = randomUUID();
     const record: BotRecord = {
       id,
       name: trimmed,
       prefix: botPrefix(id),
       createdAt: new Date().toISOString(),
-      top: false,
+      orchestrator: false,
       ...team,
     };
     await this.registry.insert(record);
@@ -724,11 +731,11 @@ export class BotManager {
     if (!record) return false;
     if (record.kind === "admin") throw new BotRuleError("the Admin Bot cannot be deleted");
     if (!(await this.registry.markDeleted(id))) return false;
-    // Deleting a manager ungroups its team; a deleted bot comes back on no team. Deleting the top
+    // Deleting a manager ungroups its team; a deleted bot comes back on no team. Deleting the orchestrator
     // bot just clears the slot.
     if (record.manager) await this.registry.moveMembers(id, undefined);
     await this.registry.setTeam(id, { manager: false });
-    if (record.top) await this.registry.setTop(undefined);
+    if (record.orchestrator) await this.registry.setOrchestrator(undefined);
     this.#options.onBotsChanged?.();
     const open = this.#bots.get(id);
     this.#bots.delete(id);
@@ -794,8 +801,10 @@ export class BotManager {
     const record = await this.#requireTeamable(id);
     if (managerId !== undefined) {
       if (record.manager) throw new BotRuleError(`${record.name} is a manager; demote it first`);
-      if (record.top) {
-        throw new BotRuleError(`${record.name} is the top bot, above every team; clear it first`);
+      if (record.orchestrator) {
+        throw new BotRuleError(
+          `${record.name} is the orchestrator, above every team; clear it first`,
+        );
       }
       if (managerId === id) throw new BotRuleError("a bot cannot manage itself");
       await this.#requireManager(managerId);
@@ -810,7 +819,7 @@ export class BotManager {
 
   /**
    * Give a team a new manager: `newManagerId` is promoted and takes over every member, and the old
-   * manager stays on the team as a member (unless it is the top bot, which is never on a team).
+   * manager stays on the team as a member (unless it is the orchestrator, which is never on a team).
    */
   async replaceManager(managerId: string, newManagerId: string): Promise<BotRecord> {
     const old = await this.#requireManager(managerId);
@@ -821,25 +830,43 @@ export class BotManager {
     await this.registry.moveMembers(old.id, next.id, next.id);
     await this.registry.setTeam(old.id, {
       manager: false,
-      ...(old.top ? {} : { managerId: next.id }),
+      ...(old.orchestrator ? {} : { managerId: next.id }),
     });
     this.#options.onBotsChanged?.();
     return this.record(next.id);
   }
 
   /**
-   * Make a bot the top bot (it leaves any team it was on; a team it manages stays), replacing the
+   * Make a bot the orchestrator (it leaves any team it was on; a team it manages stays), replacing the
    * current one, which becomes a normal bot and keeps its team. `undefined` clears the slot.
-   * Returns the new top bot.
+   * Returns the new orchestrator.
    */
-  async setTop(id: string | undefined): Promise<BotRecord | undefined> {
+  async setOrchestrator(id: string | undefined): Promise<BotRecord | undefined> {
     if (id !== undefined) {
       const record = await this.record(id);
-      if (record.kind === "admin") throw new BotRuleError("the Admin Bot can't be the top bot");
+      if (record.kind === "admin")
+        throw new BotRuleError("the Admin Bot can't be the orchestrator");
     }
-    await this.registry.setTop(id);
+    await this.registry.setOrchestrator(id);
     this.#options.onBotsChanged?.();
     return id === undefined ? undefined : this.record(id);
+  }
+
+  /**
+   * Rename a bot. Admin Bot keeps its fixed name; every other bot (the orchestrator and managers
+   * included) can be renamed freely. Roles never change a name.
+   */
+  async rename(id: string, name: string): Promise<BotRecord> {
+    const record = await this.record(id);
+    if (record.kind === "admin") throw new BotRuleError(`the Admin Bot is always "${ADMIN_NAME}"`);
+    const trimmed = checkName(name);
+    if (trimmed !== record.name) {
+      await this.registry.rename(id, trimmed);
+      const open = await this.#bots.get(id)?.catch(() => undefined);
+      if (open) open.record = { ...open.record, name: trimmed };
+      this.#options.onBotsChanged?.();
+    }
+    return this.record(id);
   }
 
   /**
