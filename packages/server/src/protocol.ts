@@ -271,7 +271,7 @@ export type ThreadSummary = {
   conversationId: number;
   parentConversationId: number;
   forkedAt: number;
-  /** Generated metadata for listing and search; absent until generated. Never shown in the UI. */
+  /** Generated from the first message (empty until then); shown in the sidebar and header. */
   title?: string;
   createdAt: string;
 };
@@ -302,5 +302,7 @@ export type ServerMessage =
   | { type: "event"; botId: string; conversationId: number; event: StreamEvent }
   /** The bot list changed (a bot created one, a team changed): clients refetch `bots.list`. */
   | { type: "bots.changed" }
+  /** A bot's thread list changed (a title was generated): clients refetch `threads.list`. */
+  | { type: "threads.changed"; botId: string }
   /** Progress of a sign-in started by this connection (`login.start`). */
   | { type: "login"; loginId: string; event: LoginEvent };

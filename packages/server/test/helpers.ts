@@ -63,6 +63,7 @@ export async function openTestManager(
     onReport?: (error: unknown) => void;
     onRecovered?: BotManagerOptions["onRecovered"];
     onBotDeleted?: BotManagerOptions["onBotDeleted"];
+    onThreadsChanged?: BotManagerOptions["onThreadsChanged"];
     tokensPerSecond?: number;
   } = {},
 ) {

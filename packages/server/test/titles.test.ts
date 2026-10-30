@@ -102,9 +102,11 @@ describe("thread titles", () => {
       JSON.stringify({ title: prompt.includes("budget") ? "Budget review" : "Something else" }),
     );
     const reports: unknown[] = [];
+    const changed: string[] = [];
     const harness = await openTestManager(join(dir.path, "db.sqlite"), {
       titles: new TitleGenerator({ models, model: LUNA, reasoning: "high" }),
       onReport: (error) => reports.push(error),
+      onThreadsChanged: (botId) => changed.push(botId),
     });
     try {
       const bot = await harness.manager.get((await harness.manager.create("Ada")).id);
@@ -124,6 +126,8 @@ describe("thread titles", () => {
       expect(seen.map((item) => item.prompt)).toEqual([titlePrompt("let's go over the budget")]);
       const [listed] = await bot.threads();
       expect(listed?.title).toBe("Budget review");
+      // One live push for the one title written.
+      expect(changed).toEqual([bot.id]);
       expect((await bot.threads("budget")).map((item) => item.conversationId)).toEqual([
         thread.conversationId,
       ]);
@@ -145,9 +149,11 @@ describe("thread titles", () => {
     const dir = await tempDir();
     const { models } = titleModels(() => "   ");
     const reports: unknown[] = [];
+    const changed: string[] = [];
     const harness = await openTestManager(join(dir.path, "db.sqlite"), {
       titles: new TitleGenerator({ models, model: LUNA, reasoning: "high" }),
       onReport: (error) => reports.push(error),
+      onThreadsChanged: (botId) => changed.push(botId),
     });
     try {
       const bot = await harness.manager.get((await harness.manager.create("Ada")).id);
@@ -157,6 +163,7 @@ describe("thread titles", () => {
       await harness.manager.titles?.idle();
       expect((await bot.threads())[0]?.title).toBe("");
       expect(reports).toEqual([expect.any(TitleError)]);
+      expect(changed).toEqual([]);
     } finally {
       await harness.close();
       await dir.cleanup();

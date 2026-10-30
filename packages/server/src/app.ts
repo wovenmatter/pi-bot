@@ -130,6 +130,7 @@ export async function startPiBot(
       db,
       ensureAdmin: true,
       onBotsChanged: () => server?.botsChanged(),
+      onThreadsChanged: (botId) => server?.threadsChanged(botId),
       availability,
       onModelStatus: () => server?.botsChanged(),
       profiles,

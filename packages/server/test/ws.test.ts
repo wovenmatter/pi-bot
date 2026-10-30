@@ -1,3 +1,4 @@
+import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type PiBotApp, startPiBot } from "../src/app.ts";
 import { parseConfig } from "../src/config.ts";
@@ -262,5 +263,53 @@ describe("websocket server", () => {
   it("serves health on loopback", async () => {
     const response = await fetch(`${app.server.url}/health`);
     expect(await response.json()).toEqual({ ok: true, version: "0.1.0" });
+  });
+});
+
+describe("websocket thread titles", () => {
+  it("pushes threads.changed when a thread is titled", async () => {
+    const dir = await tempDir();
+    const config = parseConfig(
+      `[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[models.titles]\nmodel = "faux-titles/t1"\n[storage]\ndata_dir = "${dir.path}"\n`,
+    );
+    // Replies echo; titles come from their own faux provider.
+    const { models } = echoModels(2000);
+    const titler = fauxProvider({ provider: "faux-titles", models: [{ id: "t1" }] });
+    titler.setResponses([() => fauxAssistantMessage([fauxText('{"title":"Trip planning"}')])]);
+    models.setProvider(titler.provider);
+    const app = await startPiBot(config, { models, port: 0, log: () => {} });
+    try {
+      const client = await Client.open(`${app.server.url.replace("http", "ws")}/ws`);
+      const { bot } = await client.request<{ bot: { id: string } }>("bots.create", { name: "T" });
+      const main = await client.request<ConversationSnapshot>("conversation.open", {
+        botId: bot.id,
+      });
+      await client.request("message.send", { botId: bot.id, text: "hello" });
+      await client.waitFor(isFinalEntry(main.conversationId, "echo: hello (n1)"));
+      const reply = (
+        await client.request<ConversationSnapshot>("conversation.open", { botId: bot.id })
+      ).entries[1];
+      if (!reply) throw new Error("missing reply");
+      const { thread } = await client.request<{ thread: { conversationId: number } }>(
+        "thread.fork",
+        { botId: bot.id, entryId: reply.id },
+      );
+      await client.request("message.send", {
+        botId: bot.id,
+        conversationId: thread.conversationId,
+        text: "plan the trip",
+      });
+      await client.waitFor(
+        (message) => message.type === "threads.changed" && message.botId === bot.id,
+      );
+      const { threads } = await client.request<{ threads: { title?: string }[] }>("threads.list", {
+        botId: bot.id,
+      });
+      expect(threads[0]?.title).toBe("Trip planning");
+      client.close();
+    } finally {
+      await app.close();
+      await dir.cleanup();
+    }
   });
 });

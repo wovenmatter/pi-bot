@@ -226,6 +226,7 @@ export class ThreadTitles {
   readonly #generator: TitleGenerator;
   readonly #registry: BotRegistry;
   readonly #onReport: (error: unknown) => void;
+  readonly #onTitled: (botId: string, conversationId: number) => void;
   readonly #inFlight = new Map<string, Promise<void>>();
   readonly #abort = new AbortController();
 
@@ -233,10 +234,12 @@ export class ThreadTitles {
     generator: TitleGenerator,
     registry: BotRegistry,
     onReport: (error: unknown) => void = () => {},
+    onTitled: (botId: string, conversationId: number) => void = () => {},
   ) {
     this.#generator = generator;
     this.#registry = registry;
     this.#onReport = onReport;
+    this.#onTitled = onTitled;
   }
 
   /** Title the thread from `firstPrompt` unless it already has a title or a request running. */
@@ -247,7 +250,9 @@ export class ThreadTitles {
       const thread = await this.#registry.getThread(botId, conversationId);
       if (!thread || thread.title) return;
       const title = await this.#generator.generate(firstPrompt, this.#abort.signal);
-      await this.#registry.setThreadTitleIfUntitled(botId, conversationId, title);
+      if (await this.#registry.setThreadTitleIfUntitled(botId, conversationId, title)) {
+        this.#onTitled(botId, conversationId);
+      }
     })()
       .catch((error: unknown) => {
         if (!this.#abort.signal.aborted) this.#onReport(error);
@@ -286,6 +291,8 @@ export type BotManagerOptions = {
   readonly ensureAdmin?: boolean;
   /** A bot was created, deleted, restored or moved between teams (pushes a refresh to clients). */
   readonly onBotsChanged?: () => void;
+  /** A thread of this bot was titled (pushes a thread-list refresh to clients). */
+  readonly onThreadsChanged?: (botId: string) => void;
   /**
    * Model profiles. With them, each open bot's main channel and threads follow its profile's main
    * model (on open, on `setProfile`, and on every profile change), and legacy per-bot model
@@ -355,7 +362,9 @@ export class BotManager {
     this.#options = options;
     this.registry = new BotRegistry(options.db);
     this.titles = options.titles
-      ? new ThreadTitles(options.titles, this.registry, options.onReport)
+      ? new ThreadTitles(options.titles, this.registry, options.onReport, (botId) =>
+          options.onThreadsChanged?.(botId),
+        )
       : undefined;
   }
 

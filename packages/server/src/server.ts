@@ -42,7 +42,7 @@ export type PiBotServerOptions = {
   /** Settings backend; without it the settings requests fail. */
   readonly settings?: SettingsService;
   /**
-   * Schedules a graceful restart (Settings → Restart and apply). Resolves once the restart is
+   * Schedules a graceful restart (Settings → Config → Restart Pi Bot, or Restart and apply). Resolves once the restart is
    * accepted, before this server closes; rejects (and nothing stops) when it cannot happen.
    */
   readonly restart?: () => Promise<RestartAccepted>;
@@ -60,6 +60,8 @@ export type PiBotServer = {
   readonly port: number;
   /** Tell every client the bot list changed. */
   botsChanged(): void;
+  /** Tell every client a bot's thread list changed (a thread was titled). */
+  threadsChanged(botId: string): void;
   close(): Promise<void>;
 };
 
@@ -587,6 +589,11 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
     port,
     botsChanged() {
       for (const connection of state.connections) connection.send({ type: "bots.changed" });
+    },
+    threadsChanged(botId) {
+      for (const connection of state.connections) {
+        connection.send({ type: "threads.changed", botId });
+      }
     },
     async close() {
       await Promise.all([...state.connections].map((connection) => connection.dispose()));
