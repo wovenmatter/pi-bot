@@ -75,12 +75,13 @@ function maskKey(key: string | undefined): string {
   return key.length >= 12 ? `Key ••••${key.slice(-4)}` : "Key set";
 }
 
-function expiryText(expires: number): string {
+function expiryText(expires: number, refreshable = true): string {
   if (!Number.isFinite(expires) || expires <= 0) return "Signed in";
   const date = new Date(expires).toISOString().replace("T", " ").slice(0, 16);
-  return expires < Date.now()
+  if (expires >= Date.now()) return `Signed in · token valid until ${date} UTC`;
+  return refreshable
     ? `Signed in · token expired ${date} UTC (refreshes on use)`
-    : `Signed in · token valid until ${date} UTC`;
+    : `Token expired ${date} UTC · sign in again`;
 }
 
 function promptView(prompt: AuthPrompt): LoginPromptView {
@@ -224,18 +225,18 @@ export class SettingsService {
       const { prefix: _prefix, ...base } = spec;
       const wantType = spec.method === "oauth" ? "oauth" : "api_key";
       const type = stored.get(spec.provider);
-      if (type === wantType) {
+      if (type === wantType || (type !== undefined && spec.anyCredential)) {
         const credential = await this.#credentials.read(spec.provider);
         const detail =
           credential?.type === "oauth"
-            ? expiryText(credential.expires)
+            ? expiryText(credential.expires, credential.refresh !== "")
             : maskKey(credential?.type === "api_key" ? credential.key : undefined);
         return { ...base, configured: true, detail };
       }
       if (type === undefined && this.#models.getProvider(spec.provider)) {
         try {
           const check = await this.#models.checkAuth(spec.provider);
-          if (check && check.type === wantType) {
+          if (check && (check.type === wantType || spec.anyCredential)) {
             return {
               ...base,
               configured: true,
@@ -308,7 +309,9 @@ export class SettingsService {
     const current = await this.#credentials.read(spec.provider);
     const wantType = spec.method === "oauth" ? "oauth" : "api_key";
     // xAI's sign-in and key share a slot: only remove what this entry owns.
-    if (current && current.type === wantType) await this.#credentials.delete(spec.provider);
+    if (current && (current.type === wantType || spec.anyCredential)) {
+      await this.#credentials.delete(spec.provider);
+    }
   }
 
   /**

@@ -19,9 +19,38 @@ export type AccountSpec = {
    * unless the user picks another; every variant must work from a browser on another device.
    */
   readonly loginMethods?: readonly { readonly id: string; readonly label: string }[];
+  /**
+   * An API key offered instead of this group's subscription sign-in (the entry with this id):
+   * onboarding and Settings fold it under that row behind "Use an API key instead".
+   */
+  readonly alternateTo?: string;
+  /** Sign-in button text (default "Sign in"). */
+  readonly signInLabel?: string;
+  /** Connected by any credential in the slot (Claude: a setup-token from sign-in, CLI or env). */
+  readonly anyCredential?: boolean;
 };
 
 export const ACCOUNTS: readonly AccountSpec[] = [
+  {
+    id: "claude-oauth",
+    provider: "claude-subscription",
+    group: "Claude",
+    label: "Claude subscription (Pro/Max)",
+    method: "oauth",
+    signInLabel: "Sign in with Claude",
+    anyCredential: true,
+    help: "Pi Bot runs Claude Code's own `claude setup-token` on the server. Open the link it shows on any device, sign in and approve, then paste the code Claude shows back here. Pi Bot keeps the one-year token encrypted and hands it to Claude Code as CLAUDE_CODE_OAUTH_TOKEN.",
+  },
+  {
+    id: "anthropic",
+    provider: "anthropic",
+    group: "Claude",
+    label: "Anthropic API key",
+    method: "api_key",
+    alternateTo: "claude-oauth",
+    help: "Console API key (sk-ant-api…). Billed per token.",
+    link: "https://console.anthropic.com/settings/keys",
+  },
   {
     id: "openai-codex",
     provider: "openai-codex",
@@ -40,34 +69,9 @@ export const ACCOUNTS: readonly AccountSpec[] = [
     group: "OpenAI",
     label: "OpenAI API key",
     method: "api_key",
+    alternateTo: "openai-codex",
     help: "Platform API key (sk-…). Billed per token.",
     link: "https://platform.openai.com/api-keys",
-  },
-  {
-    id: "claude-oauth",
-    provider: "claude-subscription",
-    group: "Claude",
-    label: "Claude account (Pro/Max)",
-    method: "oauth",
-    help: "Open the sign-in page on any device, approve, then copy the code Claude shows (code#state) and paste it here. Pi Bot keeps the tokens and refreshes them. Shares one slot with the setup-token below.",
-  },
-  {
-    id: "claude-subscription",
-    provider: "claude-subscription",
-    group: "Claude",
-    label: "Claude long-lived token (claude setup-token)",
-    method: "token",
-    prefix: "sk-ant-oat",
-    help: "Fallback: on any computer with Claude Code, run `claude setup-token`, sign in with your Claude Pro/Max account, and paste the token (sk-ant-oat…) here. Replaces a Claude account sign-in.",
-  },
-  {
-    id: "anthropic",
-    provider: "anthropic",
-    group: "Claude",
-    label: "Anthropic API key",
-    method: "api_key",
-    help: "Console API key (sk-ant-api…). Billed per token.",
-    link: "https://console.anthropic.com/settings/keys",
   },
   {
     id: "xai-oauth",
@@ -75,7 +79,7 @@ export const ACCOUNTS: readonly AccountSpec[] = [
     group: "Grok (xAI)",
     label: "Grok account (SuperGrok or X Premium)",
     method: "oauth",
-    help: "Device-code sign-in at auth.x.ai. xAI may refuse some subscription tiers; use an API key if it does. Shares one slot with the xAI API key, so setting one replaces the other.",
+    help: "Device-code sign-in at auth.x.ai. xAI may refuse some subscription tiers; use an API key if it does. Shares one slot with the xAI API key below, so setting one replaces the other.",
   },
   {
     id: "xai",
@@ -83,6 +87,7 @@ export const ACCOUNTS: readonly AccountSpec[] = [
     group: "Grok (xAI)",
     label: "xAI API key",
     method: "api_key",
+    alternateTo: "xai-oauth",
     help: "API key from console.x.ai. Replaces a Grok account sign-in.",
     link: "https://console.x.ai",
   },

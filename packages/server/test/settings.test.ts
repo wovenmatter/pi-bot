@@ -225,14 +225,16 @@ describe("settings over the websocket", () => {
   });
 
   it("validates keys and only accepts known slots", async () => {
+    // Claude has one sign-in row now; the old long-lived-token key slot is gone.
     await expect(
-      client.request("credentials.set", { accountId: "claude-subscription", key: "sk-ant-api-x" }),
-    ).rejects.toThrow(/sk-ant-oat/);
-    await client.request("credentials.set", {
-      accountId: "claude-subscription",
-      key: "sk-ant-oat01-fake-token",
-    });
-    expect(await credentials.read("claude-subscription")).toMatchObject({ type: "api_key" });
+      client.request("credentials.set", {
+        accountId: "claude-subscription",
+        key: "sk-ant-oat01-fake-token",
+      }),
+    ).rejects.toThrow(/no key slot/);
+    await expect(
+      client.request("credentials.set", { accountId: "claude-oauth", key: "sk-ant-oat01-x" }),
+    ).rejects.toThrow(/no key slot/);
     await expect(
       client.request("credentials.set", { accountId: "openai", key: "two words" }),
     ).rejects.toThrow(/spaces/);
@@ -242,6 +244,64 @@ describe("settings over the websocket", () => {
     await expect(
       client.request("credentials.set", { accountId: "openai-codex", key: "abc" }),
     ).rejects.toThrow(/no key slot/);
+  });
+
+  it("lists providers in onboarding order with API keys folded under their sign-ins", async () => {
+    const list = (await accounts()).accounts;
+    expect(list.map((entry) => entry.id)).toEqual([
+      "claude-oauth",
+      "anthropic",
+      "openai-codex",
+      "openai",
+      "xai-oauth",
+      "xai",
+      "openrouter",
+      "opencode-go",
+    ]);
+    expect([...new Set(list.map((entry) => entry.group))]).toEqual([
+      "Claude",
+      "OpenAI",
+      "Grok (xAI)",
+      "OpenRouter",
+      "OpenCode Go",
+    ]);
+    expect(
+      Object.fromEntries(list.flatMap((e) => (e.alternateTo ? [[e.id, e.alternateTo]] : []))),
+    ).toEqual({ anthropic: "claude-oauth", openai: "openai-codex", xai: "xai-oauth" });
+    expect(list.filter((entry) => entry.group === "Claude" && entry.method === "oauth")).toEqual([
+      expect.objectContaining({ id: "claude-oauth", signInLabel: "Sign in with Claude" }),
+    ]);
+  });
+
+  it("shows the Claude row connected for any stored Claude token and signs it out", async () => {
+    expect(await account("claude-oauth")).toMatchObject({ configured: false });
+    const day = 24 * 3600_000;
+    await credentials.modify("claude-subscription", async () => ({
+      type: "oauth",
+      access: "sk-ant-oat01-signed-in",
+      refresh: "",
+      expires: Date.now() + 300 * day,
+    }));
+    expect((await account("claude-oauth"))?.detail).toMatch(/^Signed in · token valid until/);
+    await credentials.modify("claude-subscription", async () => ({
+      type: "oauth",
+      access: "sk-ant-oat01-signed-in",
+      refresh: "",
+      expires: Date.now() - day,
+    }));
+    expect((await account("claude-oauth"))?.detail).toMatch(/· sign in again$/);
+    // A token saved from the CLI (`pi-bot set-key claude-subscription`) counts too.
+    await credentials.modify("claude-subscription", async () => ({
+      type: "api_key",
+      key: "sk-ant-oat01-from-cli-WXYZ",
+    }));
+    expect(await account("claude-oauth")).toMatchObject({
+      configured: true,
+      detail: "Key ••••WXYZ",
+    });
+    await client.request("credentials.remove", { accountId: "claude-oauth" });
+    expect(await credentials.read("claude-subscription")).toBeUndefined();
+    expect(JSON.stringify(client.messages)).not.toContain("sk-ant-oat01-");
   });
 
   const loginEvents = (loginId: string) =>
