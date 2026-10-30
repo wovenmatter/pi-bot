@@ -62,10 +62,17 @@ export function Sidebar({
           href={routeHref({ botId: bot.id })}
           className={`nav-link${active ? " active" : ""}`}
           aria-current={active ? "page" : undefined}
-          title={bot.kind === "admin" ? "Admin Bot: accounts, models and config" : undefined}
+          title={
+            bot.kind === "admin"
+              ? "Admin Bot: accounts, models and config"
+              : bot.top
+                ? "Top bot: oversees every bot and team"
+                : undefined
+          }
         >
           <Icon icon={icon} />
           <span className="rail-title">{bot.name}</span>
+          {bot.top && bot.kind !== "admin" ? <span className="badge">Top bot</span> : null}
           {bot.modelStatus && bot.modelStatus.kind !== "returned" ? (
             <span
               className={`rail-status ${bot.modelStatus.kind}`}
@@ -160,6 +167,12 @@ export function Sidebar({
         ) : null}
         <div className="rail-group">
           {groups.admin ? botRow(groups.admin) : null}
+          {groups.top ? (
+            <div className="rail-team">
+              {botRow(groups.top.bot)}
+              {groups.top.members.map((member) => botRow(member, true))}
+            </div>
+          ) : null}
           {groups.teams.map(({ manager, members }) => (
             <div key={manager.id} className="rail-team">
               {botRow(manager)}

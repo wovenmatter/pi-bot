@@ -669,6 +669,10 @@ input[type="file"] {
 .rail-title {
   flex: 1;
 }
+.nav-link > .badge {
+  flex: none;
+  margin-left: 0;
+}
 .rail-status {
   flex: none;
   width: 7px;

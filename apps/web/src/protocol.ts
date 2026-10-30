@@ -19,6 +19,8 @@ export type BotSummary = {
   /** Leads a team (one level: managers have no manager). */
   manager: boolean;
   managerId?: string;
+  /** The optional top bot: at most one, above every team, never Admin Bot. It may lead a team. */
+  top: boolean;
   /** The model profile this bot runs (its own or the default). Models stay server-side. */
   profileId: string;
   profileName: string;
@@ -203,6 +205,7 @@ export type Requests = {
     body: { botId: string; managerId: string | null };
     result: { bot: BotSummary };
   };
+  "bots.setTop": { body: { botId: string | null }; result: { bot: BotSummary | null } };
   "bots.replaceManager": {
     body: { managerId: string; newManagerId: string };
     result: { bot: BotSummary };

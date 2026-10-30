@@ -9,7 +9,8 @@ export const placementOf = (bot: BotSummary): Placement =>
 
 /**
  * Settings → Bots: one row per bot with its profile ("" = the default profile) and its team.
- * Teams are one level; Admin Bot is never on one.
+ * Teams are one level; Admin Bot is never on one. One bot may optionally be the top bot: listed
+ * first, above every team, never on a team itself (it may lead its own).
  */
 export function BotsPanel({
   bots,
@@ -18,6 +19,7 @@ export function BotsPanel({
   onSetProfile,
   onPlace,
   onReplaceManager,
+  onSetTop,
 }: {
   bots: readonly BotSummary[] | undefined;
   profiles: readonly ProfileSummary[] | undefined;
@@ -25,17 +27,44 @@ export function BotsPanel({
   onSetProfile: (bot: BotSummary, profileId: string | null) => void;
   onPlace: (bot: BotSummary, placement: Placement) => void;
   onReplaceManager: (manager: BotSummary, newManagerId: string) => void;
+  /** Make a bot the top bot (replacing any other), or clear the slot with null. */
+  onSetTop: (botId: string | null) => void;
 }) {
   if (bots === undefined || profiles === undefined) return <Loading />;
   const fallback = profiles.find((profile) => profile.default);
   const managers = bots.filter((bot) => bot.kind !== "admin" && bot.manager);
+  const candidates = bots.filter((bot) => bot.kind !== "admin");
+  const top = candidates.find((bot) => bot.top);
+  const rank = (bot: BotSummary) => (bot.kind === "admin" ? 0 : bot.top ? 1 : 2);
+  const rows = [...bots].sort((a, b) => rank(a) - rank(b));
   return (
     <section className="settings-section" aria-labelledby="bots-heading">
       <h3 id="bots-heading">Bots</h3>
       <p className="muted">
         Each bot's profile and team. Teams are optional and one level deep: a manager hands work to
-        the bots on its team.
+        the bots on its team. A top bot is optional and oversees every bot and team.
       </p>
+      <div className="settings-fields">
+        <label className="settings-field">
+          <span>
+            Top bot
+            <small className="muted">Optional. Sits above every team; Admin Bot stays apart.</small>
+          </span>
+          <select
+            aria-label="Top bot"
+            value={top?.id ?? ""}
+            disabled={disabled}
+            onChange={(event) => onSetTop(event.target.value || null)}
+          >
+            <option value="">None</option>
+            {candidates.map((bot) => (
+              <option key={bot.id} value={bot.id}>
+                {bot.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div className="bots-table">
         <div className="bots-table-head" aria-hidden="true">
           <span>Bot</span>
@@ -43,15 +72,20 @@ export function BotsPanel({
           <span>Team</span>
         </div>
         <ul className="settings-list">
-          {bots.map((bot) => {
+          {rows.map((bot) => {
             const admin = bot.kind === "admin";
             const members = bots.filter((other) => other.managerId === bot.id);
             return (
               <li key={bot.id} className="bot-row">
                 <div className="settings-row-text">
-                  <strong>{bot.name}</strong>
+                  <strong>
+                    {bot.name}
+                    {bot.top && !admin ? <span className="badge">Top bot</span> : null}
+                  </strong>
                   {admin ? (
                     <small className="muted">Accounts and config</small>
+                  ) : bot.top && !(bot.manager && members.length) ? (
+                    <small className="muted">Oversees every bot and team</small>
                   ) : bot.manager ? (
                     <small className="muted">
                       {members.length
@@ -85,7 +119,7 @@ export function BotsPanel({
                     <option value="none">No team</option>
                     <option value="manager">Leads a team</option>
                     {managers
-                      .filter((manager) => manager.id !== bot.id)
+                      .filter((manager) => manager.id !== bot.id && !bot.top)
                       .map((manager) => (
                         <option key={manager.id} value={manager.id}>
                           On {manager.name}'s team

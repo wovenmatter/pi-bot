@@ -20,6 +20,7 @@ const bot = (id: string, extra: Partial<BotSummary> = {}): BotSummary => ({
   createdAt: "2026-10-29T00:00:00Z",
   kind: "bot",
   manager: false,
+  top: false,
   profileId: "default",
   profileName: "Default",
   defaultProfile: true,
@@ -102,6 +103,87 @@ describe("bot groups", () => {
   });
 });
 
+describe("top bot", () => {
+  const withTop = [
+    bot("loose"),
+    bot("lead", { manager: true }),
+    bot("chief", { top: true, manager: true }),
+    bots[2] as BotSummary,
+    bot("member", { managerId: "lead" }),
+    bot("aide", { managerId: "chief" }),
+  ];
+
+  it("groups the top bot after Admin Bot with its own team, apart from other teams", () => {
+    const groups = groupBots(withTop);
+    expect(groups.top?.bot.id).toBe("chief");
+    expect(groups.top?.members.map((m) => m.id)).toEqual(["aide"]);
+    expect(groups.teams.map((t) => t.manager.id)).toEqual(["lead"]);
+    expect(groups.ungrouped.map((b) => b.id)).toEqual(["loose"]);
+    expect(groupBots(bots).top).toBeUndefined();
+  });
+
+  it("sidebar lists the top bot right after Admin Bot with a small label", () => {
+    const html = renderToStaticMarkup(
+      <Sidebar
+        bots={withTop}
+        botId="admin"
+        conversationId={undefined}
+        mainConversationId={undefined}
+        settings={false}
+        connection="open"
+        theme="green"
+        onTheme={noop}
+        onCreate={async () => {}}
+        onDelete={noop}
+      />,
+    );
+    const order = ["Admin Bot", "Chief", "Aide", "Lead", "Member", "Loose"].map((name) =>
+      html.indexOf(`>${name}<`),
+    );
+    expect(order.every((at, i) => at > 0 && (i === 0 || at > (order[i - 1] ?? 0)))).toBe(true);
+    expect(html.match(/class="badge">Top bot</g)).toHaveLength(1);
+    expect(html.indexOf("Top bot<")).toBeGreaterThan(html.indexOf(">Chief<"));
+    expect(html.indexOf("Top bot<")).toBeLessThan(html.indexOf(">Aide<"));
+  });
+
+  it("bots panel sets the top bot, lists it first and keeps it off other teams", () => {
+    const html = renderToStaticMarkup(
+      <BotsPanel
+        bots={withTop}
+        profiles={profiles}
+        onSetProfile={noop}
+        onPlace={noop}
+        onReplaceManager={noop}
+        onSetTop={noop}
+      />,
+    );
+    const picker = html.slice(html.indexOf('aria-label="Top bot"'), html.indexOf("</select>"));
+    expect(picker).toContain(">None<");
+    expect(picker).toContain('value="chief" selected=""');
+    expect(picker).not.toContain("Admin Bot");
+    const rows = ["Admin Bot", "Chief", "Loose", "Lead"].map((name) =>
+      html.indexOf(`<strong>${name}`),
+    );
+    expect(rows.every((at, i) => at > 0 && (i === 0 || at > (rows[i - 1] ?? 0)))).toBe(true);
+    expect(html).toContain('<strong>Chief<span class="badge">Top bot</span></strong>');
+    const chiefTeam = html.slice(html.indexOf('aria-label="Team for Chief"'));
+    expect(chiefTeam.slice(0, chiefTeam.indexOf("</select>"))).not.toContain("On Lead");
+    expect(html).toContain("Team: Aide");
+    const none = renderToStaticMarkup(
+      <BotsPanel
+        bots={bots}
+        profiles={profiles}
+        onSetProfile={noop}
+        onPlace={noop}
+        onReplaceManager={noop}
+        onSetTop={noop}
+      />,
+    );
+    expect(none).toContain('<option value="" selected="">None</option>');
+    expect(none).not.toContain('class="badge"');
+  });
+});
+
 describe("bots panel", () => {
   it("maps bots to placements and keeps Admin Bot off teams", () => {
     expect(bots.map(placementOf)).toEqual(["none", "manager", "none", "lead"]);
@@ -112,6 +194,7 @@ describe("bots panel", () => {
         onSetProfile={noop}
         onPlace={noop}
         onReplaceManager={noop}
+        onSetTop={noop}
       />,
     );
     expect(html).not.toContain("Team for Admin Bot");
@@ -129,6 +212,7 @@ describe("bots panel", () => {
         onSetProfile={noop}
         onPlace={noop}
         onReplaceManager={noop}
+        onSetTop={noop}
       />,
     );
     expect(html).toContain("Profile for Admin Bot");
