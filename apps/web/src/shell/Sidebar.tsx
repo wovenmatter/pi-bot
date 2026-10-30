@@ -64,15 +64,19 @@ export function Sidebar({
           aria-current={active ? "page" : undefined}
           title={
             bot.kind === "admin"
-              ? "Admin Bot: accounts, models and config"
-              : bot.top
-                ? "Top bot: oversees every bot and team"
-                : undefined
+              ? "Admin Bot · Admin: accounts, models and config"
+              : bot.orchestrator
+                ? `${bot.name} · Orchestrator: oversees every bot and team`
+                : bot.manager
+                  ? `${bot.name} · Manager: leads a team`
+                  : undefined
           }
         >
           <Icon icon={icon} />
           <span className="rail-title">{bot.name}</span>
-          {bot.top && bot.kind !== "admin" ? <span className="badge">Top bot</span> : null}
+          {bot.orchestrator && bot.kind !== "admin" ? (
+            <span className="badge">Orchestrator</span>
+          ) : null}
           {bot.modelStatus && bot.modelStatus.kind !== "returned" ? (
             <span
               className={`rail-status ${bot.modelStatus.kind}`}
@@ -167,10 +171,10 @@ export function Sidebar({
         ) : null}
         <div className="rail-group">
           {groups.admin ? botRow(groups.admin) : null}
-          {groups.top ? (
+          {groups.orchestrator ? (
             <div className="rail-team">
-              {botRow(groups.top.bot)}
-              {groups.top.members.map((member) => botRow(member, true))}
+              {botRow(groups.orchestrator.bot)}
+              {groups.orchestrator.members.map((member) => botRow(member, true))}
             </div>
           ) : null}
           {groups.teams.map(({ manager, members }) => (

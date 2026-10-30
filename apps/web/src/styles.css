@@ -1652,6 +1652,16 @@ input[type="file"] {
 .bot-row-handoff {
   grid-column: 3;
 }
+.bot-rename {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.bot-rename input {
+  flex: 1;
+  min-width: 0;
+}
 .settings-section .muted code,
 .account-status code {
   font-family: var(--mono);

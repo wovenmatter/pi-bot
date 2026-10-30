@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PiBotClient } from "../src/api.ts";
 import { Onboarding } from "../src/features/Onboarding.tsx";
 import { AccountNotes } from "../src/features/settings/Accounts.tsx";
-import { BotsPanel, placementOf } from "../src/features/settings/Bots.tsx";
+import { BotsPanel, placementOf, roleOf } from "../src/features/settings/Bots.tsx";
 import {
   MainModelPicker,
   ProfileEditor,
@@ -20,7 +20,7 @@ const bot = (id: string, extra: Partial<BotSummary> = {}): BotSummary => ({
   createdAt: "2026-10-29T00:00:00Z",
   kind: "bot",
   manager: false,
-  top: false,
+  orchestrator: false,
   profileId: "default",
   profileName: "Default",
   defaultProfile: true,
@@ -103,29 +103,29 @@ describe("bot groups", () => {
   });
 });
 
-describe("top bot", () => {
-  const withTop = [
+describe("orchestrator", () => {
+  const withOrchestrator = [
     bot("loose"),
     bot("lead", { manager: true }),
-    bot("chief", { top: true, manager: true }),
+    bot("chief", { orchestrator: true, manager: true }),
     bots[2] as BotSummary,
     bot("member", { managerId: "lead" }),
     bot("aide", { managerId: "chief" }),
   ];
 
-  it("groups the top bot after Admin Bot with its own team, apart from other teams", () => {
-    const groups = groupBots(withTop);
-    expect(groups.top?.bot.id).toBe("chief");
-    expect(groups.top?.members.map((m) => m.id)).toEqual(["aide"]);
+  it("groups the orchestrator after Admin Bot with its own team, apart from other teams", () => {
+    const groups = groupBots(withOrchestrator);
+    expect(groups.orchestrator?.bot.id).toBe("chief");
+    expect(groups.orchestrator?.members.map((m) => m.id)).toEqual(["aide"]);
     expect(groups.teams.map((t) => t.manager.id)).toEqual(["lead"]);
     expect(groups.ungrouped.map((b) => b.id)).toEqual(["loose"]);
-    expect(groupBots(bots).top).toBeUndefined();
+    expect(groupBots(bots).orchestrator).toBeUndefined();
   });
 
-  it("sidebar lists the top bot right after Admin Bot with a small label", () => {
+  it("sidebar lists the orchestrator right after Admin Bot with a small label", () => {
     const html = renderToStaticMarkup(
       <Sidebar
-        bots={withTop}
+        bots={withOrchestrator}
         botId="admin"
         conversationId={undefined}
         mainConversationId={undefined}
@@ -141,23 +141,24 @@ describe("top bot", () => {
       html.indexOf(`>${name}<`),
     );
     expect(order.every((at, i) => at > 0 && (i === 0 || at > (order[i - 1] ?? 0)))).toBe(true);
-    expect(html.match(/class="badge">Top bot</g)).toHaveLength(1);
-    expect(html.indexOf("Top bot<")).toBeGreaterThan(html.indexOf(">Chief<"));
-    expect(html.indexOf("Top bot<")).toBeLessThan(html.indexOf(">Aide<"));
+    expect(html.match(/class="badge">Orchestrator</g)).toHaveLength(1);
+    expect(html.indexOf("Orchestrator<")).toBeGreaterThan(html.indexOf(">Chief<"));
+    expect(html.indexOf("Orchestrator<")).toBeLessThan(html.indexOf(">Aide<"));
   });
 
-  it("bots panel sets the top bot, lists it first and keeps it off other teams", () => {
+  it("bots panel sets the orchestrator, lists it first and keeps it off other teams", () => {
     const html = renderToStaticMarkup(
       <BotsPanel
-        bots={withTop}
+        bots={withOrchestrator}
         profiles={profiles}
         onSetProfile={noop}
         onPlace={noop}
         onReplaceManager={noop}
-        onSetTop={noop}
+        onSetOrchestrator={noop}
+        onRename={noop}
       />,
     );
-    const picker = html.slice(html.indexOf('aria-label="Top bot"'), html.indexOf("</select>"));
+    const picker = html.slice(html.indexOf('aria-label="Orchestrator"'), html.indexOf("</select>"));
     expect(picker).toContain(">None<");
     expect(picker).toContain('value="chief" selected=""');
     expect(picker).not.toContain("Admin Bot");
@@ -165,7 +166,7 @@ describe("top bot", () => {
       html.indexOf(`<strong>${name}`),
     );
     expect(rows.every((at, i) => at > 0 && (i === 0 || at > (rows[i - 1] ?? 0)))).toBe(true);
-    expect(html).toContain('<strong>Chief<span class="badge">Top bot</span></strong>');
+    expect(html).toContain('<strong>Chief<span class="badge">Orchestrator</span></strong>');
     const chiefTeam = html.slice(html.indexOf('aria-label="Team for Chief"'));
     expect(chiefTeam.slice(0, chiefTeam.indexOf("</select>"))).not.toContain("On Lead");
     expect(html).toContain("Team: Aide");
@@ -176,11 +177,49 @@ describe("top bot", () => {
         onSetProfile={noop}
         onPlace={noop}
         onReplaceManager={noop}
-        onSetTop={noop}
+        onSetOrchestrator={noop}
+        onRename={noop}
       />,
     );
     expect(none).toContain('<option value="" selected="">None</option>');
-    expect(none).not.toContain('class="badge"');
+    expect(none).not.toContain('class="badge">Orchestrator');
+  });
+
+  it("labels every bot's role apart from its name and offers rename to all but Admin Bot", () => {
+    const html = renderToStaticMarkup(
+      <BotsPanel
+        bots={withOrchestrator}
+        profiles={profiles}
+        onSetProfile={noop}
+        onPlace={noop}
+        onReplaceManager={noop}
+        onSetOrchestrator={noop}
+        onRename={noop}
+      />,
+    );
+    const role = (name: string) =>
+      html.match(new RegExp(`<strong>${name}<span class="badge">(\\w+)<`))?.[1];
+    expect(["Admin Bot", "Chief", "Lead", "Member", "Loose"].map(role)).toEqual([
+      "Admin",
+      "Orchestrator",
+      "Manager",
+      "Bot",
+      "Bot",
+    ]);
+    expect(withOrchestrator.map(roleOf)).toEqual([
+      "Bot",
+      "Manager",
+      "Orchestrator",
+      "Admin",
+      "Bot",
+      "Bot",
+    ]);
+    expect(html).not.toContain("Rename Admin Bot");
+    for (const name of ["Chief", "Lead", "Member", "Loose", "Aide"]) {
+      expect(html).toContain(`aria-label="Rename ${name}"`);
+    }
+    expect(html).toContain('<option value="manager">Manager</option>');
+    expect(html).not.toMatch(/top bot|Leads a team/i);
   });
 });
 
@@ -194,7 +233,8 @@ describe("bots panel", () => {
         onSetProfile={noop}
         onPlace={noop}
         onReplaceManager={noop}
-        onSetTop={noop}
+        onSetOrchestrator={noop}
+        onRename={noop}
       />,
     );
     expect(html).not.toContain("Team for Admin Bot");
@@ -212,7 +252,8 @@ describe("bots panel", () => {
         onSetProfile={noop}
         onPlace={noop}
         onReplaceManager={noop}
-        onSetTop={noop}
+        onSetOrchestrator={noop}
+        onRename={noop}
       />,
     );
     expect(html).toContain("Profile for Admin Bot");

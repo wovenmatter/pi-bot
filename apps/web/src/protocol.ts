@@ -16,11 +16,11 @@ export type BotSummary = {
   createdAt: string;
   /** Exactly one bot is "admin": it manages accounts and config and is never on a team. */
   kind: "admin" | "bot";
-  /** Leads a team (one level: managers have no manager). */
+  /** A manager: leads a team (one level: managers have no manager). */
   manager: boolean;
   managerId?: string;
-  /** The optional top bot: at most one, above every team, never Admin Bot. It may lead a team. */
-  top: boolean;
+  /** The optional orchestrator: at most one, above every team, never Admin Bot. It may lead a team. */
+  orchestrator: boolean;
   /** The model profile this bot runs (its own or the default). Models stay server-side. */
   profileId: string;
   profileName: string;
@@ -200,12 +200,13 @@ export type Requests = {
     body: { botId: string };
     result: { restored: true; bot: BotSummary } | { restored: false };
   };
+  "bots.rename": { body: { botId: string; name: string }; result: { bot: BotSummary } };
   "bots.setManager": { body: { botId: string; manager: boolean }; result: { bot: BotSummary } };
   "bots.setTeam": {
     body: { botId: string; managerId: string | null };
     result: { bot: BotSummary };
   };
-  "bots.setTop": { body: { botId: string | null }; result: { bot: BotSummary | null } };
+  "bots.setOrchestrator": { body: { botId: string | null }; result: { bot: BotSummary | null } };
   "bots.replaceManager": {
     body: { managerId: string; newManagerId: string };
     result: { bot: BotSummary };

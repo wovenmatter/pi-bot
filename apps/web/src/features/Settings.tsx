@@ -516,7 +516,12 @@ function BotsSection({
             client.request("bots.replaceManager", { managerId: manager.id, newManagerId }),
           )
         }
-        onSetTop={(botId) => void act(() => client.request("bots.setTop", { botId }))}
+        onSetOrchestrator={(botId) =>
+          void act(() => client.request("bots.setOrchestrator", { botId }))
+        }
+        onRename={(bot, name) =>
+          void act(() => client.request("bots.rename", { botId: bot.id, name }))
+        }
       />
       <DeletedBotsList
         bots={deleted}
