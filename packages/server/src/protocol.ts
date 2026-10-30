@@ -20,7 +20,7 @@ export const requestSchema = z.discriminatedUnion("type", [
   }),
   // The Admin Bot is rejected: it cannot be deleted.
   z.object({ id: requestId, type: z.literal("bots.delete"), botId }),
-  // User-only, from Settings → Deleted bots. Never exposed to agent tools.
+  // User-only, from Settings → Bots → Deleted bots. Never exposed to agent tools.
   z.object({ id: requestId, type: z.literal("bots.listDeleted") }),
   z.object({ id: requestId, type: z.literal("bots.restore"), botId }),
   // Teams (Settings → Bots). One level: managers have no manager; Admin Bot is never on a team.

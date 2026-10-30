@@ -707,7 +707,7 @@ export class BotManager {
    * or orchestrator tool may call this. The registry row is marked deleted first, so no new open
    * can start, then the in-memory harness is closed and evicted and the bot's runtime environment
    * released. Its tables, threads and data stay in the database, so `restore()` can bring it back
-   * (from Settings → Deleted bots); purging is deferred.
+   * (from Settings → Bots → Deleted bots); purging is deferred.
    */
   async delete(id: string): Promise<boolean> {
     const record = await this.registry.get(id);
@@ -728,7 +728,7 @@ export class BotManager {
     return true;
   }
 
-  /** Soft-deleted bots, for the user's Settings → Deleted bots. User-only, like `delete`. */
+  /** Soft-deleted bots, for the user's Settings → Bots → Deleted bots. User-only, like `delete`. */
   listDeleted(): Promise<DeletedBotRecord[]> {
     return this.registry.listDeleted();
   }

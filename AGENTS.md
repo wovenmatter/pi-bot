@@ -66,8 +66,8 @@ the working agreement for every human or agent who changes this repository.
   `effectiveModel(profile)`; if this conversation switched, the error text is rewritten to a
   retryable one so the turn continues on the fallback. Expiry re-applies (auto-return). Status
   (`fallback` / `paused` / `returned`, 10 min) is `BotSummary.modelStatus`, pushed via `bots.changed`.
-- Account notes (`pibot_notes`) are guidance for Admin Bot (plans, keys, comfort spend), never
-  caps and never secrets. Profile tools are Admin Bot only and follow confirm-unless-asked.
+- Account notes (`pibot_notes`, Settings → Accounts → Plans and budget) are guidance for Admin
+  Bot (plans, keys, comfort spend), never caps and never secrets. Profile tools are Admin Bot only and follow confirm-unless-asked.
 - Tests use faux providers; never real keys.
 - Deleted bots are listed and restored only in the web app's Settings → Bots section,
   never in the sidebar or main bot list. Restore clears `deleted_at`; the bot reloads normally.

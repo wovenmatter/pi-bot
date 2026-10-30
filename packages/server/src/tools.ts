@@ -274,7 +274,7 @@ function adminTools(platform: BotPlatform) {
     defineTool({
       name: "restart_server",
       description:
-        "Restart Pi Bot so saved config applies (Settings → Restart and apply). Running work resumes after the restart. Confirm with the user first unless they asked for it.",
+        "Restart Pi Bot so saved config applies (Settings → Config → Restart Pi Bot, or the Restart and apply notice after a save). Running work resumes after the restart. Confirm with the user first unless they asked for it.",
       parameters: Type.Object({}),
       execute: () =>
         run(async () => {

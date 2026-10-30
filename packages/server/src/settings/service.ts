@@ -60,7 +60,7 @@ export type ModelOption = {
 };
 export type ProviderModels = { readonly id: string; readonly name: string; models: ModelOption[] };
 
-/** The global model settings Settings → Models edits; bots' models are in profiles. */
+/** The global model settings (the title model) Settings → Profiles → Thread titles edits; bots' models are in profiles. */
 export type Roles = {
   titles: string;
   titlesReasoning: string;

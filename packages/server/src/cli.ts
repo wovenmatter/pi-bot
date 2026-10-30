@@ -25,8 +25,9 @@ Commands:
   credentials               List stored credentials (provider and type only)
 
 Config: --config, $PI_BOT_CONFIG, or ~/.config/pi-bot/config.toml
-Restart: Settings → Restart and apply reloads in place; set PIBOT_RESTART_EXIT_CODE (e.g. 75)
-to exit with that status instead, for a supervisor that restarts on it.`;
+Restart: Settings → Config → Restart Pi Bot (or Restart and apply after a save) reloads in place;
+set PIBOT_RESTART_EXIT_CODE (e.g. 75) to exit with that status instead, for a supervisor that
+restarts on it.`;
 
 /** Read a line without echoing it. Piped stdin is read whole. Never logs the value. */
 async function readSecret(message: string): Promise<string> {
@@ -88,7 +89,8 @@ function defaultWebDir(): string | undefined {
 async function serve(config: PiBotConfig, configPath: string): Promise<void> {
   const webDir = config.paths.webDir ?? defaultWebDir();
   const exitCode = restartExitCode(process.env[RESTART_EXIT_CODE_ENV]);
-  // Settings → Restart and apply reloads in place, or exits with `exitCode` for a supervisor.
+  // Settings → Config → Restart Pi Bot (or Restart and apply) reloads in place, or exits with
+  // `exitCode` for a supervisor.
   const server = new PiBotProcess({
     configPath,
     config,

@@ -213,8 +213,8 @@ serialized refresher per provider (xAI and Anthropic rotate refresh tokens).
 
 ### Restart and apply
 
-Config saves go to config.toml at once; **Restart and apply** (shown after a save, and always on
-the Config tab) applies them. Pi Bot re-reads config.toml first (an invalid file is refused and
+Config saves go to config.toml at once; **Restart and apply** (shown after a save) or
+**Restart Pi Bot** (always on the Config tab) applies them. Pi Bot re-reads config.toml first (an invalid file is refused and
 nothing stops), lets running turns finish for up to 15 s, closes, and starts again: in the same
 process and on the same port by default (works under `pnpm dev`'s `node --watch`, a terminal, or
 a service), or, with `PIBOT_RESTART_EXIT_CODE=75`, by exiting with that status for a supervisor

@@ -38,7 +38,8 @@ export type PiBotProcessOptions = {
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 /**
- * The `serve` process: one Pi Bot app that Settings → Restart and apply can restart. A restart
+ * The `serve` process: one Pi Bot app that Settings → Config → Restart Pi Bot (or Restart and
+ * apply) can restart. A restart
  * re-reads config.toml first (an invalid file is refused and nothing stops), waits a bounded time
  * for running turns, closes the app (sockets, bots, database), then either starts it again in this
  * process on the same port (default; works under `node --watch`, a terminal, or any supervisor) or

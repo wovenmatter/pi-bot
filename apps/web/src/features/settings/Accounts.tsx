@@ -149,7 +149,7 @@ export function AccountRow({
   );
 }
 
-/** Account notes: plans, tiers and rough monthly comfort spend. Guidance for Admin Bot. */
+/** Plans and budget (account notes): plans, tiers and rough monthly comfort spend. Guidance for Admin Bot. */
 export function AccountNotes({
   notes,
   disabled,
@@ -206,7 +206,7 @@ export function AccountNotes({
   );
 }
 
-/** Account & sign-ins, grouped by provider. */
+/** Accounts: provider sign-ins and keys, grouped by provider. */
 export function AccountsList({
   accounts,
   login,
