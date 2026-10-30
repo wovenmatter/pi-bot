@@ -189,24 +189,16 @@ describe("onboarding", () => {
         onStatus={noop}
       />,
     );
-    expect(html).toContain("1. Sign in");
-    expect(html).toContain("Sign in first.");
+    expect(html).toContain("Sign in to a provider");
+    expect(html).toMatch(/aria-current="step"[^>]*>.*Sign in</);
+    expect(html).not.toContain("Choose Admin Bot");
   });
-  it("offers the main-model step once signed in, only if the model is unavailable", () => {
+  it("offers the main-model step once signed in", () => {
     const html = renderToStaticMarkup(
       <Onboarding client={client} connected={false} status={status} onStatus={noop} />,
     );
-    expect(html).toContain("Signed in.");
-    expect(html).toContain("2. Pick Admin Bot");
-    expect(html).not.toContain("Sign in first.");
-    const ready = renderToStaticMarkup(
-      <Onboarding
-        client={client}
-        connected={false}
-        status={{ ...status, mainModelAvailable: true }}
-        onStatus={noop}
-      />,
-    );
-    expect(ready).not.toContain("2. Pick Admin Bot");
+    expect(html).toContain("Choose Admin Bot&#x27;s model");
+    expect(html).toMatch(/aria-current="step"[^>]*>.*Choose a model</);
+    expect(html).not.toContain("Sign in to a provider");
   });
 });

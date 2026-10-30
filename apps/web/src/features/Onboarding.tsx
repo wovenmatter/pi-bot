@@ -1,5 +1,7 @@
+import { Check } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
+import { Icon } from "../components/Icon.tsx";
 import { ErrorNotice } from "../components/ui.tsx";
 import type { OnboardingStatus, ProviderModels } from "../protocol.ts";
 import { AccountsSection } from "./Settings.tsx";
@@ -38,35 +40,46 @@ export function Onboarding({
       .catch((e: unknown) => setError(errorMessage(e)));
   }, [client, connected, status.signedIn]);
 
+  const steps = [
+    { label: "Sign in", done: status.signedIn },
+    { label: "Choose a model", done: status.signedIn && status.mainModelAvailable },
+  ];
+  const current = steps.findIndex((step) => !step.done);
+
   return (
     <div className="onboarding">
-      <h2>Welcome to Pi Bot</h2>
-      <p className="muted">
-        Sign in, then you chat with <strong>Admin Bot</strong>: your account and config bot. It will
-        explain the platform, ask about your plans and budget, and set up model profiles, bots and
-        teams with you.
-      </p>
+      <header className="onboarding-hero">
+        <span className="brand-mark onboarding-mark" aria-hidden="true">
+          π
+        </span>
+        <h1>Welcome to Pi Bot</h1>
+        <p className="muted">Connect a model provider. Admin Bot takes it from there.</p>
+      </header>
+      <ol className="onboarding-steps" aria-label="Setup steps">
+        {steps.map((step, index) => (
+          <li
+            key={step.label}
+            className={step.done ? "done" : index === current ? "current" : undefined}
+            aria-current={index === current ? "step" : undefined}
+          >
+            <span className="onboarding-step-marker" aria-hidden="true">
+              {step.done ? <Icon icon={Check} size={12} weight="send" /> : index + 1}
+            </span>
+            {step.label}
+          </li>
+        ))}
+      </ol>
       <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
-      <h3>1. Sign in {status.signedIn ? "✓" : null}</h3>
-      {status.signedIn ? (
-        <p className="muted">Signed in. You can add more accounts later in Settings.</p>
-      ) : (
-        <AccountsSection
-          client={client}
-          connected={connected}
-          onError={setError}
-          onChanged={() => void refresh()}
-        />
-      )}
-      {status.signedIn && status.mainModelAvailable ? null : (
-        <>
-          <h3>2. Pick Admin Bot's main model</h3>
-          {status.signedIn ? (
+      <section className="onboarding-card">
+        {status.signedIn ? (
+          <>
+            <h2>Choose Admin Bot's model</h2>
+            <p className="muted">You can set up more models with Admin Bot later.</p>
             <MainModelPicker
               providers={providers}
               current={status.mainModel}
               disabled={!connected}
-              submitLabel="Start"
+              submitLabel="Start chatting"
               onSave={async (model) => {
                 setError(undefined);
                 try {
@@ -77,11 +90,21 @@ export function Onboarding({
                 }
               }}
             />
-          ) : (
-            <p className="muted">Sign in first.</p>
-          )}
-        </>
-      )}
+          </>
+        ) : (
+          <>
+            <h2>Sign in to a provider</h2>
+            <p className="muted">One is enough to start. Add more any time in Settings.</p>
+            <AccountsSection
+              client={client}
+              connected={connected}
+              intro={false}
+              onError={setError}
+              onChanged={() => void refresh()}
+            />
+          </>
+        )}
+      </section>
     </div>
   );
 }

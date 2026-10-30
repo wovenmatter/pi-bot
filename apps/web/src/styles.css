@@ -1768,8 +1768,110 @@ details.account-help > p {
   color: var(--muted);
   font-size: 12px;
 }
+/* First run: a short, centered welcome, two steps and one card. */
 .onboarding {
-  max-width: 760px;
+  max-width: 600px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 56px 24px 40px;
+}
+.onboarding-hero {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.onboarding-hero p {
+  margin: 0;
+  font-size: 14px;
+}
+.brand-mark.onboarding-mark {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+  border-radius: 13px;
+  font-size: 28px;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--primary-fill) 22%, transparent);
+}
+.onboarding-steps {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  margin: 28px 0 20px;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.onboarding-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.onboarding-steps li.current {
+  color: var(--ink);
+  font-weight: 500;
+}
+.onboarding-step-marker {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.onboarding-steps li.current .onboarding-step-marker {
+  background: var(--primary-fill);
+  color: #ffffff;
+}
+html[data-theme="dark"] .onboarding-steps li.current .onboarding-step-marker {
+  background: var(--accent);
+  color: var(--workspace);
+}
+.onboarding-steps li.done .onboarding-step-marker {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success-ink);
+}
+.onboarding-card {
+  padding: 22px 24px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.onboarding-card > h2 {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+.onboarding-card > p {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+}
+.onboarding-card .settings-section {
+  padding-top: 12px;
+}
+.onboarding-card .settings-section + .settings-section {
+  margin-top: 12px;
+}
+.onboarding-card .settings-section > h3 {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.onboarding-card .account-row {
+  padding-inline: 0;
+}
+.main-model-picker {
+  display: flex;
+  gap: 8px;
+}
+.main-model-picker > select {
+  flex: 1;
+  min-width: 0;
+}
+.onboarding > .notice {
+  margin-bottom: 16px;
 }

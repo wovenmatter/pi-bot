@@ -82,31 +82,21 @@ export function MainModelPicker({
   }
 
   return (
-    <form className="settings-fields" onSubmit={(event) => void submit(event)}>
-      <div className="settings-field">
-        <span>
-          Main model
-          <small className="muted">
-            Admin Bot's profile runs on it. Admin Bot then helps you set up model profiles.
-          </small>
-        </span>
-        <ModelSelect
-          providers={providers}
-          value={value}
-          label="Main model"
-          disabled={disabled || saving}
-          onChange={setDraft}
-        />
-      </div>
-      <div className="settings-actions">
-        <button
-          type="submit"
-          className="primary"
-          disabled={disabled || saving || !isKnown(providers, value)}
-        >
-          {saving ? "Saving…" : submitLabel}
-        </button>
-      </div>
+    <form className="main-model-picker" onSubmit={(event) => void submit(event)}>
+      <ModelSelect
+        providers={providers}
+        value={value}
+        label="Main model"
+        disabled={disabled || saving}
+        onChange={setDraft}
+      />
+      <button
+        type="submit"
+        className="primary"
+        disabled={disabled || saving || !isKnown(providers, value)}
+      >
+        {saving ? "Saving…" : submitLabel}
+      </button>
     </form>
   );
 }

@@ -103,7 +103,11 @@ export function AccountsSection({
   connected,
   onError,
   onChanged,
-}: Pick<SectionProps, "client" | "connected" | "onError"> & { onChanged?: () => void }) {
+  intro = true,
+}: Pick<SectionProps, "client" | "connected" | "onError"> & {
+  onChanged?: () => void;
+  intro?: boolean;
+}) {
   const [accounts, setAccounts] = useState<AccountStatus[]>();
   const [login, setLogin] = useState<LoginState>();
   const refresh = useCallback(
@@ -187,9 +191,11 @@ export function AccountsSection({
 
   return (
     <>
-      <p className="muted settings-intro">
-        Keys are write-only: only their last four characters are ever shown.
-      </p>
+      {intro ? (
+        <p className="muted settings-intro">
+          Keys are write-only: only their last four characters are ever shown.
+        </p>
+      ) : null}
       <AccountsList accounts={accounts} login={login} disabled={!connected} actions={actions} />
     </>
   );

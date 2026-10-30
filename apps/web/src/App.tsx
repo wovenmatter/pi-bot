@@ -34,6 +34,7 @@ export function App() {
   const [theme, setTheme] = useTheme();
   const route = useRoute();
   const bot = bots?.find((item) => item.id === route.botId);
+  const onboardingNeeded = onboarding?.needed === true && !route.settings;
 
   useEffect(() => {
     const stop = client.onState(setConnection);
@@ -138,10 +139,12 @@ export function App() {
         />
         <main
           id="main"
-          className={route.settings ? "main-content" : "main-content conversation-page"}
+          className={
+            route.settings || onboardingNeeded ? "main-content" : "main-content conversation-page"
+          }
         >
           <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
-          {onboarding?.needed && !route.settings ? (
+          {onboarding && onboardingNeeded ? (
             <Onboarding
               client={client}
               connected={connection === "open"}
