@@ -56,11 +56,14 @@ export function AccountRow({
   login,
   disabled,
   actions,
+  apiKeys = [],
 }: {
   account: AccountStatus;
   login?: LoginState;
   disabled?: boolean;
   actions: AccountActions;
+  /** API keys offered instead of this sign-in, folded under "Use an API key instead". */
+  apiKeys?: readonly AccountStatus[];
 }) {
   const keyed = account.method !== "oauth";
   const alternates = account.loginMethods?.slice(1) ?? [];
@@ -95,14 +98,18 @@ export function AccountRow({
               onClick={() => actions.onSignIn(account)}
             >
               <Icon icon={LogIn} size={13} weight="control" />
-              {account.configured ? "Sign in again" : "Sign in"}
+              {account.configured ? "Sign in again" : (account.signInLabel ?? "Sign in")}
             </button>
           )}
         </div>
       </div>
       {keyed ? (
         <KeyForm
-          label={`${account.label} ${account.method === "token" ? "token" : "API key"}`}
+          label={
+            /\b(API key|token)$/.test(account.label)
+              ? account.label
+              : `${account.label} ${account.method === "token" ? "token" : "API key"}`
+          }
           placeholder={
             account.configured
               ? "Paste a new value to replace it"
@@ -144,6 +151,20 @@ export function AccountRow({
           onClose={actions.onCloseLogin}
           onRetry={(method) => actions.onSignIn(account, method)}
         />
+      ) : null}
+      {apiKeys.length ? (
+        // Collapsed until asked for, or while a key is set (so it can be seen and removed).
+        <details
+          className="account-help account-api-key"
+          open={apiKeys.some((key) => key.configured) || undefined}
+        >
+          <summary>Use an API key instead</summary>
+          <ul className="settings-list">
+            {apiKeys.map((key) => (
+              <AccountRow key={key.id} account={key} disabled={disabled} actions={actions} />
+            ))}
+          </ul>
+        </details>
       ) : null}
     </li>
   );
@@ -219,8 +240,13 @@ export function AccountsList({
   actions: AccountActions;
 }) {
   if (!accounts) return <Loading />;
+  const ids = new Set(accounts.map((account) => account.id));
+  // An API key that is the alternative to a sign-in folds under that sign-in's row.
+  const folded = (account: AccountStatus) =>
+    account.alternateTo !== undefined && ids.has(account.alternateTo);
   const groups = new Map<string, AccountStatus[]>();
   for (const account of accounts) {
+    if (folded(account)) continue;
     groups.set(account.group, [...(groups.get(account.group) ?? []), account]);
   }
   return (
@@ -236,6 +262,7 @@ export function AccountsList({
                 login={login?.accountId === account.id ? login : undefined}
                 disabled={disabled}
                 actions={actions}
+                apiKeys={accounts.filter((key) => key.alternateTo === account.id)}
               />
             ))}
           </ul>

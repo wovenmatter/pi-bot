@@ -128,6 +128,12 @@ export type AccountStatus = {
   link?: string;
   /** Sign-in variants; the first is the default. */
   loginMethods?: { id: string; label: string }[];
+  /** Sign-in button text (default "Sign in"). */
+  signInLabel?: string;
+  /** An API key offered instead of this entry's subscription sign-in: folds under that row. */
+  alternateTo?: string;
+  /** Connected by any credential in the slot. */
+  anyCredential?: boolean;
   configured: boolean;
   detail?: string;
   ambient?: boolean;

@@ -100,6 +100,26 @@ function PromptForm({
   );
 }
 
+/** Provider text; "1. …" lines become a numbered list. */
+export function StepsText({ text }: { text: string }) {
+  const lines = text.split("\n").filter((line) => line.trim());
+  const steps = lines.filter((line) => /^\d+\.\s/.test(line));
+  if (steps.length < 2) return <p>{text}</p>;
+  const lead = lines.filter((line) => !/^\d+\.\s/.test(line));
+  return (
+    <>
+      {lead.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+      <ol className="login-steps">
+        {steps.map((step) => (
+          <li key={step}>{step.replace(/^\d+\.\s+/, "")}</li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
 function copy(text: string) {
   void navigator.clipboard?.writeText(text).catch(() => {});
 }
@@ -162,7 +182,7 @@ export function LoginPanel({
       ) : null}
       {view.authUrl ? (
         <div className="login-step">
-          {view.authUrl.instructions ? <p>{view.authUrl.instructions}</p> : null}
+          {view.authUrl.instructions ? <StepsText text={view.authUrl.instructions} /> : null}
           <div className="login-url">
             <a className="secondary" href={view.authUrl.url} target="_blank" rel="noreferrer">
               <Icon icon={ExternalLink} size={13} weight="control" />
@@ -182,6 +202,11 @@ export function LoginPanel({
               It ends on a localhost address that won't load. Paste that full URL below.
             </p>
           ) : null}
+        </div>
+      ) : null}
+      {view.prompt && view.message && !view.authUrl && !view.deviceCode ? (
+        <div className="login-step">
+          <StepsText text={view.message} />
         </div>
       ) : null}
       {view.prompt ? (

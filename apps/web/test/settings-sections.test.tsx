@@ -100,6 +100,157 @@ describe("Settings sections", () => {
     expect(folded).toContain(long);
   });
 
+  it("orders providers and folds each subscription's API key under a collapsed disclosure", () => {
+    const entry = (
+      id: string,
+      group: string,
+      label: string,
+      method: AccountStatus["method"],
+      extra: Partial<AccountStatus> = {},
+    ): AccountStatus => ({
+      id,
+      provider: id,
+      group,
+      label,
+      method,
+      help: "Help.",
+      configured: false,
+      ...extra,
+    });
+    const onboarding: AccountStatus[] = [
+      entry("claude-oauth", "Claude", "Claude subscription (Pro/Max)", "oauth", {
+        signInLabel: "Sign in with Claude",
+        anyCredential: true,
+      }),
+      entry("anthropic", "Claude", "Anthropic API key", "api_key", { alternateTo: "claude-oauth" }),
+      entry("openai-codex", "OpenAI", "ChatGPT subscription", "oauth"),
+      entry("openai", "OpenAI", "OpenAI API key", "api_key", { alternateTo: "openai-codex" }),
+      entry("xai-oauth", "Grok (xAI)", "SuperGrok / X Premium", "oauth"),
+      entry("xai", "Grok (xAI)", "xAI API key", "api_key", { alternateTo: "xai-oauth" }),
+      entry("openrouter", "OpenRouter", "OpenRouter", "api_key"),
+      entry("opencode-go", "OpenCode Go", "OpenCode Go", "api_key"),
+    ];
+    const html = renderToStaticMarkup(<AccountsList accounts={onboarding} actions={actions} />);
+    const sections = [...html.matchAll(/<section class="settings-section" aria-label="([^"]+)"/g)];
+    expect(sections.map((match) => match[1])).toEqual([
+      "Claude",
+      "OpenAI",
+      "Grok (xAI)",
+      "OpenRouter",
+      "OpenCode Go",
+    ]);
+    const section = (name: string) => {
+      const start = html.indexOf(`aria-label="${name}"`);
+      return html.slice(start, html.indexOf("</section>", start));
+    };
+    // Subscription sign-in first, its key behind a closed "Use an API key instead".
+    for (const [group, key] of [
+      ["Claude", "Anthropic API key"],
+      ["OpenAI", "OpenAI API key"],
+      ["Grok (xAI)", "xAI API key"],
+    ] as const) {
+      const part = section(group);
+      expect(part).toMatch(
+        /<details class="account-help account-api-key"><summary>Use an API key instead<\/summary>/,
+      );
+      expect(part.indexOf(">Sign in")).toBeLessThan(
+        part.indexOf('<details class="account-help account-api-key"'),
+      );
+      expect(part.slice(part.indexOf("account-api-key"))).toContain(`aria-label="${key}"`);
+      expect(part.match(/Use an API key instead/g)).toHaveLength(1);
+    }
+    // OpenRouter and OpenCode Go: plain key fields, no disclosure.
+    for (const group of ["OpenRouter", "OpenCode Go"]) {
+      const part = section(group);
+      expect(part).not.toContain("Use an API key instead");
+      expect(part).toContain('type="password"');
+    }
+    // One Claude sign-in row: no separate long-lived-token field.
+    const claude = section("Claude");
+    expect(claude.match(/>Sign in with Claude</g)).toHaveLength(1);
+    expect(claude).not.toContain("long-lived");
+    expect(claude.slice(0, claude.indexOf("account-api-key"))).not.toContain('type="password"');
+    // A configured key keeps its disclosure open so it can be seen and removed.
+    const withKey = renderToStaticMarkup(
+      <AccountsList
+        accounts={onboarding.map((account) =>
+          account.id === "openai"
+            ? { ...account, configured: true, detail: "Key ••••ABCD" }
+            : account,
+        )}
+        actions={actions}
+      />,
+    );
+    expect(withKey).toContain('<details class="account-help account-api-key" open="">');
+  });
+
+  it("shows Sign in with Claude's link with numbered steps and the paste field on the row", () => {
+    const html = renderToStaticMarkup(
+      <LoginPanel
+        login={{
+          loginId: "c1",
+          accountId: "claude-oauth",
+          label: "Claude subscription (Pro/Max)",
+          events: [
+            {
+              kind: "auth_url",
+              url: "https://claude.com/cai/oauth/authorize?code=true&state=s",
+              instructions: "1. Open the link.\n2. Sign in and approve.\n3. Paste the code here.",
+            },
+            {
+              kind: "prompt",
+              promptId: "p1",
+              prompt: {
+                type: "manual_code",
+                message: "Paste the code Claude shows",
+                placeholder: "code#state (or a sk-ant-oat… token)",
+              },
+            },
+          ],
+        }}
+        onRespond={noop}
+        onCancel={noop}
+        onClose={noop}
+      />,
+    );
+    expect(html).toContain(
+      '<ol class="login-steps"><li>Open the link.</li><li>Sign in and approve.</li><li>Paste the code here.</li></ol>',
+    );
+    expect(html).toContain("Open sign-in page");
+    expect(html).toContain("Copy link");
+    expect(html).toContain("Paste the code Claude shows");
+    expect(html).not.toContain("localhost address");
+
+    // No PTY here: the terminal steps show next to the token field, still one panel.
+    const fallback = renderToStaticMarkup(
+      <LoginPanel
+        login={{
+          loginId: "c2",
+          accountId: "claude-oauth",
+          label: "Claude",
+          events: [
+            {
+              kind: "info",
+              message:
+                "Do it in a terminal instead:\n1. Run claude setup-token.\n2. Sign in.\n3. Paste the token.",
+            },
+            {
+              kind: "prompt",
+              promptId: "p1",
+              prompt: { type: "secret", message: "Paste the token", placeholder: "sk-ant-oat…" },
+            },
+          ],
+        }}
+        onRespond={noop}
+        onCancel={noop}
+        onClose={noop}
+      />,
+    );
+    expect(fallback).toContain("<p>Do it in a terminal instead:</p>");
+    expect(fallback).toContain("<li>Run claude setup-token.</li>");
+    expect(fallback).toContain('type="password"');
+  });
+
   it("shows the sign-in link, device code and the open prompt", () => {
     const events: LoginEvent[] = [
       {
