@@ -20,7 +20,7 @@ Commands:
   set-key <provider>        Store an API key (openai, anthropic, openrouter, exa, ...) from hidden input or stdin;
                             claude-subscription takes the token printed by \`claude setup-token\`
   login <provider>          Headless OAuth sign-in: openai-codex (ChatGPT), claude-subscription (Claude
-                            Pro/Max, paste code#state), xai (Grok device code)
+                            Pro/Max via \`claude setup-token\`: open the link, paste the code), xai (Grok device code)
   logout <provider>         Remove a stored credential
   credentials               List stored credentials (provider and type only)
 

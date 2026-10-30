@@ -9,7 +9,6 @@ import {
   createAssistantMessageEventStream,
   type Message,
   type Model,
-  type OAuthAuth,
   type Provider,
   type Usage,
 } from "@earendil-works/pi-ai";
@@ -24,6 +23,7 @@ import {
   type ClaudeSdkEvent,
   type ClaudeSdkFrame,
 } from "./runtime.ts";
+import { claudeSetupTokenAuth, type SetupTokenOptions } from "./setup-token.ts";
 
 /**
  * Claude through the Claude Agent SDK (Claude Code), so a Claude subscription works, after Woven
@@ -227,7 +227,7 @@ export class ClaudeAgentStream {
     const key = options.apiKey;
     if (typeof key !== "string" || !key) {
       throw new ClaudeAgentError(
-        `No Claude credential. Sign in under Settings → Accounts → Claude, or paste a \`claude setup-token\` token there (CLI: \`pi-bot login ${model.provider}\`).`,
+        `No Claude credential. Use Sign in with Claude under Settings → Accounts (CLI: \`pi-bot login ${model.provider}\`).`,
       );
     }
     const compact = options.pibotCompact;
@@ -507,45 +507,9 @@ export class ClaudeAgentStream {
   }
 }
 
-/** Anthropic's headless sign-in variant: the browser lands on a page that shows `code#state`. */
-export const CLAUDE_COPY_CODE_LOGIN = "copy_code";
-
-/**
- * Claude Pro/Max sign-in for the `claude-subscription` slot. pi-ai's Anthropic OAuth is the same
- * PKCE flow Woven Matter's iOS app runs (`ios/Sources/CompanionInference/InferenceOAuth.swift`):
- * claude.ai/oauth/authorize with `code=true` and the platform.claude.com copy-code redirect, then a
- * JSON token exchange (and refresh) at platform.claude.com/v1/oauth/token. Always the copy-code
- * variant, so the server never opens a browser or listens for a localhost callback. Pi Bot stores
- * the tokens; the access token reaches Claude Code as CLAUDE_CODE_OAUTH_TOKEN per request.
- */
-export function claudeAccountOAuth(base?: OAuthAuth): OAuthAuth {
-  const anthropic = base ?? anthropicProvider().auth.oauth;
-  if (!anthropic) throw new Error("pi-ai has no Anthropic OAuth");
-  return {
-    name: "Claude account (Pro/Max)",
-    isSubscription: true,
-    loginLabel: "Sign in with Claude",
-    login: (interaction, options) =>
-      anthropic.login(
-        {
-          signal: interaction.signal,
-          notify: (event) => interaction.notify(event),
-          prompt: async (prompt) =>
-            prompt.type === "select" &&
-            prompt.options.some((option) => option.id === CLAUDE_COPY_CODE_LOGIN)
-              ? CLAUDE_COPY_CODE_LOGIN
-              : interaction.prompt(prompt),
-        },
-        options,
-      ),
-    refresh: (credential, signal) => anthropic.refresh(credential, signal),
-    toAuth: (credential) => anthropic.toAuth(credential),
-  };
-}
-
 /** The `claude-subscription` provider: Anthropic's catalog, served through Claude Code. */
 export function claudeAgentProvider(
-  options: ClaudeAgentOptions & { readonly oauth?: OAuthAuth },
+  options: ClaudeAgentOptions & { readonly signIn?: SetupTokenOptions },
 ): Provider {
   const agent = new ClaudeAgentStream(new ClaudeAgentRuntime(options));
   const stream = (model: Model<Api>, context: { messages: Message[] }, request?: object) =>
@@ -555,11 +519,15 @@ export function claudeAgentProvider(
     name: "Claude (Claude Agent SDK)",
     baseUrl: CLAUDE_AGENT_BASE_URL,
     auth: {
-      // In-app Claude sign-in; pi-ai refreshes it under the credential store's per-slot lock.
-      oauth: claudeAccountOAuth(options.oauth),
-      // pi-ai's standard api-key auth: the stored credential wins, else $CLAUDE_CODE_OAUTH_TOKEN.
+      // Sign in with Claude: Claude Code's own `claude setup-token`, driven server-side.
+      oauth: claudeSetupTokenAuth({
+        ...(options.executable ? { executable: options.executable } : {}),
+        ...options.signIn,
+      }),
+      // pi-ai's standard api-key auth: a stored token (CLI `pi-bot set-key`), else
+      // $CLAUDE_CODE_OAUTH_TOKEN.
       apiKey: {
-        name: "Claude subscription token (claude setup-token) or Anthropic API key",
+        name: "Claude subscription token (claude setup-token)",
         login: async (interaction: {
           signal: AbortSignal;
           prompt(input: { type: "secret"; message: string }): Promise<string>;

@@ -44,7 +44,7 @@ export type ClaudeAgentOptions = {
   readonly timeoutMs?: number;
 };
 
-/** Which variable carries a stored credential: OAuth tokens from `claude setup-token`, or an API key. */
+/** Which variable carries a stored credential: `claude setup-token` tokens (sign-in or pasted), or an API key. */
 export function claudeCredentialEnv(key: string): Record<string, string> {
   return key.startsWith("sk-ant-oat")
     ? { CLAUDE_CODE_OAUTH_TOKEN: key }
