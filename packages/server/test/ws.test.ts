@@ -150,6 +150,7 @@ describe("websocket server", () => {
         createdAt: bot.createdAt,
         kind: "bot",
         manager: false,
+        top: false,
         profileId: "default",
         profileName: "Default",
         defaultProfile: true,
@@ -164,6 +165,7 @@ describe("websocket server", () => {
         createdAt: bot.createdAt,
         kind: "bot",
         manager: false,
+        top: false,
         profileId: "default",
         profileName: "Default",
         defaultProfile: true,
@@ -242,6 +244,74 @@ describe("websocket server", () => {
     expect((await list()).filter((entry) => entry.managerId)).toEqual([]);
     client.close();
     watcher.close();
+  });
+
+  it("keeps at most one top bot, never Admin Bot, and clears it on delete", async () => {
+    type Summary = {
+      id: string;
+      name: string;
+      manager: boolean;
+      managerId?: string;
+      top: boolean;
+    };
+    const client = await Client.open(wsUrl);
+    const create = async (name: string) =>
+      (await client.request<{ bot: Summary }>("bots.create", { name })).bot;
+    const list = async () => (await client.request<{ bots: Summary[] }>("bots.list")).bots;
+    const byId = async (id: string) => (await list()).find((entry) => entry.id === id);
+    const tops = async () => (await list()).filter((entry) => entry.top).map((entry) => entry.id);
+    const admin = (await list())[0];
+    if (!admin) throw new Error("no Admin Bot");
+    expect(admin).toMatchObject({ top: false });
+    await expect(client.request("bots.setTop", { botId: admin.id })).rejects.toThrow(/Admin Bot/);
+
+    const chief = await create("Chief");
+    const lead = await create("Lead");
+    await client.request("bots.setManager", { botId: lead.id, manager: true });
+    const member = await create("Member");
+    await client.request("bots.setTeam", { botId: member.id, managerId: lead.id });
+
+    const set = await client.request<{ bot: Summary | null }>("bots.setTop", { botId: chief.id });
+    expect(set.bot).toMatchObject({ id: chief.id, top: true });
+    expect(await tops()).toEqual([chief.id]);
+    // The top bot is above every team: it can't join one.
+    await expect(
+      client.request("bots.setTeam", { botId: chief.id, managerId: lead.id }),
+    ).rejects.toThrow(/top bot/);
+
+    // A new top bot replaces the old one; a manager keeps its team, and the old one keeps its.
+    await client.request("bots.setManager", { botId: chief.id, manager: true });
+    await client.request("bots.setTop", { botId: lead.id });
+    expect(await tops()).toEqual([lead.id]);
+    expect(await byId(chief.id)).toMatchObject({ top: false, manager: true });
+    expect(await byId(member.id)).toMatchObject({ managerId: lead.id });
+
+    // A team member made top bot leaves its team.
+    await client.request("bots.setTop", { botId: member.id });
+    expect(await tops()).toEqual([member.id]);
+    expect((await byId(member.id))?.managerId).toBeUndefined();
+
+    // Handing the top bot's team to a member: the top bot stays top and off the team.
+    await client.request("bots.setTop", { botId: lead.id });
+    await client.request("bots.setTeam", { botId: member.id, managerId: lead.id });
+    await client.request("bots.replaceManager", { managerId: lead.id, newManagerId: member.id });
+    expect(await byId(lead.id)).toMatchObject({ top: true, manager: false });
+    expect((await byId(lead.id))?.managerId).toBeUndefined();
+    expect(await byId(member.id)).toMatchObject({ manager: true });
+
+    // Clearing and deleting both empty the slot; a restored top bot comes back as a normal bot.
+    expect(
+      (await client.request<{ bot: Summary | null }>("bots.setTop", { botId: null })).bot,
+    ).toBeNull();
+    expect(await tops()).toEqual([]);
+    await client.request("bots.setTop", { botId: chief.id });
+    await client.request("bots.delete", { botId: chief.id });
+    expect(await tops()).toEqual([]);
+    const restored = await client.request<{ bot: Summary }>("bots.restore", { botId: chief.id });
+    expect(restored.bot).toMatchObject({ top: false });
+    expect(await tops()).toEqual([]);
+    expect(await byId(admin.id)).toMatchObject({ top: false });
+    client.close();
   });
 
   it("rejects invalid requests and unknown bots", async () => {

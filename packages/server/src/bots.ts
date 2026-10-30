@@ -624,6 +624,7 @@ export class BotManager {
       name: trimmed,
       prefix: botPrefix(id),
       createdAt: new Date().toISOString(),
+      top: false,
       ...team,
     };
     await this.registry.insert(record);
@@ -723,9 +724,11 @@ export class BotManager {
     if (!record) return false;
     if (record.kind === "admin") throw new BotRuleError("the Admin Bot cannot be deleted");
     if (!(await this.registry.markDeleted(id))) return false;
-    // Deleting a manager ungroups its team; a deleted bot comes back on no team.
+    // Deleting a manager ungroups its team; a deleted bot comes back on no team. Deleting the top
+    // bot just clears the slot.
     if (record.manager) await this.registry.moveMembers(id, undefined);
     await this.registry.setTeam(id, { manager: false });
+    if (record.top) await this.registry.setTop(undefined);
     this.#options.onBotsChanged?.();
     const open = this.#bots.get(id);
     this.#bots.delete(id);
@@ -791,6 +794,9 @@ export class BotManager {
     const record = await this.#requireTeamable(id);
     if (managerId !== undefined) {
       if (record.manager) throw new BotRuleError(`${record.name} is a manager; demote it first`);
+      if (record.top) {
+        throw new BotRuleError(`${record.name} is the top bot, above every team; clear it first`);
+      }
       if (managerId === id) throw new BotRuleError("a bot cannot manage itself");
       await this.#requireManager(managerId);
     }
@@ -804,7 +810,7 @@ export class BotManager {
 
   /**
    * Give a team a new manager: `newManagerId` is promoted and takes over every member, and the old
-   * manager stays on the team as a member.
+   * manager stays on the team as a member (unless it is the top bot, which is never on a team).
    */
   async replaceManager(managerId: string, newManagerId: string): Promise<BotRecord> {
     const old = await this.#requireManager(managerId);
@@ -813,9 +819,27 @@ export class BotManager {
     if (next.manager) throw new BotRuleError(`${next.name} already manages a team`);
     await this.registry.setTeam(next.id, { manager: true });
     await this.registry.moveMembers(old.id, next.id, next.id);
-    await this.registry.setTeam(old.id, { manager: false, managerId: next.id });
+    await this.registry.setTeam(old.id, {
+      manager: false,
+      ...(old.top ? {} : { managerId: next.id }),
+    });
     this.#options.onBotsChanged?.();
     return this.record(next.id);
+  }
+
+  /**
+   * Make a bot the top bot (it leaves any team it was on; a team it manages stays), replacing the
+   * current one, which becomes a normal bot and keeps its team. `undefined` clears the slot.
+   * Returns the new top bot.
+   */
+  async setTop(id: string | undefined): Promise<BotRecord | undefined> {
+    if (id !== undefined) {
+      const record = await this.record(id);
+      if (record.kind === "admin") throw new BotRuleError("the Admin Bot can't be the top bot");
+    }
+    await this.registry.setTop(id);
+    this.#options.onBotsChanged?.();
+    return id === undefined ? undefined : this.record(id);
   }
 
   /**

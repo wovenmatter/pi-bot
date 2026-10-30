@@ -19,6 +19,11 @@ export type BotRecord = {
   readonly manager: boolean;
   /** The bot's team manager, if it is on a team. */
   readonly managerId?: string;
+  /**
+   * The optional top bot: at most one, above every team (never on one, but it may manage its
+   * own). Never Admin Bot.
+   */
+  readonly top: boolean;
   /** The model profile the bot runs (`[profiles.<id>]`); unset: the default profile. */
   readonly profile?: string;
   /**
@@ -55,11 +60,12 @@ type BotRow = {
   kind: string;
   is_manager: number;
   manager_id: string | null;
+  is_top: number;
   model: string | null;
   profile: string | null;
 };
 const BOT_COLUMNS =
-  "id, name, schema_prefix, created_at, kind, is_manager, manager_id, model, profile";
+  "id, name, schema_prefix, created_at, kind, is_manager, manager_id, is_top, model, profile";
 type ThreadRow = {
   bot_id: string;
   conversation_id: number;
@@ -88,6 +94,7 @@ function toBot(row: BotRow): BotRecord {
     kind: row.kind === "admin" ? "admin" : "bot",
     manager: row.is_manager === 1,
     ...(row.manager_id ? { managerId: row.manager_id } : {}),
+    top: row.is_top === 1,
     ...(row.profile ? { profile: row.profile } : {}),
     ...(row.model ? { legacyModel: row.model } : {}),
   };
@@ -161,6 +168,7 @@ export class BotRegistry {
       ["manager_id", "TEXT"],
       ["model", "TEXT"],
       ["profile", "TEXT"],
+      ["is_top", "INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [name, type] of added) {
       if (!columns.has(name))
@@ -169,6 +177,10 @@ export class BotRegistry {
     // At most one Admin Bot.
     await this.#db.exec(
       `CREATE UNIQUE INDEX IF NOT EXISTS pibot_bots_one_admin ON ${BOTS_TABLE}(kind) WHERE kind = 'admin'`,
+    );
+    // At most one top bot.
+    await this.#db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS pibot_bots_one_top ON ${BOTS_TABLE}(is_top) WHERE is_top = 1`,
     );
   }
 
@@ -197,6 +209,20 @@ export class BotRegistry {
       team.managerId ?? null,
       id,
     );
+  }
+
+  /**
+   * Make `id` the top bot, taking it off any team it was on, or clear the top bot with
+   * `undefined`. The previous top bot becomes a normal bot (no rule checks: see `BotManager`).
+   */
+  async setTop(id: string | undefined): Promise<void> {
+    await this.#db.run(
+      `UPDATE ${BOTS_TABLE} SET is_top = 0 WHERE is_top = 1 AND id != ?`,
+      id ?? "",
+    );
+    if (id !== undefined) {
+      await this.#db.run(`UPDATE ${BOTS_TABLE} SET is_top = 1, manager_id = NULL WHERE id = ?`, id);
+    }
   }
 
   /** Move every member of `managerId`'s team to `to` (undefined: off any team). */

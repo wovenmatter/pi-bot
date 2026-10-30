@@ -79,6 +79,7 @@ const botSummary = (
     kind: record.kind,
     manager: record.manager,
     ...(record.managerId ? { managerId: record.managerId } : {}),
+    top: record.top,
     profileId: profile?.id ?? record.profile ?? "",
     profileName: profile?.name ?? "",
     defaultProfile: !record.profile || !profiles?.get(record.profile),
@@ -321,6 +322,10 @@ class Connection {
         return { bot: bot(await manager.setTeam(request.botId, request.managerId ?? undefined)) };
       case "bots.replaceManager":
         return { bot: bot(await manager.replaceManager(request.managerId, request.newManagerId)) };
+      case "bots.setTop": {
+        const top = await manager.setTop(request.botId ?? undefined);
+        return { bot: top ? bot(top) : null };
+      }
       case "onboarding.status": {
         const admin = await manager.admin();
         if (!admin) throw new Error("this server has no Admin Bot");

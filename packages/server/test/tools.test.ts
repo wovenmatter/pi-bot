@@ -148,6 +148,52 @@ describe("bot tools", () => {
     expect(history).not.toContain("again");
   });
 
+  it("sets and clears the top bot from Admin Bot or a bot, and tells the top bot its role", async () => {
+    const admin = await manager.admin();
+    if (!admin) throw new Error("no Admin Bot");
+    const chief = await manager.create("Chief");
+    const lead = await manager.create("Lead");
+    await manager.setManager(lead.id, true);
+    await manager.create("Member", { managerId: lead.id });
+    await manager.create("Loose");
+
+    faux.setResponses([tool("set_team", { action: "make_top", botId: chief.id }), reply]);
+    await say(await manager.get(admin.id), "make Chief the top bot");
+    expect((await manager.record(chief.id)).top).toBe(true);
+    faux.setResponses([tool("set_team", { action: "make_top", botId: admin.id }), reply]);
+    await say(await manager.get(admin.id), "make yourself the top bot");
+    expect(seen.at(-1)).toContain("the Admin Bot can't be the top bot");
+
+    // The top bot's prompt names its role, the teams and the bots on no team.
+    let before = seen.length;
+    faux.setResponses([reply]);
+    await say(await manager.get(chief.id), "hi");
+    expect(seen[before]).toContain("You are the top bot: you lead and oversee every bot and team");
+    expect(seen[before]).toContain("Teams: Lead (Member). Bots on no team: Loose.");
+    // Other bots know who the top bot is.
+    before = seen.length;
+    faux.setResponses([reply]);
+    await say(await manager.get(lead.id), "hi");
+    expect(seen[before]).toContain("Chief is the top bot");
+
+    // A bot can take over the slot itself, and give it up.
+    faux.setResponses([tool("my_team", { action: "become_top" }), reply]);
+    await say(await manager.get(lead.id), "be the top bot");
+    expect((await manager.list()).filter((bot) => bot.top).map((bot) => bot.name)).toEqual([
+      "Lead",
+    ]);
+    expect(await manager.record(lead.id)).toMatchObject({ manager: true });
+    faux.setResponses([tool("my_team", { action: "stop_top" }), reply]);
+    await say(await manager.get(lead.id), "stop being the top bot");
+    expect((await manager.list()).some((bot) => bot.top)).toBe(false);
+
+    faux.setResponses([tool("set_team", { action: "make_top", botId: chief.id }), reply]);
+    await say(await manager.get(admin.id), "Chief again");
+    faux.setResponses([tool("set_team", { action: "clear_top" }), reply]);
+    await say(await manager.get(admin.id), "no top bot");
+    expect((await manager.list()).some((bot) => bot.top)).toBe(false);
+  });
+
   it("limits messages per pair over a sliding hour", () => {
     let now = 0;
     const limiter = new MessageLimiter(2, () => now);

@@ -130,6 +130,50 @@ describe("shared storage", () => {
     }
   });
 
+  it("adds the top-bot column to a team-era database and keeps its bots", async () => {
+    const dbPath = join(dir.path, "pi-bot.sqlite");
+    const db = await openSharedDatabase(dbPath);
+    const ids = ["0b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4", "1b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4"];
+    const [adminId, botId] = ids as [string, string];
+    // The registry as it was before the top bot: kind, teams, profiles, no is_top.
+    await db.exec(
+      `CREATE TABLE ${BOTS_TABLE} (id TEXT PRIMARY KEY, name TEXT NOT NULL, schema_prefix TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, deleted_at TEXT, kind TEXT NOT NULL DEFAULT 'bot', is_manager INTEGER NOT NULL DEFAULT 0, manager_id TEXT, model TEXT, profile TEXT) STRICT`,
+    );
+    await db.run(
+      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at, kind, profile) VALUES (?, ?, ?, ?, 'admin', 'fast')`,
+      adminId,
+      "Admin Bot",
+      botPrefix(adminId),
+      "2026-01-01T00:00:00.000Z",
+    );
+    await db.run(
+      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at, is_manager) VALUES (?, ?, ?, ?, 1)`,
+      botId,
+      "Lead",
+      botPrefix(botId),
+      "2026-01-02T00:00:00.000Z",
+    );
+    const registry = new BotRegistry(db);
+    try {
+      await registry.migrate();
+      await registry.migrate();
+      expect(await registry.list()).toEqual([
+        expect.objectContaining({ id: adminId, kind: "admin", profile: "fast", top: false }),
+        expect.objectContaining({ id: botId, name: "Lead", manager: true, top: false }),
+      ]);
+      await registry.setTop(botId);
+      expect(await registry.get(botId)).toMatchObject({ top: true, manager: true });
+      // The unique index allows at most one top bot.
+      await expect(
+        db.run(`UPDATE ${BOTS_TABLE} SET is_top = 1 WHERE id = ?`, adminId),
+      ).rejects.toThrow();
+      await registry.setTop(undefined);
+      expect((await registry.list()).filter((bot) => bot.top)).toEqual([]);
+    } finally {
+      await db.close();
+    }
+  });
+
   it("adds deleted_at and team columns to a registry created before them", async () => {
     const dbPath = join(dir.path, "pi-bot.sqlite");
     const db = await openSharedDatabase(dbPath);
@@ -149,7 +193,7 @@ describe("shared storage", () => {
       await registry.migrate();
       await registry.migrate();
       expect(await registry.list()).toEqual([
-        expect.objectContaining({ name: "Old", kind: "bot", manager: false }),
+        expect.objectContaining({ name: "Old", kind: "bot", manager: false, top: false }),
       ]);
       expect(await registry.admin()).toBeUndefined();
       await registry.setTeam(id, { manager: true });

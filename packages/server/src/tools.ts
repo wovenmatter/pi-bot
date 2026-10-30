@@ -42,6 +42,7 @@ export function describeBot(record: BotRecord) {
     ...(record.kind === "admin" ? { admin: true } : {}),
     ...(record.manager ? { manager: true } : {}),
     ...(record.managerId ? { managerId: record.managerId } : {}),
+    ...(record.top ? { top: true } : {}),
   };
 }
 
@@ -87,7 +88,7 @@ function commonTools(botId: string, platform: BotPlatform) {
     defineTool({
       name: "list_bots",
       description:
-        "List every bot on this Pi Bot: id, name, whether it is Admin Bot or a team manager, and its manager.",
+        "List every bot on this Pi Bot: id, name, whether it is Admin Bot, the top bot or a team manager, and its manager.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: () => run(async () => (await platform.manager().list()).map(describeBot)),
@@ -136,13 +137,15 @@ function teamTools(botId: string, platform: BotPlatform) {
     defineTool({
       name: "my_team",
       description:
-        "Manage your own team when the user asks. start: become a team manager (you leave any team you are on). add/remove: put another bot on or off your team (you must be a manager). stop: stop managing (your team is ungrouped).",
+        "Manage your own team or role when the user asks. start: become a team manager (you leave any team you are on). add/remove: put another bot on or off your team (you must be a manager). stop: stop managing (your team is ungrouped). become_top: become the top bot, which oversees every bot and team (replaces the current top bot; you leave any team you are on, a team you manage stays). stop_top: stop being the top bot.",
       parameters: Type.Object({
         action: Type.Union([
           Type.Literal("start"),
           Type.Literal("add"),
           Type.Literal("remove"),
           Type.Literal("stop"),
+          Type.Literal("become_top"),
+          Type.Literal("stop_top"),
         ]),
         botId: Type.Optional(Type.String({ description: "The bot to add or remove" })),
       }),
@@ -151,6 +154,15 @@ function teamTools(botId: string, platform: BotPlatform) {
           const manager = platform.manager();
           if (args.action === "start") return describeBot(await manager.setManager(botId, true));
           if (args.action === "stop") return describeBot(await manager.setManager(botId, false));
+          if (args.action === "become_top") {
+            await manager.setTop(botId);
+            return describeBot(await manager.record(botId));
+          }
+          if (args.action === "stop_top") {
+            if (!(await manager.record(botId)).top) throw new Error("you are not the top bot");
+            await manager.setTop(undefined);
+            return describeBot(await manager.record(botId));
+          }
           if (!args.botId) throw new Error("botId is required");
           const self = await manager.record(botId);
           if (!self.manager) throw new Error("you are not a team manager; start a team first");
@@ -174,7 +186,7 @@ function adminTools(platform: BotPlatform) {
     defineTool({
       name: "set_team",
       description:
-        "Organize teams for the user. promote/demote: make a bot a team manager or not (demoting ungroups its team). join: put botId on managerId's team. leave: take botId off its team. replace_manager: make botId the new manager of managerId's team (the old manager stays as a member).",
+        "Organize teams for the user. promote/demote: make a bot a team manager or not (demoting ungroups its team). join: put botId on managerId's team. leave: take botId off its team. replace_manager: make botId the new manager of managerId's team (the old manager stays as a member). make_top: make botId the one optional top bot, which oversees every bot and team (replaces the current one, which keeps its team; the new one leaves any team it is on and keeps a team it manages). clear_top: no top bot (botId is ignored).",
       parameters: Type.Object({
         action: Type.Union([
           Type.Literal("promote"),
@@ -182,14 +194,24 @@ function adminTools(platform: BotPlatform) {
           Type.Literal("join"),
           Type.Literal("leave"),
           Type.Literal("replace_manager"),
+          Type.Literal("make_top"),
+          Type.Literal("clear_top"),
         ]),
-        botId: Type.String(),
+        botId: Type.Optional(Type.String()),
         managerId: Type.Optional(Type.String()),
       }),
       execute: (args) =>
         run(async () => {
           const manager = platform.manager();
+          if (args.action === "clear_top") {
+            await manager.setTop(undefined);
+            return "There is no top bot now.";
+          }
+          if (!args.botId) throw new Error("botId is required");
           switch (args.action) {
+            case "make_top":
+              await manager.setTop(args.botId);
+              return describeBot(await manager.record(args.botId));
             case "promote":
               return describeBot(await manager.setManager(args.botId, true));
             case "demote":

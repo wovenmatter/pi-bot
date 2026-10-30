@@ -42,6 +42,12 @@ export const requestSchema = z.discriminatedUnion("type", [
     managerId: botId,
     newManagerId: botId,
   }),
+  // The optional top bot (at most one, above every team; never Admin Bot). null clears it.
+  z.strictObject({
+    id: requestId,
+    type: z.literal("bots.setTop"),
+    botId: botId.nullable(),
+  }),
   // First-run onboarding: sign in to a provider, then (if Admin Bot's profile's main model is
   // not available) pick that main model; Admin Bot then sets up profiles in chat.
   z.strictObject({ id: requestId, type: z.literal("onboarding.status") }),
@@ -212,6 +218,8 @@ export type BotSummary = {
   kind: "admin" | "bot";
   manager: boolean;
   managerId?: string;
+  /** The one optional top bot, above every team. */
+  top: boolean;
   /** The profile this bot runs (its own or the default). */
   profileId: string;
   profileName: string;
