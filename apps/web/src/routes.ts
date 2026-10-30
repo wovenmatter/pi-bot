@@ -4,20 +4,25 @@
  */
 export const SETTINGS_SECTIONS = [
   "accounts",
-  "models",
   "profiles",
+  "bots",
   "search",
   "github",
-  "bots",
   "config",
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+/** Retired tabs and where their content lives now, so old links keep working. */
+const MOVED_SECTIONS = new Map<string, SettingsSection>([
+  // The title model (the old Models tab) lives under Profiles.
+  ["models", "profiles"],
+]);
 
 export type Route = {
   botId?: string;
   conversationId?: number;
   settings?: true;
-  /** Settings tab; absent means the first one (Account & sign-ins). */
+  /** Settings tab; absent means the first one (Accounts). */
   section?: SettingsSection;
 };
 
@@ -25,7 +30,9 @@ export function parseRoute(hash: string): Route {
   const [botId, conversation] = hash.replace(/^#\/?/, "").split("/");
   if (!botId) return {};
   if (botId === "settings") {
-    const section = SETTINGS_SECTIONS.find((item) => item === conversation);
+    const section =
+      SETTINGS_SECTIONS.find((item) => item === conversation) ??
+      MOVED_SECTIONS.get(conversation ?? "");
     return section && section !== "accounts" ? { settings: true, section } : { settings: true };
   }
   const conversationId = conversation ? Number(conversation) : undefined;

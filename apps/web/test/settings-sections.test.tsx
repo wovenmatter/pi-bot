@@ -2,10 +2,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SettingsNav } from "../src/features/Settings.tsx";
 import { AccountsList } from "../src/features/settings/Accounts.tsx";
-import { ConfigEditor, LimitsForm, limitEdits } from "../src/features/settings/Config.tsx";
+import {
+  ConfigEditor,
+  LimitsForm,
+  limitEdits,
+  RestartSection,
+} from "../src/features/settings/Config.tsx";
 import { GitHubSettings } from "../src/features/settings/GitHub.tsx";
 import { LoginPanel, loginView } from "../src/features/settings/Login.tsx";
-import { ModelSettings } from "../src/features/settings/Models.tsx";
+import { TitleModelSettings } from "../src/features/settings/Models.tsx";
 import { SearchSettings } from "../src/features/settings/Search.tsx";
 import { RestartNotice } from "../src/features/settings/shared.tsx";
 import type { AccountStatus, EffectiveConfig, LoginEvent } from "../src/protocol.ts";
@@ -56,24 +61,17 @@ const accounts: AccountStatus[] = [
 
 describe("Settings sections", () => {
   it("routes each section and keeps #/settings for the first one", () => {
-    expect(parseRoute("#/settings/models")).toEqual({ settings: true, section: "models" });
     expect(parseRoute("#/settings/github")).toEqual({ settings: true, section: "github" });
     expect(parseRoute("#/settings/profiles")).toEqual({ settings: true, section: "profiles" });
+    // The old Models tab folded into Profiles; its links still land there.
+    expect(parseRoute("#/settings/models")).toEqual({ settings: true, section: "profiles" });
     expect(parseRoute("#/settings/nope")).toEqual({ settings: true });
+    expect(parseRoute("#/settings/toString")).toEqual({ settings: true });
     expect(routeHref({ settings: true, section: "accounts" })).toBe("#/settings");
     expect(routeHref({ settings: true, section: "config" })).toBe("#/settings/config");
     const nav = renderToStaticMarkup(<SettingsNav section="search" />);
-    for (const label of [
-      "Account &amp; sign-ins",
-      "Models",
-      "Profiles",
-      "Search",
-      "GitHub",
-      "Bots",
-      "Config",
-    ]) {
-      expect(nav).toContain(label);
-    }
+    const labels = [...nav.matchAll(/<a [^>]*>([^<]+)<\/a>/g)].map((match) => match[1]);
+    expect(labels).toEqual(["Accounts", "Profiles", "Bots", "Search", "GitHub", "Config"]);
     expect(nav).toContain('href="#/settings/search" class="active" aria-current="page"');
   });
 
@@ -175,7 +173,7 @@ describe("Settings sections", () => {
 
   it("offers the global title model from signed-in providers", () => {
     const html = renderToStaticMarkup(
-      <ModelSettings
+      <TitleModelSettings
         providers={[
           {
             id: "openai",
@@ -292,9 +290,15 @@ describe("Settings sections", () => {
     expect(renderToStaticMarkup(<RestartNotice show={false} state={idle} onRestart={noop} />)).toBe(
       "",
     );
-    expect(
-      renderToStaticMarkup(<RestartNotice show={false} offer state={idle} onRestart={noop} />),
-    ).toContain("Restart and apply");
+    // Config → Restart offers a restart at any time, apart from the editors.
+    const section = renderToStaticMarkup(<RestartSection restarting={false} onRestart={noop} />);
+    expect(section).toContain("Restart Pi Bot");
+    expect(section).not.toContain("disabled");
+    expect(renderToStaticMarkup(<RestartSection restarting onRestart={noop} />)).toContain(
+      "Restarting…",
+    );
+    // The raw file editor sits in its own folded section.
+    expect(editor).toContain("<summary><span>Edit the file</span></summary>");
   });
 
   it("shows restart progress, the server coming back and a stuck restart", () => {

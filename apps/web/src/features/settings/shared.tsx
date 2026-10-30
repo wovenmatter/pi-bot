@@ -13,18 +13,17 @@ export type RestartState =
 export const RESTART_TIMEOUT_MS = 90_000;
 
 /**
- * Restart status and the "Restart and apply" button. Shown when config.toml changed (`show`) or
- * on the Config tab (`offer`), and while a restart is running or just finished.
+ * Restart status and the "Restart and apply" button, pinned above every Settings tab while
+ * config.toml has unapplied changes (`show`), and while a restart is running or just finished.
+ * Config → Restart offers a restart at any time.
  */
 export function RestartNotice({
   show,
-  offer = false,
   state,
   disabled,
   onRestart,
 }: {
   show: boolean;
-  offer?: boolean;
   state: RestartState;
   disabled?: boolean;
   onRestart: () => void;
@@ -51,21 +50,15 @@ export function RestartNotice({
       </div>
     );
   }
-  if (!show && !offer && state.phase !== "failed") return null;
+  if (!show && state.phase !== "failed") return null;
   return (
     <div
-      className={`notice ${state.phase === "failed" ? "error" : show ? "warning" : "info"} restart-notice`}
+      className={`notice ${state.phase === "failed" ? "error" : "warning"} restart-notice`}
       role="status"
     >
       <Icon icon={RotateCcw} size={16} />
-      <span>
-        {state.phase === "failed"
-          ? state.message
-          : show
-            ? "Saved to config.toml. Restart Pi Bot to apply."
-            : "Config changes apply when Pi Bot restarts."}
-      </span>
-      <button type="button" className="secondary" disabled={disabled} onClick={onRestart}>
+      <span>{state.phase === "failed" ? state.message : "Saved. Restart Pi Bot to apply."}</span>
+      <button type="button" className="primary" disabled={disabled} onClick={onRestart}>
         Restart and apply
       </button>
     </div>

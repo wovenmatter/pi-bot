@@ -1,4 +1,5 @@
 import { LogIn, LogOut, Trash2 } from "lucide-react";
+import { type FormEvent, useState } from "react";
 import { Icon } from "../../components/Icon.tsx";
 import { Loading } from "../../components/ui.tsx";
 import type { AccountStatus } from "../../protocol.ts";
@@ -145,6 +146,63 @@ export function AccountRow({
         />
       ) : null}
     </li>
+  );
+}
+
+/** Account notes: plans, tiers and rough monthly comfort spend. Guidance for Admin Bot. */
+export function AccountNotes({
+  notes,
+  disabled,
+  onSave,
+}: {
+  notes: string | undefined;
+  disabled?: boolean;
+  onSave: (notes: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  if (notes === undefined) return <Loading />;
+  const value = draft ?? notes;
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSave(value);
+      setDraft(undefined);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <form
+      className="settings-section"
+      aria-labelledby="account-notes-heading"
+      onSubmit={(event) => void submit(event)}
+    >
+      <h3 id="account-notes-heading">Plans and budget</h3>
+      <p className="muted">
+        What you subscribe to and roughly what you're comfortable spending. Admin Bot reads this
+        when it picks models. Guidance, not hard limits, and never put keys here.
+      </p>
+      <textarea
+        aria-label="Account notes"
+        rows={4}
+        value={value}
+        disabled={disabled || saving}
+        placeholder="e.g. ChatGPT Pro ($200/mo), Claude Max ($100/mo), OpenRouter key: ~$50/month is fine"
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      {value !== notes ? (
+        <div className="settings-actions">
+          <button type="submit" className="primary" disabled={disabled || saving}>
+            {saving ? "Saving…" : "Save notes"}
+          </button>
+          <button type="button" className="text-button" onClick={() => setDraft(undefined)}>
+            Reset
+          </button>
+        </div>
+      ) : null}
+    </form>
   );
 }
 

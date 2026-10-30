@@ -2,14 +2,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PiBotClient } from "../src/api.ts";
 import { Onboarding } from "../src/features/Onboarding.tsx";
+import { AccountNotes } from "../src/features/settings/Accounts.tsx";
+import { BotsPanel, placementOf } from "../src/features/settings/Bots.tsx";
 import {
-  AccountNotes,
-  BotProfilesPanel,
   MainModelPicker,
   ProfileEditor,
   ProfilesPanel,
 } from "../src/features/settings/Profiles.tsx";
-import { placementOf, TeamsPanel } from "../src/features/settings/Teams.tsx";
 import type { BotSummary, ProfileSummary, ProviderModels } from "../src/protocol.ts";
 import { groupBots } from "../src/shell/bot-groups.ts";
 import { Sidebar } from "../src/shell/Sidebar.tsx";
@@ -103,16 +102,39 @@ describe("bot groups", () => {
   });
 });
 
-describe("teams panel", () => {
-  it("maps bots to placements and hides Admin Bot", () => {
+describe("bots panel", () => {
+  it("maps bots to placements and keeps Admin Bot off teams", () => {
     expect(bots.map(placementOf)).toEqual(["none", "manager", "none", "lead"]);
     const html = renderToStaticMarkup(
-      <TeamsPanel bots={bots} onPlace={noop} onReplaceManager={noop} />,
+      <BotsPanel
+        bots={bots}
+        profiles={profiles}
+        onSetProfile={noop}
+        onPlace={noop}
+        onReplaceManager={noop}
+      />,
     );
     expect(html).not.toContain("Team for Admin Bot");
+    expect(html).toContain("Never on a team");
     expect(html).toContain("Team: Member");
     expect(html).toContain("On Lead&#x27;s team");
     expect(html).toContain("Hand Lead&#x27;s team to");
+  });
+
+  it("picks a profile per bot, with the default as the empty choice", () => {
+    const html = renderToStaticMarkup(
+      <BotsPanel
+        bots={bots}
+        profiles={profiles}
+        onSetProfile={noop}
+        onPlace={noop}
+        onReplaceManager={noop}
+      />,
+    );
+    expect(html).toContain("Profile for Admin Bot");
+    expect(html).toContain('<option value="">Default (Default)</option>');
+    expect(html).toContain('value="fast" selected=""');
+    expect(html).not.toContain("Model profiles");
   });
 });
 
@@ -183,15 +205,6 @@ describe("profiles", () => {
     );
     expect(fresh).toContain("Can&#x27;t be changed");
     expect(fresh).toContain("Create profile");
-  });
-
-  it("picks a profile per bot, with the default as the empty choice", () => {
-    const html = renderToStaticMarkup(
-      <BotProfilesPanel bots={bots} profiles={profiles} onSet={noop} />,
-    );
-    expect(html).toContain("Profile for Admin Bot");
-    expect(html).toContain('<option value="">Default (Default)</option>');
-    expect(html).toContain('value="fast" selected=""');
   });
 
   it("keeps account notes as guidance", () => {

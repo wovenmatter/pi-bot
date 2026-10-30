@@ -163,7 +163,7 @@ user-only paths: bot tools may create bots but never delete or restore them.
 
 The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
 
-- **Account & sign-ins** — keys and subscription sign-ins, stored in the credential store
+- **Accounts** — keys and subscription sign-ins, stored in the credential store
   (Keychain on macOS, otherwise encrypted SQLite with a 0600 key file). Keys are write-only: the
   UI shows at most the last four characters, and no response ever carries a stored secret.
   Credential changes apply immediately (models read the store per request).
@@ -175,22 +175,26 @@ The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
     refused by xAI with a 403) or an **API key**. Both share one credential slot.
   - **OpenRouter** and **OpenCode Go** API keys.
     Variables from the environment show as "From …" and can't be removed here.
-- **Models** — models from each signed-in provider and the global title model plus title
-  reasoning (`[models.titles]`), validated and written to `config.toml`.
-- **Profiles** — create, edit, delete and set the default model profile (see below), plus
-  account notes (plans, tiers, keys, rough monthly comfort spend; guidance for Admin Bot, not caps).
+  - **Plans and budget** (account notes): plans, tiers, rough monthly comfort spend; guidance for
+    Admin Bot, not caps, never secrets.
+- **Profiles** — create, edit, delete and set the default model profile (see below); the global
+  thread-title model plus title reasoning (`[models.titles]`, validated and written to
+  `config.toml`); and the models each signed-in provider offers. The old `#/settings/models` tab
+  folded in here and its links land on Profiles.
+- **Bots** — one row per bot with its profile and team (move, promote/demote, hand a team to a
+  member), then deleted bots and Restore.
 - **Search** — Exa (default), Brave and Firecrawl keys, and `[search] provider`.
 - **GitHub** — an SSH key for git over SSH (generate an ed25519 key server-side, or paste an
   unencrypted OpenSSH private key; only the public key and SHA256 fingerprint are shown back) and
   the git identity (`[git] user_name`, `user_email`). The key is stored only; it is not yet
   injected into any bot environment.
-- **Bots** — deleted bots and Restore.
-- **Config** — bot-to-bot limits and the extraction schedule / time zone as fields, plus the raw
-  `config.toml` with validation against the startup schema (errors shown inline).
+- **Config** — bot-to-bot limits and the extraction schedule / time zone as fields; separately,
+  the raw `config.toml` (folded until opened) with validation against the startup schema (errors
+  shown inline); and a **Restart Pi Bot** button that is always available.
 
 Every `config.toml` write is validated first, written atomically and keeps the file's mode and
-comments (field edits change single lines in place). **Config changes need a restart**; the page
-says so after each save. There is **no app-level auth**: anyone who can reach the server's
+comments (field edits change single lines in place). **Config changes need a restart**; after
+each save a "Restart and apply" notice stays pinned above every Settings tab until you restart. There is **no app-level auth**: anyone who can reach the server's
 loopback/tailnet port can change settings, so never bind it anywhere public.
 
 ### Signing in (headless)

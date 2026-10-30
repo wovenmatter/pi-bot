@@ -1431,26 +1431,58 @@ input[type="file"] {
   max-width: 720px;
   margin-inline: auto;
 }
-.settings-page > h2 {
-  margin: 0 0 20px;
+.settings-page > h1 {
+  margin: 0 0 18px;
   color: var(--ink);
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 20px;
+}
+/* Errors and the pending-restart notice stay in view while a long tab scrolls. */
+.settings-notices {
+  position: sticky;
+  top: -28px;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+}
+.settings-notices:not(:empty) {
+  margin: 0 0 20px;
+}
+.settings-notices > .notice {
+  margin: 0;
+  background-color: var(--workspace);
+  background-image: linear-gradient(
+    var(--notice-tint, transparent),
+    var(--notice-tint, transparent)
+  );
+}
+.settings-notices > .notice.error {
+  --notice-tint: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.settings-notices > .notice.warning {
+  --notice-tint: color-mix(in srgb, var(--warning) 9%, transparent);
+}
+.settings-notices > .notice.success {
+  --notice-tint: color-mix(in srgb, var(--success) 7%, transparent);
+}
+.settings-body > :first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 .settings-section {
   display: grid;
-  gap: 8px;
-  padding-top: 16px;
+  gap: 10px;
+  padding-top: 24px;
   border-top: 1px solid var(--line);
 }
 .settings-section h3 {
   margin: 0;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 .settings-section > p {
-  margin: 0;
+  max-width: 600px;
+  margin: -6px 0 0;
   font-size: 12.5px;
 }
 .settings-list {
@@ -1506,7 +1538,111 @@ input[type="file"] {
   font-size: 12.5px;
 }
 .settings-section + .settings-section {
-  margin-top: 20px;
+  margin-top: 28px;
+}
+.settings-row.compact {
+  min-height: 40px;
+}
+/* Folded groups (available models, raw config): a quiet row with a trailing chevron. */
+.disclosure-list {
+  display: grid;
+  gap: 2px;
+}
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: var(--row-radius);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.12s ease-out;
+}
+.disclosure > summary > span {
+  flex: 1;
+}
+.disclosure > summary > small {
+  display: inline;
+}
+.disclosure > summary::after {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 4px 0 2px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.15s ease-out;
+}
+.disclosure[open] > summary::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+.disclosure > summary:hover {
+  background: var(--whisper);
+}
+.disclosure[open] > summary {
+  margin-bottom: 6px;
+}
+.config-path {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.config-raw {
+  display: grid;
+}
+.config-raw > summary {
+  border: 1px solid var(--line);
+}
+.config-raw[open] {
+  gap: 10px;
+}
+/* Settings → Profiles → Thread titles: model and reasoning side by side. */
+.title-model-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px;
+  gap: 8px;
+}
+/* Settings → Bots: one row per bot (name, profile, team). */
+.bots-table {
+  display: grid;
+  gap: 2px;
+}
+.bots-table-head,
+.bot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 200px) minmax(0, 200px);
+  align-items: center;
+  column-gap: 10px;
+}
+.bots-table-head {
+  padding: 0 4px 2px 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.bot-row {
+  row-gap: 6px;
+  min-height: 52px;
+  padding: 8px 4px 8px 12px;
+  border-radius: var(--row-radius);
+}
+.bot-row:hover {
+  background: var(--whisper);
+}
+.bot-row + .bot-row {
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.bot-row-note {
+  padding-left: 12px;
+  font-size: 12px;
+}
+.bot-row-handoff {
+  grid-column: 3;
 }
 .settings-section .muted code,
 .account-status code {
@@ -1797,9 +1933,19 @@ details.account-help > p {
   font-size: 12.5px;
 }
 @media (max-width: 640px) {
-  .settings-field {
+  .settings-field,
+  .title-model-fields {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+  .bots-table-head {
+    display: none;
+  }
+  .bot-row {
+    grid-template-columns: 1fr;
+  }
+  .bot-row-handoff {
+    grid-column: auto;
   }
   .account-row-main {
     flex-wrap: wrap;

@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check, RotateCcw } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Icon } from "../../components/Icon.tsx";
 import { Loading } from "../../components/ui.tsx";
@@ -89,6 +89,9 @@ export function LimitsForm({
       onSubmit={(e) => void submit(e)}
     >
       <h3 id="limits-heading">Limits &amp; schedule</h3>
+      <p className="muted">
+        How much bots may talk to each other, and when memories are extracted.
+      </p>
       <div className="settings-fields">
         {field(
           "maxRounds",
@@ -100,20 +103,16 @@ export function LimitsForm({
         {field("schedule", "Memory extraction schedule", "5-field cron, e.g. 0 3 * * *.")}
         {field("timezone", "Extraction time zone", "IANA name, e.g. America/New_York.")}
       </div>
-      <div className="settings-actions">
-        <button
-          type="submit"
-          className="primary"
-          disabled={disabled || saving || edits.length === 0}
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-        {edits.length > 0 ? (
+      {edits.length > 0 ? (
+        <div className="settings-actions">
+          <button type="submit" className="primary" disabled={disabled || saving}>
+            {saving ? "Saving…" : "Save"}
+          </button>
           <button type="button" className="text-button" onClick={() => setDraft(undefined)}>
             Reset
           </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </form>
   );
 }
@@ -144,42 +143,79 @@ export function ConfigEditor({
       <h3 id="config-heading">config.toml</h3>
       {path ? (
         <p className="muted">
-          <code>{path}</code>
+          Everything else lives in the file itself. It's validated before saving.
+          <code className="config-path">{path}</code>
         </p>
       ) : (
         <p className="muted">
           Pi Bot was started without a config file, so it can't be edited here.
         </p>
       )}
-      <textarea
-        className="config-editor"
-        aria-label="config.toml"
-        spellCheck={false}
-        value={text}
-        disabled={disabled || !path}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      {validation?.ok === false ? (
-        <pre className="config-error" role="alert">
-          {validation.error}
-        </pre>
-      ) : null}
-      {validation?.ok ? (
-        <p className="config-ok" role="status">
-          <Icon icon={Check} size={13} weight="control" /> Valid
-        </p>
-      ) : null}
+      <details className="disclosure config-raw">
+        <summary>
+          <span>Edit the file</span>
+        </summary>
+        <textarea
+          className="config-editor"
+          aria-label="config.toml"
+          spellCheck={false}
+          value={text}
+          disabled={disabled || !path}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        {validation?.ok === false ? (
+          <pre className="config-error" role="alert">
+            {validation.error}
+          </pre>
+        ) : null}
+        {validation?.ok ? (
+          <p className="config-ok" role="status">
+            <Icon icon={Check} size={13} weight="control" /> Valid
+          </p>
+        ) : null}
+        <div className="settings-actions">
+          <button type="button" className="primary" disabled={disabled || !path} onClick={onSave}>
+            Save file
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={disabled || !path}
+            onClick={onValidate}
+          >
+            Validate
+          </button>
+        </div>
+      </details>
+    </section>
+  );
+}
+
+/** Settings → Config → Restart: always reachable, not only after a save. */
+export function RestartSection({
+  restarting,
+  disabled,
+  onRestart,
+}: {
+  restarting: boolean;
+  disabled?: boolean;
+  onRestart: () => void;
+}) {
+  return (
+    <section className="settings-section" aria-labelledby="restart-heading">
+      <h3 id="restart-heading">Restart</h3>
+      <p className="muted">
+        Config changes apply when Pi Bot restarts. Running replies get a moment to finish.
+      </p>
       <div className="settings-actions">
         <button
           type="button"
           className="secondary"
-          disabled={disabled || !path}
-          onClick={onValidate}
+          disabled={disabled || restarting}
+          onClick={onRestart}
         >
-          Validate
-        </button>
-        <button type="button" className="primary" disabled={disabled || !path} onClick={onSave}>
-          Save
+          <Icon icon={RotateCcw} size={13} weight="control" />
+          {restarting ? "Restarting…" : "Restart Pi Bot"}
         </button>
       </div>
     </section>

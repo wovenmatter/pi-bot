@@ -13,15 +13,20 @@ import type {
   Requests,
 } from "../protocol.ts";
 import { routeHref, type SettingsSection } from "../routes.ts";
-import { type AccountActions, AccountsList } from "./settings/Accounts.tsx";
-import { ConfigEditor, LimitsForm, type ValidationState } from "./settings/Config.tsx";
+import { type AccountActions, AccountNotes, AccountsList } from "./settings/Accounts.tsx";
+import { BotsPanel, type Placement } from "./settings/Bots.tsx";
+import {
+  ConfigEditor,
+  LimitsForm,
+  RestartSection,
+  type ValidationState,
+} from "./settings/Config.tsx";
 import { GitHubSettings } from "./settings/GitHub.tsx";
 import type { LoginState } from "./settings/Login.tsx";
-import { ModelSettings } from "./settings/Models.tsx";
-import { AccountNotes, BotProfilesPanel, ProfilesPanel } from "./settings/Profiles.tsx";
+import { TitleModelSettings } from "./settings/Models.tsx";
+import { ProfilesPanel } from "./settings/Profiles.tsx";
 import { SearchSettings } from "./settings/Search.tsx";
 import { RESTART_TIMEOUT_MS, RestartNotice, type RestartState } from "./settings/shared.tsx";
-import { type Placement, TeamsPanel } from "./settings/Teams.tsx";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
@@ -88,12 +93,11 @@ type SectionProps = {
 };
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
-  { id: "accounts", label: "Account & sign-ins" },
-  { id: "models", label: "Models" },
+  { id: "accounts", label: "Accounts" },
   { id: "profiles", label: "Profiles" },
+  { id: "bots", label: "Bots" },
   { id: "search", label: "Search" },
   { id: "github", label: "GitHub" },
-  { id: "bots", label: "Bots" },
   { id: "config", label: "Config" },
 ];
 
@@ -201,41 +205,43 @@ export function AccountsSection({
   );
 }
 
-function ModelsSection({ client, connected, onError, onConfigSaved }: SectionProps) {
-  const [catalog, setCatalog] = useState<Requests["models.catalog"]["result"]>();
+/** Accounts tab: sign-ins and keys, then the plans-and-budget notes Admin Bot reads. */
+function AccountsTab(props: SectionProps) {
+  const { client, connected, onError } = props;
+  const [notes, setNotes] = useState<string>();
   useEffect(() => {
     if (!connected) return;
     client
-      .request("models.catalog", {})
-      .then(setCatalog)
+      .request("account.notes", {})
+      .then((result) => setNotes(result.notes))
       .catch((e: unknown) => onError(errorMessage(e)));
   }, [client, connected, onError]);
   return (
-    <ModelSettings
-      providers={catalog?.providers}
-      roles={catalog?.roles}
-      reasoningLevels={catalog?.reasoningLevels ?? []}
-      disabled={!connected}
-      onSave={async (roles) => {
-        onError(undefined);
-        try {
-          const result = await client.request("models.setRoles", roles);
-          setCatalog((current) => (current ? { ...current, roles: result.roles } : current));
-          onConfigSaved();
-        } catch (e) {
-          onError(errorMessage(e));
-          throw e;
-        }
-      }}
-    />
+    <>
+      <AccountsSection {...props} />
+      <AccountNotes
+        notes={notes}
+        disabled={!connected}
+        onSave={async (text) => {
+          onError(undefined);
+          try {
+            await client.request("account.setNotes", { notes: text });
+            setNotes(text);
+          } catch (e) {
+            onError(errorMessage(e));
+            throw e;
+          }
+        }}
+      />
+    </>
   );
 }
 
-function ProfilesSection({ client, connected, onError }: SectionProps) {
+/** Profiles tab: the bots' model profiles, then the one global model (thread titles). */
+function ProfilesSection({ client, connected, onError, onConfigSaved }: SectionProps) {
   const [profiles, setProfiles] = useState<ProfileSummary[]>();
   const [bots, setBots] = useState<BotSummary[]>();
-  const [providers, setProviders] = useState<Requests["models.catalog"]["result"]["providers"]>();
-  const [notes, setNotes] = useState<string>();
+  const [catalog, setCatalog] = useState<Requests["models.catalog"]["result"]>();
   const [busy, setBusy] = useState(false);
   const refresh = useCallback(
     () =>
@@ -252,11 +258,7 @@ function ProfilesSection({ client, connected, onError }: SectionProps) {
     void refresh();
     client
       .request("models.catalog", {})
-      .then((catalog) => setProviders(catalog.providers))
-      .catch((e: unknown) => onError(errorMessage(e)));
-    client
-      .request("account.notes", {})
-      .then((result) => setNotes(result.notes))
+      .then(setCatalog)
       .catch((e: unknown) => onError(errorMessage(e)));
     return client.onBotsChanged(() => void refresh());
   }, [client, connected, refresh, onError]);
@@ -279,7 +281,7 @@ function ProfilesSection({ client, connected, onError }: SectionProps) {
       <ProfilesPanel
         profiles={profiles}
         bots={bots}
-        providers={providers}
+        providers={catalog?.providers}
         disabled={!connected || busy}
         onSave={(profile, create) =>
           act(() => client.request("profiles.save", { profile, create }), true)
@@ -294,14 +296,17 @@ function ProfilesSection({ client, connected, onError }: SectionProps) {
           void act(() => client.request("profiles.delete", { profileId: profile.id }));
         }}
       />
-      <AccountNotes
-        notes={notes}
+      <TitleModelSettings
+        providers={catalog?.providers}
+        roles={catalog?.roles}
+        reasoningLevels={catalog?.reasoningLevels ?? []}
         disabled={!connected}
-        onSave={async (text) => {
+        onSave={async (roles) => {
           onError(undefined);
           try {
-            await client.request("account.setNotes", { notes: text });
-            setNotes(text);
+            const result = await client.request("models.setRoles", roles);
+            setCatalog((current) => (current ? { ...current, roles: result.roles } : current));
+            onConfigSaved();
           } catch (e) {
             onError(errorMessage(e));
             throw e;
@@ -498,24 +503,13 @@ function BotsSection({
   }
   return (
     <>
-      <section className="settings-section" aria-labelledby="admin-heading">
-        <h3 id="admin-heading">Admin Bot</h3>
-        <p className="muted">
-          Admin Bot is your account and config bot: sign-ins, models, keys, GitHub and config.toml,
-          and creating and organizing bots. It cannot be deleted and is never on a team.
-        </p>
-      </section>
-      <BotProfilesPanel
+      <BotsPanel
         bots={live}
         profiles={profiles}
         disabled={!connected || busy}
-        onSet={(bot, profileId) =>
+        onSetProfile={(bot, profileId) =>
           void act(() => client.request("bots.setProfile", { botId: bot.id, profileId }))
         }
-      />
-      <TeamsPanel
-        bots={live}
-        disabled={!connected || busy}
         onPlace={(bot, placement) => void place(bot, placement)}
         onReplaceManager={(manager, newManagerId) =>
           void act(() =>
@@ -676,23 +670,34 @@ export function Settings({
   const props: SectionProps = { client, connected, onError, onConfigSaved };
   return (
     <div className="settings-page">
-      <h2>Settings</h2>
+      <h1>Settings</h1>
       <SettingsNav section={section} />
-      <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
-      <RestartNotice
-        show={restartRequired}
-        offer={section === "config"}
-        state={restart}
-        disabled={!connected}
-        onRestart={onRestart}
-      />
-      {section === "accounts" ? <AccountsSection {...props} /> : null}
-      {section === "models" ? <ModelsSection {...props} /> : null}
-      {section === "profiles" ? <ProfilesSection {...props} /> : null}
-      {section === "search" ? <SearchSection {...props} /> : null}
-      {section === "github" ? <GitHubSection {...props} /> : null}
-      {section === "bots" ? <BotsSection {...props} onRestored={onRestored} /> : null}
-      {section === "config" ? <ConfigSection {...props} /> : null}
+      <div className="settings-notices">
+        <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
+        <RestartNotice
+          show={restartRequired}
+          state={restart}
+          disabled={!connected}
+          onRestart={onRestart}
+        />
+      </div>
+      <div className="settings-body">
+        {section === "accounts" ? <AccountsTab {...props} /> : null}
+        {section === "profiles" ? <ProfilesSection {...props} /> : null}
+        {section === "search" ? <SearchSection {...props} /> : null}
+        {section === "github" ? <GitHubSection {...props} /> : null}
+        {section === "bots" ? <BotsSection {...props} onRestored={onRestored} /> : null}
+        {section === "config" ? (
+          <>
+            <ConfigSection {...props} />
+            <RestartSection
+              restarting={restart.phase === "restarting"}
+              disabled={!connected}
+              onRestart={onRestart}
+            />
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
