@@ -24,9 +24,9 @@ the working agreement for every human or agent who changes this repository.
 
 - Never print, log, commit or test against real secrets. Tests must not need real API keys;
   use the pi-ai faux provider.
-- Credentials live in the shared credential store: the macOS Keychain on a Mac (stubbed in
-  milestone 1) and an AES-256-GCM encrypted SQLite table elsewhere, with its key file at mode
-  `0600` outside the database.
+- Credentials live in the shared credential store: an AES-256-GCM encrypted SQLite table, with
+  its key file at mode `0600` outside the database. The macOS Keychain store is only a stub, so
+  `backend = "auto"` uses encrypted SQLite on a Mac too.
 - `config.toml`, data directories, `*.key` and SQLite files are git-ignored.
 
 - Settings never send a stored secret back: keys show at most the last 4 characters, the GitHub
@@ -92,4 +92,5 @@ the working agreement for every human or agent who changes this repository.
 - Strict TypeScript, ES modules, relative imports with explicit `.ts` extensions.
 - Biome formats and lints (`pnpm format` fixes most issues).
 - Use the real Pi Durable / pi-ai APIs from the pinned versions; read their `.d.ts` files rather
-  than guessing. Record any deviation from the design in `README.md`.
+  than guessing. Record any deviation from the design in the matching
+  `docs/*.md` file (keep `README.md` short).

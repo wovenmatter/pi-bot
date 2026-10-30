@@ -25,8 +25,8 @@ model = "openai-codex/gpt-6-luna"
 reasoning = "high"                  # minimal | low | medium | high | xhigh
 
 # A profile: the main model runs the main channel and every thread; it can hand self-contained
-# tasks to pool models with run_subagent (it picks the model and reasoning level). Background work
-# (extraction etc.) uses the pool entry with background = true, else the main model. Admin Bot
+# tasks to pool models with run_subagent (it picks the model and reasoning level). background = true
+# marks the pool entry for background work, which nothing runs yet. Admin Bot
 # and Settings → Profiles edit these; changes apply from each bot's next reply.
 [profiles.default]
 name = "Default"
@@ -45,16 +45,17 @@ background = true
 [profiles.default.pool."openrouter/anthropic/claude-sonnet-5"]
 use_for = "Careful writing and code review"
 
+# Scheduled memory extraction: validated only, not run yet.
 [extraction]
 schedule = "0 3 * * *"              # 5-field cron
 timezone = "America/New_York"       # IANA zone the schedule is evaluated in
 
 [bot_to_bot]
-max_rounds_per_request = 5
-max_messages_per_hour_per_pair = 30
+max_rounds_per_request = 5          # validated, not enforced yet
+max_messages_per_hour_per_pair = 30 # message_bot sends per sender→target pair, sliding hour
 
 # Automatic compaction, identical for the main channel and every thread. Covered turns stay in
-# SQLite (search and read_thread see everything); only the model context gets shorter.
+# SQLite; only the model context gets shorter.
 [compaction]
 enabled = true
 reserve_tokens = 16384        # compact once the context exceeds the model window minus this
@@ -68,7 +69,7 @@ native = "auto"
 
 [search]
 # Default web search provider: exa | brave | firecrawl. Keys are set in Settings → Search
-# (stored in the credential store, never in this file).
+# (stored in the credential store, never in this file). No bot has a search tool yet.
 provider = "exa"
 
 [git]
@@ -79,11 +80,13 @@ provider = "exa"
 
 [environment]
 # Where bots' tools (bash, read, write, edit, …) run. "none": no tools. "docker": one container per
-# bot (see README "Per-bot environment"). Model and search credentials never enter a container.
+# bot (see docs/environments.md). Model and search credentials never enter a container; the
+# Settings → GitHub SSH key and git identity do.
 backend = "none"
 # image = "pi-bot-env:latest"   # default: built from packages/server/docker on first use
 
 [credentials]
-# auto = macOS Keychain on a Mac (stubbed in milestone 1, falls back), encrypted SQLite elsewhere.
+# auto = encrypted SQLite (a macOS Keychain store exists only as a stub, so Macs fall back to it too).
+# "keychain" is not implemented yet and fails at startup.
 backend = "auto"
 # key_file = "~/.local/share/pi-bot/credentials.key"   # AES-256-GCM key, mode 0600

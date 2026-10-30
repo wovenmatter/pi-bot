@@ -1,509 +1,128 @@
 # Pi Bot
 
-A self-hosted, single-user service for running several bots, built on
-[Pi Durable](https://www.npmjs.com/package/@earendil-works/pi-durable). MIT licensed.
-`AGENTS.md` has the working agreement.
+> **In development, not done.** Pi Bot runs, but it is unfinished: some configured features are
+> not implemented yet (see [Not implemented yet](#not-implemented-yet)), and
+> config, storage and protocol may still change.
 
-Each bot is one Pi Durable session. Its **main** channel is one long-lived
-conversation. A **thread** forks off any message and inherits the context up to
-that message. All bots share one process and one SQLite database (tables are
-prefixed `pibot_<botId>_`, plus a registry). Credentials are shared by all bots.
+Pi Bot is a self-hosted assistant made of several bots that work together, built on
+[Pi Durable](https://www.npmjs.com/package/@earendil-works/pi-durable). One server process runs
+all your bots against one SQLite database, on your own machine, reachable only from your
+tailnet. MIT licensed.
 
-## Layout
+Built through Trey Moore's agent-driven workflow: the commits come from `macagent131`, working
+under his direction.
 
-| Path                  | What                                                                                                   |
-| --------------------- | ------------------------------------------------------------------------------------------------------ |
-| `packages/server`     | `@wovenmatter/pi-bot`: config, storage, bot manager, threads, credentials, WebSocket API, `pi-bot` CLI |
-| `apps/web`            | Minimal React client: bot picker, main chat with streaming, threads, theme switcher                    |
-| `config.example.toml` | Every config key, with its default                                                                     |
+![A bot's main channel, with teams in the sidebar](docs/images/conversation.png)
 
-## Run
+## What you get
 
-Requires Node ≥ 22.19 and pnpm 12.
+- **Bots with roles.** **Admin Bot** is created on first start; it sets up accounts, profiles
+  and other bots for you. An optional **Orchestrator** oversees everything. **Managers** lead
+  one-level teams of regular **bots**. Bots can create bots and message each other.
+- **Model profiles.** Each bot runs one profile: a main model, 0–5 fallback models and a pool
+  of subagent models the main model can hand tasks to (`run_subagent`).
+- **Honest limit notices.** When a subscription hits its 5-hour or weekly limit, or an API key
+  runs out of credits, the chat says exactly what the provider reported, the bot moves to its
+  next fallback, and it switches back when the limit resets. Reset times are never guessed.
+- **Threads with auto-compaction.** Every bot has one long-lived main channel; threads fork off
+  any message and inherit its context. Long contexts are compacted automatically, natively
+  where the provider supports it. Nothing is ever deleted from the database.
+- **Per-bot Docker environments.** Optionally, each bot gets its own container with a
+  persistent workspace, where its bash/read/write/edit tools run.
+- **Subscription sign-ins and API keys.** Claude, ChatGPT and Grok subscriptions, plus API keys
+  for Anthropic, OpenAI, xAI, OpenRouter and OpenCode Go. All sign-ins work headless, from a
+  browser on any device. Secrets are stored encrypted and are write-only in the UI.
+- **Tailnet-only by design.** The server binds only to loopback or Tailscale addresses and
+  rejects non-local `Host`/`Origin` headers. There is no app-level login, so it must never be
+  exposed publicly. See [docs/security.md](docs/security.md).
+
+## Quick start
+
+Requires Node ≥ 22.19 and pnpm 12 (Docker only if you want per-bot environments).
 
 ```sh
 pnpm install
 pnpm build
-mkdir -p ~/.config/pi-bot && cp config.example.toml ~/.config/pi-bot/config.toml   # required; edit [profiles]
-node packages/server/dist/cli.js set-key openai   # stores the key encrypted; never echoed
-pnpm start                        # http://127.0.0.1:4317  (WebSocket at /ws, health at /health)
+mkdir -p ~/.config/pi-bot
+cp config.example.toml ~/.config/pi-bot/config.toml   # required; edit [profiles.default]
+pnpm start                                            # http://127.0.0.1:4317
 ```
 
-Credentials:
+Open the page, sign in to one provider and pick a main model if asked; Admin Bot takes it from
+there. Keys can also be set from a terminal:
 
 ```sh
-node packages/server/dist/cli.js set-key <provider>   # API key from hidden input or stdin (openai, openrouter, exa, ...)
-node packages/server/dist/cli.js login <provider>     # pi-ai OAuth login
+node packages/server/dist/cli.js set-key <provider>   # hidden input or stdin, stored encrypted
+node packages/server/dist/cli.js login <provider>     # openai-codex, claude-subscription, xai
 node packages/server/dist/cli.js credentials          # list (provider and type only)
 node packages/server/dist/cli.js logout <provider>
 ```
 
-Development, with two terminals:
+To use it from your other devices, keep it on loopback and share it on your tailnet only:
+`tailscale serve --bg --https=10443 http://127.0.0.1:4317` (never `tailscale funnel`). Running
+it as a systemd user service is covered in [docs/configuration.md](docs/configuration.md).
+
+![Onboarding: sign in to one provider](docs/images/onboarding.png)
+
+## Documentation
+
+| Doc                                                            | What it covers                                                                   |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [docs/configuration.md](docs/configuration.md)                 | `config.toml`, profiles, fallbacks, compaction, Settings, restart, service setup |
+| [docs/providers-and-sign-in.md](docs/providers-and-sign-in.md) | Every provider and search key, headless sign-in flows, the Claude caveat         |
+| [docs/bots-and-teams.md](docs/bots-and-teams.md)               | Roles, teams, the orchestrator, bot tools, threads, deleting and restoring       |
+| [docs/environments.md](docs/environments.md)                   | Per-bot Docker containers: image, lifecycle, git access                          |
+| [docs/security.md](docs/security.md)                           | Network model, credential storage, what enters a container                       |
+| [config.example.toml](config.example.toml)                     | Every config key, with its default                                               |
+| [AGENTS.md](AGENTS.md)                                         | Working agreement for agents changing this repo                                  |
+
+## How it fits together
+
+| Path                     | What                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| `packages/server`        | `@wovenmatter/pi-bot`: config, storage, bot manager, tools, credentials, WebSocket API, CLI |
+| `packages/server/docker` | The per-bot environment image                                                               |
+| `apps/web`               | React client: sidebar with bots and teams, chat with streaming, threads, Settings           |
+
+Each bot is one Pi Durable session; its tables are prefixed `pibot_<botId>_` in the shared
+database, next to a small registry. Pi Durable's store is the source of truth: on startup,
+interrupted runs resume, forks that crashed before being registered are adopted as threads, and
+missing thread titles are regenerated. Credentials are shared by all bots.
+
+The client uses a subset of the Woven Matter Enterprise web styles with the same three themes
+(Green, Cognac, Dark).
+
+## Development
 
 ```sh
 pnpm dev:server   # server with --watch on 127.0.0.1:4317
-pnpm dev:web      # Vite on http://127.0.0.1:5173, proxies /ws and /health to PI_BOT_PORT (default 4317)
+pnpm dev:web      # Vite on http://127.0.0.1:5173, proxies /ws and /health
+pnpm check        # build, typecheck, lint (Biome) and tests (Vitest)
 ```
 
-`pnpm check` runs build, typecheck, lint (Biome) and tests (Vitest). Tests use pi-ai's
-faux provider, so no API keys are needed.
-
-The server only binds to loopback or tailnet addresses (100.64.0.0/10,
-fd7a:115c:a1e0::/48). It rejects public addresses.
-
-## Compaction
-
-The main channel and every thread run the same code (`packages/server/src/compaction/`) and the
-same test suite (`test/compaction.test.ts`, parametrized over both). Pi Durable decides when to
-compact (`[compaction]` thresholds, context overflow, or a manual `compact()`) and picks the
-covered prefix, keeping tool calls with their results. Then, mirroring Woven Matter's
-`default-agent` (`provider-compaction.mjs`, `native-context.mjs`, `native-compaction-registry.mjs`):
-
-| Provider (pi-ai api)                      | Native API used                                                                                                                                                          |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `openai` (`openai-responses`)             | `POST https://api.openai.com/v1/responses/compact`; the returned `output` is prepended to later `input`                                                                  |
-| `xai` (`openai-responses`)                | `POST https://api.x.ai/v1/responses/compact`, same contract                                                                                                              |
-| `openai-codex` (`openai-codex-responses`) | `POST https://chatgpt.com/backend-api/codex/responses` with a trailing `{"type":"compaction_trigger"}` input item (SSE, `OpenAI-Beta: responses=experimental`)           |
-| `anthropic` (`anthropic-messages`)        | `POST /v1/messages?beta=true`, `anthropic-beta: compact-2026-09-04`, `compaction: {type: "summarize"}`; the signed `compaction` block leads later requests               |
-| `claude-subscription` (Claude Agent SDK)  | SDK `/compact` over the replayed transcript; the `PostCompact` hook's `compact_summary` (with `compact_boundary`) becomes the window, sent as a `<summary>` user message |
-| anything else (OpenRouter, faux)          | Pi Durable's built-in summarizer                                                                                                                                         |
-
-The compaction request is built by capturing the exact payload pi-ai would send (same system
-prompt, tools and auth), so the native window matches what later requests carry. The window lives
-in a rewindable conversation doc (`pibot.native-context`, inherited by forks), and a
-`pibot.native-compaction` head-marker entry moves the start of the model context. Nothing is
-deleted. A model change re-projects the covered history from SQLite: natively when the new route
-supports it, otherwise as a readable summary. An unsupported or failed native call is reported and
-falls back to Pi Durable's summarizer (Woven fails closed instead). Requests stay prefix-stable
-between compactions, so prompt caching is only reset by compaction itself.
-
-`beforeCompact` first calls the memory-extraction hook (`src/memory.ts`), a no-op in milestone 2.
-Tests use fake provider endpoints and placeholder credentials; no real model key was used.
-
-## Claude via the Claude Agent SDK
-
-The `claude-subscription` provider (`packages/server/src/claude/`) runs Claude through
-`@anthropic-ai/claude-agent-sdk`, so a Claude Pro/Max subscription works as well as an API key.
-It follows Woven Matter's `default-agent/src/claude-provider.mjs`, `claude-runtime.mjs` and
-`claude-inventory.mjs`.
-
-Sign in from the web UI (**Sign in with Claude**, see [Claude sign-in](#claude-sign-in-choice-and-reason)),
-or from a terminal:
-
-```sh
-node packages/server/dist/cli.js login claude-subscription    # same flow: open the link, paste the code
-# or: run `claude setup-token` anywhere, then
-node packages/server/dist/cli.js set-key claude-subscription  # paste the sk-ant-oat… token (stored encrypted)
-# then use e.g. main = "claude-subscription/claude-sonnet-4-5" in a [profiles.*] table
-```
-
-An `sk-ant-oat…` token is passed to Claude Code as `CLAUDE_CODE_OAUTH_TOKEN`; any other key is
-passed as `ANTHROPIC_API_KEY`. Each turn runs Claude Code with:
-
-- a private `CLAUDE_CONFIG_DIR` under `<dataDir>/claude-agent` (mode 0700);
-- a filtered environment (inherited `ANTHROPIC_*`/`CLAUDE_*` variables removed; telemetry,
-  error reporting, nonessential traffic and retries off);
-- no built-in tools, skills, settings sources or session persistence;
-- `maxTurns: 1`.
-
-Pi Bot's tools are listed to Claude through a list-only MCP server (`inventory.ts`). Calls come
-back as tool calls that Pi Bot executes, and are never run inside Claude Code. Earlier turns are
-replayed as `shouldQuery: false` frames.
-
-Limits:
-
-- The SDK is proprietary (Anthropic Commercial Terms). It is pinned to `0.3.312`. Subscription
-  use is subject to Anthropic's consumer terms.
-- Every turn starts a Claude Code process and replays the whole transcript. There is no SDK session
-  resume, no admission gate that captures raw HTTP responses, and no account fencing; Woven has
-  all three.
-- Sampling options other than reasoning effort are ignored. The context window and costs come from
-  pi-ai's Anthropic catalog.
-- Tested only against a fake `query()`. No real Claude token or Claude Code process was used.
-
-## Thread titles
-
-Threads are never named or renamed by hand (`thread.fork` takes no title). Their generated
-title is shown read-only: the web client lists a bot's threads by title in the sidebar, uses it
-as the thread header and on the reply link under the message it forked from ("Untitled thread"
-until one arrives; the list refetches when a reply ends). The title is also used for thread
-search (`threads.list` with `query`). It is generated the way Woven Matter titles
-conversations (`CodexConversationTitleGenerator.swift`):
-
-- On the first user message of an untitled thread, the server sends Woven's title prompt
-  (verbatim) plus that message to `[models.titles]` (default `openai-codex/gpt-6-luna`,
-  `reasoning = "high"`), in the background, at most one request per thread.
-- The reply goes through Woven's sanitizer (JSON `title`, else the first line; quotes and
-  trailing periods trimmed; 50 characters max) and is stored compare-and-set: only while the
-  thread is still untitled. The main channel is never titled.
-- A failed request is logged and leaves the thread untitled.
-
-## Deleting bots
-
-Only the user deletes bots, through the WebSocket `bots.delete` request. Deletion is a **soft
-delete**: the registry row in `pibot_bots` gets a `deleted_at` stamp and nothing else changes. The
-bot's prefixed Pi Durable tables, its thread rows and all its data stay in the database (no
-`DROP`, no `DELETE`). A deleted bot is hidden from `bots.list`, is not loaded or recovered at
-startup, and can't be opened or messaged (`bot <id> was deleted`). Its in-memory harness is closed
-and its runtime environment (container) released; volumes and data on disk are kept. Purging is
-deferred. Stale thread registry rows are logged at startup, not pruned.
-
-### Restoring deleted bots
-
-Deleted bots are recoverable, but only from one dedicated place: **Settings → Bots → Deleted bots** in the
-web app (the Settings link at the bottom of the sidebar, `#/settings/bots`). They never appear in the
-sidebar or the main bot list. The section lists each deleted bot with its deletion date and a
-**Restore** button. Restoring clears `deleted_at`; the bot then loads like any other, with all of
-its conversations, threads and history, reappears in the bot list and can be messaged again. Its
-runtime environment is re-acquired lazily on the next run, as on a normal load. Bot names are not
-unique, so a restore never collides with an existing bot.
-
-Over WebSocket this is `bots.listDeleted` (`{id, name, createdAt, deletedAt}` for each deleted
-bot, newest deletion first) and `bots.restore {botId}`, which returns `{restored: true, bot}`, or
-`{restored: false}` when the bot is unknown or not deleted. Delete, list-deleted and restore are
-user-only paths: bot tools may create bots but never delete or restore them.
-
-## Settings
-
-The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
-
-- **Accounts** — keys and subscription sign-ins, stored in the credential store
-  (Keychain on macOS, otherwise encrypted SQLite with a 0600 key file). Keys are write-only: the
-  UI shows at most the last four characters, and no response ever carries a stored secret.
-  Credential changes apply immediately (models read the store per request).
-  - OpenAI: **ChatGPT subscription** sign-in (OAuth — device code, or open the link in any
-    browser and paste back the `localhost:1455` redirect URL it ends on) and an **API key**.
-  - Order (onboarding and Settings): Claude, OpenAI, Grok (xAI), OpenRouter, OpenCode Go. Each
-    subscription sign-in comes first; its provider's API key sits under a collapsed **Use an API
-    key instead** under that row (open while a key is set, so it can be seen and removed).
-  - Claude: one **Sign in with Claude** row (Claude Code's own `claude setup-token`, driven by the
-    server; see below). Folded under it: the **Anthropic API key**. The separate "long-lived token"
-    row is gone; its paste field is the same row's field (a pasted `sk-ant-oat…` token is accepted).
-  - OpenAI: **ChatGPT subscription** sign-in (OAuth — device code, or open the link in any
-    browser and paste back the `localhost:1455` redirect URL it ends on); **OpenAI API key** folded.
-  - Grok / xAI: **SuperGrok or X Premium** sign-in (real device-code OAuth; some tiers are
-    refused by xAI with a 403); **xAI API key** folded. Both share one credential slot.
-  - **OpenRouter** and **OpenCode Go**: plain API key fields.
-    Variables from the environment show as "From …" and can't be removed here.
-  - **Plans and budget** (account notes): plans, tiers, rough monthly comfort spend; guidance for
-    Admin Bot, not caps, never secrets.
-- **Profiles** — create, edit, delete and set the default model profile (see below); the global
-  thread-title model plus title reasoning (`[models.titles]`, validated and written to
-  `config.toml`); and the models each signed-in provider offers. The old `#/settings/models` tab
-  folded in here and its links land on Profiles.
-- **Bots** — an optional **Orchestrator** picker (None or any bot but Admin Bot), then one row per
-  bot with its name, a role label (**Admin**, **Orchestrator**, **Manager** or **Bot**), a
-  **Rename** link (every bot but Admin Bot), its profile and team (No team / Manager / On X's team,
-  hand a team to a member), then deleted bots and Restore. The orchestrator is listed right after
-  Admin Bot; in the sidebar it carries a small "Orchestrator" label.
-- **Search** — Exa (default), Brave and Firecrawl keys, and `[search] provider`.
-- **GitHub** — an SSH key for git over SSH (generate an ed25519 key server-side, or paste an
-  unencrypted OpenSSH private key; only the public key and SHA256 fingerprint are shown back) and
-  the git identity (`[git] user_name`, `user_email`). The key is stored only; it is not yet
-  injected into any bot environment.
-- **Config** — bot-to-bot limits and the extraction schedule / time zone as fields; separately,
-  the raw `config.toml` (folded until opened) with validation against the startup schema (errors
-  shown inline); and a **Restart Pi Bot** button that is always available.
-
-Every `config.toml` write is validated first, written atomically and keeps the file's mode and
-comments (field edits change single lines in place). **Config changes need a restart**; after
-each save a "Restart and apply" notice stays pinned above every Settings tab until you restart. There is **no app-level auth**: anyone who can reach the server's
-loopback/tailnet port can change settings, so never bind it anywhere public.
-
-### Signing in (headless)
-
-Every sign-in works from a browser on any other device: the server never opens a browser and
-nothing has to reach a localhost callback on the workstation. The flows are Woven Matter's.
-
-| Provider                         | What you see and do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ChatGPT (`openai-codex`)         | Settings → Accounts → ChatGPT → **Sign in** shows a code and a link to `auth.openai.com/codex/device`. Open it anywhere, enter the code, approve; Pi Bot polls and finishes on its own (15 min limit). Same as Woven (`default-agent/src/sign-in-interaction.mjs` picks `device_code`). If your account has device-code sign-in turned off, use **Browser, then paste the redirect URL**: approve in the browser, and when it lands on a `localhost:1455` page that won't load, paste that whole URL back. |
-| Claude (`claude-oauth`, Pro/Max) | **Sign in with Claude**: the server starts Claude Code's `claude setup-token` and the row shows numbered steps with the claude.com link (Open / Copy). Sign in and approve in any browser; Claude shows a code; paste it into the field on the same row. Claude Code exchanges it and prints a one-year token, which Pi Bot stores encrypted and the row shows Connected. Without a usable `claude` binary or PTY the row shows terminal steps instead and takes the pasted token.                         |
-| xAI (Grok)                       | **Sign in** shows a code and an auth.x.ai link; approve there and Pi Bot finishes. API key fallback in the same slot.                                                                                                                                                                                                                                                                                                                                                                                      |
-
-Refreshes run inside the credential store's per-slot lock, so the one server process has one
-serialized refresher per provider (xAI rotates refresh tokens). The Claude token has no refresh:
-when it expires after a year the row says so and you sign in again.
-
-### Claude sign-in: choice and reason
-
-**Before:** the Claude row ran Pi Bot's own port of Claude Code's PKCE flow (pi-ai's Anthropic
-OAuth, as in Woven Matter's iOS `InferenceOAuth.swift`): Pi Bot built a `claude.ai/oauth/authorize`
-link with Claude Code's client id, took the pasted `code#state`, exchanged it itself at
-`platform.claude.com/v1/oauth/token`, stored access + refresh tokens and refreshed them. A second
-row took a token pasted from `claude setup-token` run elsewhere.
-
-**Now:** Pi Bot drives Anthropic's own, unmodified Claude Code binary (the one bundled with
-`@anthropic-ai/claude-agent-sdk`, else `claude` on `PATH`) and runs `claude setup-token` in a
-pseudo-terminal (util-linux `script`; setup-token prints nothing without a TTY), with a private
-throwaway `CLAUDE_CONFIG_DIR` and `BROWSER=true` (`packages/server/src/claude/setup-token.ts`):
-
-1. **Sign in with Claude** starts `claude setup-token`; Pi Bot reads the sign-in URL it prints and
-   shows it on the row with numbered steps, **Open sign-in page** and **Copy link**.
-2. You sign in to Claude (Pro, Max, Team or Enterprise) in any browser, through Anthropic's own
-   pages, and approve.
-3. Claude shows a code; paste it into the field on the row. Pi Bot types it into the waiting
-   `claude setup-token` ("Paste code here if prompted"), which does the token exchange itself.
-4. Claude Code prints the one-year `sk-ant-oat…` token. Pi Bot stores it encrypted (credential
-   store, `claude-subscription` slot), the row shows Connected, and Pi Bot passes it to Claude Code
-   as `CLAUDE_CODE_OAUTH_TOKEN` per request. Cancel or a 15-minute timeout kill the process; the
-   temporary config dir is always deleted. A wrong code shows Claude's own error.
-
-If no TTY or binary is available, the row shows the terminal version (run `claude setup-token`
-on any computer, sign in, paste the printed token) with the same paste field.
-
-**Why:** it uses only documented pieces, no scraped cookies and no Anthropic endpoints called by
-Pi Bot. Pi Bot no longer reimplements Claude Code's OAuth client.
-
-- [Authentication](https://code.claude.com/docs/en/authentication): `claude setup-token` runs the
-  same browser flow as `/login` ("Paste code here if prompted" when the browser shows a code),
-  prints a one-year OAuth token without saving it, and that token is meant to be set as
-  `CLAUDE_CODE_OAUTH_TOKEN` "for CI pipelines, scripts, or other environments where interactive
-  browser login isn't available". The token is limited to model requests and needs a Pro, Max,
-  Team or Enterprise plan.
-- [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview) and
-  [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) ("Authentication
-  and credential use") allow "an end user signing in to the unmodified Claude Code binary with
-  their own Claude subscription".
-
-**Caveat:** the same pages say third-party developers may not offer claude.ai login in their
-products or "collect, store, or intermediate Claude.ai credentials or session tokens" without
-Anthropic's approval. Pi Bot is a self-hosted tool you run for yourself, sign-in itself happens
-in Anthropic's flow and Claude Code, but Pi Bot storing the resulting token is still a gray
-area. The stricter option is Woven Matter's `default-agent` approach (`claude auth login`, where
-Claude Code keeps its own credentials and Pi Bot never sees the token); it was not chosen because
-Pi Bot keeps every credential in its own encrypted store. The Anthropic API key (folded under
-the Claude row) is the fully sanctioned alternative.
-
-### Restart and apply
-
-Config saves go to config.toml at once; **Restart and apply** (shown after a save) or
-**Restart Pi Bot** (always on the Config tab) applies them. Pi Bot re-reads config.toml first (an invalid file is refused and
-nothing stops), lets running turns finish for up to 15 s, closes, and starts again: in the same
-process and on the same port by default (works under `pnpm dev`'s `node --watch`, a terminal, or
-a service), or, with `PIBOT_RESTART_EXIT_CODE=75`, by exiting with that status for a supervisor
-(systemd: `Restart=always` or `RestartForceExitStatus=75`). Turns still running at close resume via
-Pi Durable. The page reconnects every 500 ms and says when Pi Bot is back.
-
-## Per-bot environment
-
-With `[environment] backend = "docker"` every bot gets its own Docker container, and all of its
-tools run there (also for Claude via the Agent SDK: Claude Code runs on the server with no
-built-in tools, and Pi Bot's tool calls execute in the container).
-
-- **Image** (`packages/server/docker`): Ubuntu 24.04 LTS with git, Node 24, Python 3, build tools,
-  ripgrep, and Playwright with Chromium. Built on first use as `pi-bot-env:<hash>`; a changed
-  Dockerfile gives a new tag for new containers (existing containers keep their image).
-- **Container** `pi-bot-<bot id>`: non-root user `bot` with passwordless sudo, its own named volume
-  `pi-bot-<bot id>-workspace` at `/workspace`, full internet, no resource limits. Nothing from the
-  host is mounted and there is no Docker socket. Started with `--restart unless-stopped`.
-- **Lifecycle**: created on first tool use; stopped (volume kept) on soft delete; started on
-  restore. At startup the server makes sure every active bot's container exists and runs (retrying
-  while Docker starts) and stops containers of deleted bots. Containers and volumes are never
-  removed.
-- **Bridge**: the server runs `docker exec -i -u bot … node /opt/pibot-env/agent.mjs`, a small
-  agent that serves Pi Durable's `NodeExecutionEnv` over JSON lines on stdio. `docker exec` does
-  not pass the server's environment, so model and search credentials stay on the host.
-- **Git**: the Settings → GitHub SSH key and identity are written to `~/.ssh/id_pibot_github`
-  (0600, with `~/.ssh/config` and GitHub's pinned host keys) and `git config --global` in every
-  container on start and whenever they change in Settings.
-
-### Admin Bot, bots and teams
-
-- **Roles** describe what a bot does and are separate from its name: **Admin** (Admin Bot),
-  **Orchestrator** (optional, at most one), **Manager** (leads a team) and **Bot** (everyone else,
-  team members included). Taking or leaving a role never changes a name.
-- **Names**: Admin Bot is always "Admin Bot" and can't be renamed. Any other bot (the orchestrator
-  and managers included) can be renamed in Settings → Bots (Rename), by telling the bot itself
-  (`rename_me`) or by asking Admin Bot (`rename_bot`). Names are trimmed, 1-80 characters; a rename
-  shows live in the sidebar (`bots.changed`) and in the bot's next system prompt.
-- **Admin Bot** is created on first start (exactly one; it can't be deleted, renamed or put on a
-  team). It is the only bot with account/config tools: settings status, `config.toml` read/update,
-  restart, model profiles (`list_profiles`, `save_profile`, `delete_profile`,
-  `set_default_profile`, `set_bot_profile`), account notes (`read_account_notes`,
-  `write_account_notes`), renaming other bots (`rename_bot`) and teams (`set_team`). It confirms config changes unless you asked for
-  them, and never asks for secrets in chat (sign-ins and keys stay in Settings).
-- **Onboarding**: on first run the web app asks you to sign in and, only if the default profile's
-  main model isn't available, to pick one (`onboarding.status`, `onboarding.setMainModel`). Admin
-  Bot's first conversation explains the platform, asks about your subscriptions, tiers, API keys and
-  comfortable monthly spend (saved as account notes; guidance, not caps), proposes profiles (or
-  goes step by step) and creates the bots/teams you want.
-- **Bots** each run one model profile (new bots get the default). Every bot has `list_bots`, `create_bot`
-  and `message_bot`; every bot but Admin Bot also has `rename_me` and `my_team`. `message_bot`
-  delivers to the target's main conversation as a follow-up, rate limited by
-  `[bot_to_bot] max_messages_per_hour_per_pair`. A bot created by a manager or team member joins
-  that team.
-- **Teams** are optional and one level: any non-Admin Bot can be a manager (managers have no
-  manager). Move bots, promote/demote and hand a team to a member in Settings → Bots, by asking
-  Admin Bot, or by telling a bot to start a team. Demoting or deleting a manager ungroups its team; a
-  restored manager comes back without one. The sidebar pins Admin Bot, then the orchestrator (if
-  any), then nests members under their manager.
-- **Orchestrator** (optional, at most one) sits above every team: up to three levels (orchestrator →
-  managers → members), Admin Bot always apart and never the orchestrator. Pick one (or None) in
-  Settings → Bots, ask Admin Bot (`set_team` `make_orchestrator`/`clear_orchestrator`), or tell a
-  bot to take or give up the role (`my_team` `become_orchestrator`/`stop_orchestrator`). Setting a
-  new orchestrator replaces the old one, which stays a normal bot and keeps its team. Design choice:
-  the orchestrator is never a member of a team (becoming orchestrator takes it off one) but **may
-  lead its own team**, which it keeps (its role label stays Orchestrator); handing that team to a
-  member leaves it orchestrator and ungrouped. Deleting the orchestrator clears the slot; a restored
-  bot isn't orchestrator. Its system prompt says it oversees every bot and team and lists them;
-  other bots are told who it is. Stored as `is_orchestrator` with a partial unique index
-  (`pibot_bots_one_orchestrator`, one row at most). The role was first called "top bot": on start,
-  a database with the old `is_top` column has it renamed in place (`ALTER TABLE … RENAME COLUMN`,
-  values kept) and the old index replaced; databases without it gain the column with every bot kept.
-- WebSocket: `bots.create {name, managerId?}`, `bots.rename {botId, name}` (rejected for Admin
-  Bot), `bots.setManager`, `bots.setTeam`, `bots.replaceManager`, `bots.setOrchestrator {botId |
-  null}`; the server pushes `{type: "bots.changed"}` when the list changes (renames included).
-
-### Model profiles
-
-A profile is a name, one **main model**, a **pool** of models the main model may delegate to (each
-`provider/model-id` with a "use it for" note) and optional guidance. Profiles live in
-`config.toml`:
-
-```toml
-[models]
-default_profile = "default"
-
-[profiles.default]
-name = "Default"
-main = "openai-codex/gpt-6-sol"
-fallbacks = ["claude-subscription/claude-opus-5-5", "openrouter/openai/gpt-6.1-sol"]  # optional, max 5
-guidance = "Use the cheap pool models for lookups and summaries."
-
-[profiles.default.pool."openai-codex/gpt-6-luna"]
-use_for = "Quick lookups, summaries and background work"
-background = true
-
-[profiles.default.pool."openrouter/anthropic/claude-sonnet-5"]
-use_for = "Careful writing and code review"
-```
-
-- Every bot runs exactly one profile; a bot with none assigned runs the default, so editing the
-  default changes every bot on it. Deleting a profile moves its bots back to the default (the
-  default itself can't be deleted). Pick per bot in Settings → Bots.
-- The main channel and every thread use the profile's main model. If the pool is not empty the
-  main model gets `run_subagent {model, task, reasoning?}`: the task runs on the chosen pool model
-  in a separate child conversation (the main model's prompt cache is untouched) and the result
-  comes back as the tool result. A failure is returned as a clear error so the main model can pick
-  another pool model (it tells you in one line: "I couldn't use X, so I used Y instead").
-- Background work (memory extraction and other quiet jobs) uses the pool entry flagged
-  `background = true`, else the main model. Thread titles keep the single global `[models.titles]`.
-- Changes apply from each bot's next turn (breaking its cache is fine). The chat header shows only
-  the profile name; the models used, including subagent calls, are logged server-side.
-- **Fallbacks** (see below) only cover the main model.
-- Migration: an old `[models] orchestrator` / `background` config becomes the `default` profile
-  (the background model becomes its background pool entry) on first start, with the previous file
-  kept as `config.toml.pre-profiles.bak`. A bot's old per-bot model override becomes its own
-  profile (e.g. `admin-bot`) unless it matched the default.
-
-### Usage limits and fallbacks
-
-When a main-model request fails, `limits.ts` classifies the error from the provider's own signals
-(status, `x-codex-*` / `anthropic-ratelimit-unified-*` headers, the error body, Claude Agent SDK
-rate-limit events):
-
-| Kind                                   | Example notice                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------ |
-| 5-hour subscription limit              | Your ChatGPT account hit its 5-hour usage limit. Resets Thu 9:30 PM EDT. |
-| Weekly subscription limit              | Your Claude account hit its weekly usage limit. Resets Mon 3:00 AM EDT.  |
-| Other / unknown usage limit            | This Claude account ran out of usage.                                    |
-| API key out of credits or quota        | Your OpenRouter key ran out of credits.                                  |
-| Transient rate limit (429, overloaded) | none: the normal retry with backoff                                      |
-
-Only what the provider said is shown: a window or reset time is never guessed. Ordinary errors
-never trigger a fallback.
-
-- The model (or, for credits, the whole provider account) is marked unavailable on the server
-  until its reset, or for a ~15-minute cooldown when no reset was given, after which the next
-  request probes it again. The state is in memory, per provider account + model, shared by all
-  bots (a restart forgets it; the next failure re-learns it).
-- Every bot whose profile chain (`main`, then `fallbacks` in order) includes that model moves to the
-  first available one. The failing turn continues on the fallback (Pi Durable's retry re-reads the
-  model). With no fallback, or all out, the bot stays on its main model, paused: its requests keep
-  failing (and act as probes) until the reset.
-- When the main model resets the bots switch back automatically (the prompt cache is rebuilt) and
-  the chat shows a brief "back on <model>" notice. A turn already running finishes its current
-  request on the fallback; the switch applies from the next request.
-- The chat shows a banner above the transcript (what was hit, which account and model, the reset in
-  your local time or "reset time not reported", and the fallback now in use or that the bot is
-  paused); the sidebar shows a dot on affected bots. The status rides on `bots.list`
-  (`modelStatus`), refreshed through `bots.changed`.
-- Pool models (subagents) never switch automatically: the error goes back to the main model, which
-  quietly uses another pool model and tells you in one line.
-- Edit fallbacks in Settings → Profiles (add, remove, reorder, max 5) or ask Admin Bot
-  (`save_profile` takes `fallbacks`). Changing credentials does not clear a marked limit yet.
-
-### Running as a service
-
-On a Linux workstation, run the server as a systemd user service with lingering on, so it starts
-at boot without a login (and Docker enabled at boot):
-
-```ini
-# ~/.config/systemd/user/pi-bot.service
-[Unit]
-Description=Pi Bot
-After=network-online.target
-
-[Service]
-WorkingDirectory=%h/Projects/pi-bot
-ExecStart=/usr/bin/node packages/server/dist/cli.js serve
-Environment=PIBOT_RESTART_EXIT_CODE=75
-Restart=always
-RestartSec=1
-
-[Install]
-WantedBy=default.target
-```
-
-`systemctl --user enable --now pi-bot`, `loginctl enable-linger $USER`,
-`sudo systemctl enable docker`. Restart and apply exits with 75 and systemd starts it again. For a
-private preview on your tailnet only: `tailscale serve --bg --https=10443 http://127.0.0.1:4317`
-(never `tailscale funnel`).
-
-## Crash recovery
-
-Pi Durable's store is the source of truth, as in Woven Matter. Every bot is opened at startup, and
-before scheduling resumes the server reconciles it:
-
-- **Interrupted runs.** Pi Durable keeps a run's task and the queued input in SQLite, and its open
-  already reconciles an invocation that died mid-request. The server inspects the live work,
-  reports it, and calls `resume()`, so an interrupted run finishes without a new message (Woven's
-  `engine.mjs` `create`: inspect, then `resumeNative()`).
-- **Unrecorded forks.** A fork is committed with its parent edge in one Pi Durable transaction;
-  only the thread registry row comes after. An ownerless fork the registry lacks is registered as
-  an untitled thread. Task-owned conversations (subagents) are never threads. Registered threads
-  whose conversation is missing are reported and left alone.
-- **Lost titles.** An untitled thread that already has its own first message gets its title
-  generation restarted.
-
-Each finding is logged as `bot <id> recovery: …`.
-
-## Web client styling
-
-The client uses the Woven Matter Enterprise web stack (React 19, Vite, lucide-react,
-react-markdown with remark-gfm) on a smaller scale. `apps/web/src/styles.css` is a
-subset of the Enterprise `apps/web/src/styles.css`, which mirrors the desktop app's
-`DashboardColors.swift`, `DashboardStyle.swift` and `DashboardDesign.swift`. It has the
-same three themes (Green, Cognac, Dark), set as CSS variables on
-`html[data-theme]`. The selected theme is stored in localStorage under
-`wovenmatter.dashboard.theme`, the same key the desktop app uses. Pi Bot's own rules
-are at the end of the file and use only the Enterprise tokens, type scale and shadows. The
-copied part is unchanged except `border: 0` on `.rail-action` (buttons otherwise draw the
-browser's default border); layout tweaks to shared components (sidebar scrolling, banner
-column) are overrides in the Pi Bot section.
-
-The brand mark (sidebar header and onboarding) is Pi's official colour logo on its circular
-black badge, copied unchanged from WovenMatter
-(`app/App/SharedAssets.xcassets/HarnessLogos/harness-pi-primary.imageset/harness-pi-primary.svg`,
-the default "color" Pi logo there) to `apps/web/src/assets/pi-logo.svg`. WovenMatter takes the
-mark from Pi's press kit (https://pi.dev/press-kit, https://pi.dev/logo-auto.svg; Pi is MIT
-licensed) and draws it as-is, scaled to fit. Pi Bot does the same at 24px (44px on onboarding):
-the badge's black fill and thin white ring are part of the image, so no theme token or
-background was added and it looks the same in Green, Cognac and Dark.
-
-## Not in milestone 1
-
-- macOS Keychain backend. It is a stub, so encrypted SQLite is used everywhere.
-- Scheduled extraction and bot-to-bot messaging. Both are configured and validated, but neither is run yet.
-- Stop/abort in the UI.
+Tests never call a real provider: they use pi-ai's faux provider, fake provider HTTP endpoints
+and placeholder credentials, so no API keys are needed. The screenshots in `docs/images` come
+from a throwaway instance with a faux "demo" provider and sample bots.
+
+## Not implemented yet
+
+- **macOS Keychain store.** It is a stub; credentials always go in encrypted SQLite.
+- **Scheduled memory extraction.** `[extraction]` is validated, but nothing runs it; the
+  pre-compaction extraction hook is a no-op.
+- **Background pool work.** The pool's `background = true` flag is stored but no background job
+  uses it yet.
+- **Web search tool.** Exa, Brave and Firecrawl keys and `[search] provider` are stored, but no
+  bot tool uses them yet.
+- **`[bot_to_bot] max_rounds_per_request`.** Validated, not enforced (the per-pair hourly limit is).
+- **Stop/abort** of a running reply, in the UI or the protocol.
+- **Clearing a marked usage limit** when credentials change (it clears at the reset or cooldown).
+- **Purging deleted bots.** Deletion is soft; data stays in the database.
+
+## Credits and caveats
+
+- The brand mark is Pi's official colour logo from the [Pi press kit](https://pi.dev/press-kit)
+  (Pi is MIT licensed), used unchanged.
+- **Claude sign-in** stores the token from Anthropic's own `claude setup-token`. Anthropic's
+  terms say third-party products shouldn't store Claude.ai tokens without approval, so this is a
+  gray area for a self-hosted tool; the Anthropic API key is the fully sanctioned alternative.
+  Details in [docs/providers-and-sign-in.md](docs/providers-and-sign-in.md#claude-caveat).
