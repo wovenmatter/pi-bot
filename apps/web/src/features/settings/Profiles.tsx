@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { Icon } from "../../components/Icon.tsx";
 import { Loading } from "../../components/ui.tsx";
 import type { BotSummary, ProfileInput, ProfileSummary, ProviderModels } from "../../protocol.ts";
@@ -144,6 +144,33 @@ const toInput = (draft: Draft): ProfileInput => ({
     })),
 });
 
+/** One folding part of the profile editor; its summary line keeps the editor scannable. */
+function EditorSection({
+  title,
+  summary,
+  problem,
+  open = false,
+  children,
+}: {
+  title: string;
+  summary: string;
+  problem?: string | undefined;
+  open?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details className="profile-section" open={open}>
+      <summary>
+        <span className="profile-section-title">{title}</span>
+        <span className={problem ? "profile-section-summary danger" : "profile-section-summary"}>
+          {problem ?? summary}
+        </span>
+      </summary>
+      <div className="profile-section-body">{children}</div>
+    </details>
+  );
+}
+
 /** Create or edit one profile: name, main model, pool (with "use it for" notes) and guidance. */
 export function ProfileEditor({
   profile,
@@ -200,36 +227,40 @@ export function ProfileEditor({
     }
   }
 
+  const poolModels = draft.pool.filter((entry) => entry.model);
   return (
-    <form className="settings-fields profile-editor" onSubmit={(event) => void submit(event)}>
-      {isNew ? (
-        <label className="settings-field">
-          <span>
-            Id
-            <small className="muted">Lowercase letters, digits, - and _. Can't be changed.</small>
-          </span>
+    <form
+      className="profile-editor"
+      aria-label={isNew ? "New profile" : `Edit ${profile.name}`}
+      onSubmit={(event) => void submit(event)}
+    >
+      <div className="profile-editor-head">
+        <label className="profile-editor-field">
+          <span>Name</span>
           <input
-            value={draft.id}
+            value={draft.name}
             disabled={busy}
-            placeholder="e.g. coding"
-            onChange={(event) => setDraft({ ...draft, id: event.target.value })}
+            placeholder="e.g. Coding"
+            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
           />
         </label>
-      ) : null}
-      <label className="settings-field">
-        <span>Name</span>
-        <input
-          value={draft.name}
-          disabled={busy}
-          placeholder="e.g. Coding"
-          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-        />
-      </label>
-      <div className="settings-field">
-        <span>
-          Main model
-          <small className="muted">Runs the main channel and every thread.</small>
-        </span>
+        {isNew ? (
+          <label className="profile-editor-field">
+            <span>
+              Id{" "}
+              <small className="muted">Lowercase letters, digits, - and _. Can't be changed.</small>
+            </span>
+            <input
+              value={draft.id}
+              disabled={busy}
+              placeholder="e.g. coding"
+              onChange={(event) => setDraft({ ...draft, id: event.target.value })}
+            />
+          </label>
+        ) : null}
+      </div>
+      <EditorSection title="Main model" summary={draft.main || "Not set"} open>
+        <p className="muted">Runs the main channel and every thread.</p>
         <ModelSelect
           providers={providers}
           value={draft.main}
@@ -237,15 +268,17 @@ export function ProfileEditor({
           disabled={busy}
           onChange={(main) => setDraft({ ...draft, main })}
         />
-      </div>
-      <div className="settings-field profile-pool">
-        <span>
-          Fallbacks
-          <small className="muted">
-            Up to {MAX_FALLBACKS}, tried in order when the main model hits a usage limit or runs out
-            of credits. The bot switches back once the main model resets. None: the bot pauses.
-          </small>
-        </span>
+      </EditorSection>
+      <EditorSection
+        title="Fallbacks"
+        summary={fallbackModels.length ? fallbackModels.join(" → ") : "None, the bot pauses"}
+        problem={fallbackProblem}
+        open={fallbackProblem !== undefined}
+      >
+        <p className="muted">
+          Up to {MAX_FALLBACKS}, tried in order when the main model hits a usage limit or runs out
+          of credits. The bot switches back once it resets.
+        </p>
         <div className="profile-pool-rows">
           {draft.fallbacks.map((entry, index) => (
             <div key={entry.key} className="profile-pool-row profile-fallback-row">
@@ -307,15 +340,21 @@ export function ProfileEditor({
             </button>
           ) : null}
         </div>
-      </div>
-      <div className="settings-field profile-pool">
-        <span>
-          Pool
-          <small className="muted">
-            Models the main model can hand tasks to. The background one also does background work
-            (else the main model does).
-          </small>
-        </span>
+      </EditorSection>
+      <EditorSection
+        title="Pool"
+        summary={
+          poolModels.length
+            ? poolModels
+                .map((entry) => `${entry.model}${entry.background ? " (background)" : ""}`)
+                .join(", ")
+            : "None"
+        }
+      >
+        <p className="muted">
+          Models the main model can hand tasks to. The background one also does background work
+          (else the main model does).
+        </p>
         <div className="profile-pool-rows">
           {draft.pool.map((entry, index) => (
             <div key={entry.key} className="profile-pool-row">
@@ -373,19 +412,17 @@ export function ProfileEditor({
             Add pool model
           </button>
         </div>
-      </div>
-      <label className="settings-field">
-        <span>
-          Guidance
-          <small className="muted">Optional notes for the main model on using the pool.</small>
-        </span>
+      </EditorSection>
+      <EditorSection title="Guidance" summary={draft.guidance.trim() || "None"}>
+        <p className="muted">Optional notes for the main model on using the pool.</p>
         <textarea
+          aria-label="Guidance"
           rows={3}
           value={draft.guidance}
           disabled={busy}
           onChange={(event) => setDraft({ ...draft, guidance: event.target.value })}
         />
-      </label>
+      </EditorSection>
       <div className="settings-actions">
         <button
           type="submit"
@@ -439,87 +476,88 @@ export function ProfilesPanel({
     <section className="settings-section" aria-labelledby="profiles-heading">
       <h3 id="profiles-heading">Profiles</h3>
       <p className="muted">
-        Every bot runs one profile: a main model for its channel and threads, plus a pool of models
-        it can hand self-contained tasks to. New bots get the default profile. Changes apply from
-        each bot's next reply. Admin Bot can set these up with you.
+        A profile is a main model for a bot's channel and threads, plus a pool it can hand tasks to.
+        New bots get the default. Changes apply from each bot's next reply.
       </p>
       <ul className="settings-list">
         {profiles.map((profile) => {
           const using = users(profile);
-          return (
+          return editing === profile.id ? (
+            <li key={profile.id} className="profile-editing">
+              <ProfileEditor
+                profile={profile}
+                providers={providers}
+                {...(disabled ? { disabled } : {})}
+                onSave={(input) => save(input, false)}
+                onCancel={() => setEditing(undefined)}
+              />
+            </li>
+          ) : (
             <li key={profile.id} className="settings-row profile-row">
-              {editing === profile.id ? (
-                <ProfileEditor
-                  profile={profile}
-                  providers={providers}
-                  {...(disabled ? { disabled } : {})}
-                  onSave={(input) => save(input, false)}
-                  onCancel={() => setEditing(undefined)}
-                />
-              ) : (
-                <>
-                  <div className="settings-row-text">
-                    <strong>
-                      {profile.name}
-                      {profile.default ? <small className="muted"> · default</small> : null}
-                    </strong>
-                    <small className="muted">
-                      Main <code>{profile.main}</code>
-                      {profile.fallbacks?.length
-                        ? ` · fallbacks: ${profile.fallbacks.join(" → ")}`
-                        : " · no fallbacks"}
-                      {profile.pool.length
-                        ? ` · pool: ${profile.pool.map((entry) => `${entry.model}${entry.background ? " (background)" : ""}`).join(", ")}`
-                        : " · no pool"}
-                    </small>
-                    <small className="muted">
-                      {using.length ? `Used by ${using.join(", ")}` : "No bots"}
-                    </small>
-                  </div>
-                  <span className="team-controls">
+              <div className="settings-row-text">
+                <strong>
+                  {profile.name}
+                  {profile.default ? <span className="badge">Default</span> : null}
+                </strong>
+                <small className="muted">
+                  <code>{profile.main}</code>
+                  {profile.fallbacks?.length
+                    ? ` → ${profile.fallbacks.join(" → ")}`
+                    : " · no fallbacks"}
+                </small>
+                <small className="muted">
+                  {profile.pool.length
+                    ? `Pool: ${profile.pool.map((entry) => `${entry.model}${entry.background ? " (background)" : ""}`).join(", ")}`
+                    : "No pool"}
+                  {" · "}
+                  {using.length ? `Used by ${using.join(", ")}` : "No bots"}
+                </small>
+              </div>
+              <span className="profile-actions">
+                {profile.default ? null : (
+                  <>
                     <button
                       type="button"
-                      className="secondary"
-                      disabled={disabled || editing !== undefined}
-                      onClick={() => setEditing(profile.id)}
+                      className="text-button"
+                      disabled={disabled}
+                      onClick={() => onSetDefault(profile)}
                     >
-                      Edit
+                      Make default
                     </button>
-                    {profile.default ? null : (
-                      <>
-                        <button
-                          type="button"
-                          className="text-button"
-                          disabled={disabled}
-                          onClick={() => onSetDefault(profile)}
-                        >
-                          Make default
-                        </button>
-                        <button
-                          type="button"
-                          className="text-button danger"
-                          aria-label={`Delete profile ${profile.name}`}
-                          disabled={disabled}
-                          onClick={() => onDelete(profile)}
-                        >
-                          <Icon icon={Trash2} size={13} />
-                        </button>
-                      </>
-                    )}
-                  </span>
-                </>
-              )}
+                    <button
+                      type="button"
+                      className="icon-button danger"
+                      aria-label={`Delete profile ${profile.name}`}
+                      title="Delete profile"
+                      disabled={disabled}
+                      onClick={() => onDelete(profile)}
+                    >
+                      <Icon icon={Trash2} size={14} />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={disabled || editing !== undefined}
+                  onClick={() => setEditing(profile.id)}
+                >
+                  Edit
+                </button>
+              </span>
             </li>
           );
         })}
       </ul>
       {editing === "" ? (
-        <ProfileEditor
-          providers={providers}
-          {...(disabled ? { disabled } : {})}
-          onSave={(input) => save(input, true)}
-          onCancel={() => setEditing(undefined)}
-        />
+        <div className="profile-editing">
+          <ProfileEditor
+            providers={providers}
+            {...(disabled ? { disabled } : {})}
+            onSave={(input) => save(input, true)}
+            onCancel={() => setEditing(undefined)}
+          />
+        </div>
       ) : (
         <div className="settings-actions">
           <button

@@ -1771,14 +1771,144 @@ details.account-help > p {
   gap: 8px;
 }
 /* Settings → Profiles */
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+}
 .profile-row {
-  flex-wrap: wrap;
+  align-items: center;
+  min-height: 64px;
+  padding-block: 10px;
+}
+.profile-row + .profile-row,
+.profile-editing + .profile-row,
+.profile-row + .profile-editing {
+  margin-top: 2px;
+}
+.profile-row .settings-row-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-row code {
+  color: var(--ink);
+}
+.profile-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.icon-button.danger {
+  color: var(--danger-ink);
+}
+.icon-button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+/* The editor is a card; each part folds to a one-line summary. */
+.profile-editing {
+  margin: 6px 0;
+  list-style: none;
 }
 .profile-editor {
-  flex: 1 1 100%;
+  display: grid;
+  gap: 2px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent);
 }
-.profile-pool {
-  align-items: start;
+.profile-editor-head {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.profile-editor-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.profile-editor-field small {
+  display: inline;
+  font-weight: 400;
+}
+.profile-section {
+  border-top: 1px solid var(--line);
+}
+.profile-section > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-height: 40px;
+  padding: 11px 4px;
+  border-radius: var(--row-radius);
+}
+.profile-section > summary:hover .profile-section-title {
+  color: var(--accent);
+}
+.profile-section-title {
+  flex: none;
+  width: 92px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 0.12s ease-out;
+}
+.profile-section-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-section-summary.danger {
+  color: var(--danger-ink);
+  font-family: inherit;
+}
+.profile-section > summary::after {
+  content: "";
+  flex: none;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  margin: 0 4px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.15s ease-out;
+}
+.profile-section[open] > summary::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+.profile-section[open] > summary .profile-section-summary {
+  visibility: hidden;
+}
+.profile-section-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 4px 14px;
+}
+.profile-section-body > p {
+  margin: -4px 0 0;
+  font-size: 12px;
+}
+.profile-editor > .settings-actions {
+  margin-top: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 .profile-pool-rows {
   display: grid;

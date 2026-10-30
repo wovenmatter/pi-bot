@@ -179,7 +179,7 @@ describe("profiles", () => {
         onSetDefault={noop}
       />,
     );
-    expect(html).toContain('Default<small class="muted"> · default</small>');
+    expect(html).toContain('Default<span class="badge">Default</span>');
     expect(html).toContain("openai/gpt-x (background)");
     expect(html).toContain("Used by Admin Bot");
     expect(html).toContain("Delete profile Fast");
@@ -200,6 +200,12 @@ describe("profiles", () => {
     expect(html).toContain("Be quick.");
     expect(html).toContain("Add pool model");
     expect(html).not.toContain("Can&#x27;t be changed");
+    // Folding sections, each with a one-line summary; only the main model starts open.
+    const sections = [...html.matchAll(/<details class="profile-section"( open="")?>/g)];
+    expect(sections.map((match) => match[1] !== undefined)).toEqual([true, false, false, false]);
+    for (const summary of ["gone/model", "None, the bot pauses", "Be quick."]) {
+      expect(html).toContain(`<span class="profile-section-summary">${summary}</span>`);
+    }
     const fresh = renderToStaticMarkup(
       <ProfileEditor providers={providers} onSave={async () => {}} onCancel={noop} />,
     );
