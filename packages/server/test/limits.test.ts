@@ -14,13 +14,17 @@ import { parseConfig } from "../src/config.ts";
 import {
   classifyLimit,
   claudeLimit,
+  fallbackNote,
+  hasFallbackNote,
   LIMIT_COOLDOWN_MS,
   ModelAvailability,
   observingFetch,
+  stripFallbackNote,
 } from "../src/limits.ts";
 import { ProfileStore } from "../src/profiles.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
 import { BotRegistry } from "../src/storage/registry.ts";
+import { displayEntry } from "../src/transcript.ts";
 import { tempDir } from "./helpers.ts";
 
 const ctx = BACKGROUND_CONTEXT;
@@ -258,8 +262,19 @@ describe("main-model fallbacks", () => {
   });
   /** Models in `limited` answer with a usage-limit error; the rest reply with their name. */
   const limited = new Set<string>();
-  const respond: FauxResponseFactory = (_context, _options, _state, model) => {
+  /** The last user message each request carried, by model. */
+  const lastUser: { model: string; text: string }[] = [];
+  const respond: FauxResponseFactory = (context, _options, _state, model) => {
     calls.push(model.id);
+    const user = context.messages.filter((message) => message.role === "user").at(-1);
+    const content = user?.content;
+    lastUser.push({
+      model: model.id,
+      text:
+        typeof content === "string"
+          ? content
+          : (content ?? []).map((block) => ("text" in block ? block.text : "")).join(""),
+    });
     if (limited.has(model.id)) {
       return fauxAssistantMessage([], {
         stopReason: "error",
@@ -300,6 +315,7 @@ ${fallbacks.length ? `fallbacks = [${fallbacks.map((ref) => `"${ref}"`).join(", 
           profile: () => profiles.resolve(self.assignedProfile(bot.id)),
           onLimit: (conversationId, model, limit) =>
             self.reportLimit(bot.id, conversationId, model, limit),
+          fallbackNote: (conversationId) => self.fallbackNote(bot.id, conversationId),
         }),
     });
     return manager;
@@ -316,6 +332,7 @@ ${fallbacks.length ? `fallbacks = [${fallbacks.map((ref) => `"${ref}"`).join(", 
   beforeEach(async () => {
     dir = await tempDir();
     calls.length = 0;
+    lastUser.length = 0;
     limited.clear();
   });
   afterEach(async () => {
@@ -421,6 +438,45 @@ ${fallbacks.length ? `fallbacks = [${fallbacks.map((ref) => `"${ref}"`).join(", 
     expect(again.modelStatus(bot.id)).toMatchObject({ kind: "returned", active: "faux/faux-1" });
     await availability.flushed();
     expect(await new BotRegistry(db as NonNullable<typeof db>).limits()).toEqual([]);
+  }, 30_000);
+
+  it("tells the fallback model to mention the switch, in the turn's input only", async () => {
+    const m = await open(["faux/faux-2"]);
+    const bot = await m.create("Worker");
+    limited.add("faux-1");
+    const note = fallbackNote("faux/faux-1", "usage", "faux/faux-2");
+    expect(note).toBe(
+      "[Note: faux/faux-1 is unavailable (usage limit); you are faux/faux-2. Mention this briefly in your reply.]",
+    );
+
+    // Switched mid-turn: the retry on the fallback carries the note for that request.
+    expect(await turn(bot.id, "hello")).toMatchObject({ status: "done" });
+    expect(lastUser).toEqual([
+      { model: "faux-1", text: "hello" },
+      { model: "faux-2", text: `${note}\n\nhello` },
+    ]);
+    expect(await m.fallbackNote(bot.id)).toBe(note);
+
+    // Later turns store it in their input; the chat shows only what the user wrote.
+    lastUser.length = 0;
+    faux.setResponses(Array.from({ length: 10 }, () => respond));
+    const sent = await (await m.get(bot.id)).send("again");
+    await sent.submission.wait(ctx);
+    expect(lastUser).toEqual([{ model: "faux-2", text: `${note}\n\nagain` }]);
+    const page = await sent.conversation.entries({ order: "descending" }, 10, undefined, ctx);
+    const shown = page.items.map(displayEntry).filter((entry) => entry?.role === "user");
+    expect(shown.map((entry) => entry?.text)).toEqual(["again", "hello"]);
+
+    // The system prompt never changes for it, and no note once main is back.
+    expect(hasFallbackNote(`${note}\n\nx`)).toBe(true);
+    expect(stripFallbackNote(`${note}\n\nx`)).toBe("x");
+    availability.clear("faux");
+    limited.clear();
+    await until(async () => (await mainModel(bot.id))?.modelId === "faux-1");
+    expect(await m.fallbackNote(bot.id)).toBeUndefined();
+    lastUser.length = 0;
+    await turn(bot.id, "back");
+    expect(lastUser).toEqual([{ model: "faux-1", text: "back" }]);
   }, 30_000);
 });
 

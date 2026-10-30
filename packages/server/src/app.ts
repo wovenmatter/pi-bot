@@ -167,6 +167,7 @@ export async function startPiBot(
           onReport: (error) => log(`bot ${bot.id}: ${String(error)}`),
           onLimit: (conversationId, model, limit) =>
             self.reportLimit(bot.id, conversationId, model, limit),
+          fallbackNote: (conversationId) => self.fallbackNote(bot.id, conversationId),
         }),
       onBotClosed: (bot, reason) => {
         if (reason !== "closed") log(`bot ${bot.id} harness ${reason}`);
@@ -189,9 +190,12 @@ export async function startPiBot(
               Promise.resolve(),
           }
         : {}),
+      // An explicit [models.titles] model titles every thread; otherwise each bot's pool
+      // background model goes first, with the default title model as its quiet fallback.
       titles: new TitleGenerator({
         models,
         model: config.roles.titles,
+        explicit: config.roles.titlesConfigured,
         reasoning: config.models.titles.reasoning,
       }),
       onReport: (error) => log(`thread title: ${String(error)}`),

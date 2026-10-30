@@ -13,6 +13,7 @@ import { createBotHarnessOptions } from "../src/agent.ts";
 import { BotManager } from "../src/bots.ts";
 import type { Profile } from "../src/config.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
+import { subagentModel } from "../src/subagent.ts";
 import { tempDir } from "./helpers.ts";
 
 const ctx = BACKGROUND_CONTEXT;
@@ -105,6 +106,21 @@ describe("run_subagent", () => {
     expect(child).toContain("You are a subagent");
     expect(child).not.toContain('"content":"go"');
     expect(child).not.toContain('"name":"run_subagent"');
+  });
+
+  it('runs "background" work on the pool background model, else the main model', async () => {
+    const last = await run([{ model: "background", task: "tidy up" }]);
+    expect(last).toContain("child answer: 42");
+    expect(events).toEqual(["start faux/faux-2", "done faux/faux-2"]);
+    const first = contexts.find((context) => context.model === "faux-1")?.json ?? "";
+    expect(first).toContain("faux/faux-2: Cheap lookups (background model)");
+    expect(first).toContain('use model \\"background\\": faux/faux-2');
+    expect(subagentModel(profile, "background")?.model).toBe("faux/faux-2");
+    expect(subagentModel({ ...profile, pool: [] }, "background")).toMatchObject({
+      model: "faux/faux-1",
+    });
+    expect(subagentModel(profile, "faux/faux-3")?.model).toBe("faux/faux-3");
+    expect(subagentModel(profile, "faux/faux-9")).toBeUndefined();
   });
 
   it("returns clear errors so the main model can pick another model", async () => {

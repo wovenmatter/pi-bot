@@ -5,8 +5,11 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, it } from "vitest";
-import type { Bot } from "../src/bots.ts";
+import { createBotHarnessOptions } from "../src/agent.ts";
+import { type Bot, BotManager } from "../src/bots.ts";
 import { parseConfig } from "../src/config.ts";
+import { ProfileStore } from "../src/profiles.ts";
+import { openSharedDatabase } from "../src/storage/database.ts";
 import {
   sanitizeTitle,
   TITLE_INSTRUCTIONS,
@@ -14,7 +17,7 @@ import {
   TitleGenerator,
   titlePrompt,
 } from "../src/titles.ts";
-import { openTestManager, tempDir } from "./helpers.ts";
+import { echoModels, openTestManager, tempDir } from "./helpers.ts";
 
 type Seen = { prompt: string; reasoning: unknown };
 
@@ -166,6 +169,105 @@ describe("thread titles", () => {
       expect(changed).toEqual([]);
     } finally {
       await harness.close();
+      await dir.cleanup();
+    }
+  });
+});
+
+describe("title model selection", () => {
+  const POOL = { provider: "openai-codex", modelId: "gpt-6-pool" } as const;
+
+  /** Luna and a pool model; models in `broken` fail. Records which model answered. */
+  function twoModels(broken: Set<string> = new Set()) {
+    const faux = fauxProvider({
+      provider: "openai-codex",
+      models: [{ id: "gpt-6-luna" }, { id: "gpt-6-pool" }],
+      tokensPerSecond: 100000,
+    });
+    const used: string[] = [];
+    faux.setResponses(
+      Array.from({ length: 20 }, () => (_context, _options, _state, model) => {
+        used.push(model.id);
+        return broken.has(model.id)
+          ? fauxAssistantMessage([], { stopReason: "error", errorMessage: "usage limit reached" })
+          : fauxAssistantMessage([fauxText(`{"title":"From ${model.id}"}`)]);
+      }),
+    );
+    const models = createModels();
+    models.setProvider(faux.provider);
+    return { models, used, faux };
+  }
+
+  it("knows whether [models.titles] model is set explicitly", () => {
+    const base = '[profiles.default]\nname = "D"\nmain = "a/b"\n';
+    expect(parseConfig(base).roles.titlesConfigured).toBe(false);
+    expect(parseConfig(`${base}[models.titles]\nreasoning = "low"\n`).roles.titlesConfigured).toBe(
+      false,
+    );
+    expect(parseConfig(`${base}[models.titles]\nmodel = "x/y"\n`).roles.titlesConfigured).toBe(
+      true,
+    );
+  });
+
+  it("prefers the pool background model unless the title model is explicit", async () => {
+    const { models, used } = twoModels();
+    const generator = new TitleGenerator({ models, model: LUNA, reasoning: "low" });
+    expect(generator.candidates()).toEqual([LUNA]);
+    expect(generator.candidates(POOL)).toEqual([POOL, LUNA]);
+    expect(generator.candidates(LUNA)).toEqual([LUNA]);
+    await expect(generator.generate("hi", undefined, POOL)).resolves.toBe("From gpt-6-pool");
+    const explicit = new TitleGenerator({ models, model: LUNA, reasoning: "low", explicit: true });
+    expect(explicit.candidates(POOL)).toEqual([LUNA]);
+    await expect(explicit.generate("hi", undefined, POOL)).resolves.toBe("From gpt-6-luna");
+    expect(used).toEqual(["gpt-6-pool", "gpt-6-luna"]);
+  });
+
+  it("falls back quietly from a failing background model to the title model", async () => {
+    const { models, used } = twoModels(new Set(["gpt-6-pool"]));
+    const generator = new TitleGenerator({ models, model: LUNA, reasoning: "low" });
+    await expect(generator.generate("hi", undefined, POOL)).resolves.toBe("From gpt-6-luna");
+    expect(used).toEqual(["gpt-6-pool", "gpt-6-luna"]);
+  });
+
+  it("titles a bot's threads with its profile's background model", async () => {
+    const dir = await tempDir();
+    const { models: titleSource, used } = twoModels();
+    const { models: botModels } = echoModels();
+    const profiles = new ProfileStore(
+      parseConfig(`
+[profiles.default]
+name = "Default"
+main = "faux/faux-1"
+[profiles.default.pool."openai-codex/gpt-6-pool"]
+background = true
+`).modelProfiles,
+    );
+    const db = await openSharedDatabase(join(dir.path, "db.sqlite"));
+    const reports: unknown[] = [];
+    const manager = await BotManager.open({
+      db,
+      profiles,
+      titles: new TitleGenerator({ models: titleSource, model: LUNA, reasoning: "low" }),
+      onReport: (error) => reports.push(error),
+      harnessOptions: (bot, self) =>
+        createBotHarnessOptions({
+          bot,
+          models: botModels,
+          profile: () => profiles.resolve(self.assignedProfile(bot.id)),
+        }),
+    });
+    try {
+      const bot = await manager.get((await manager.create("Ada")).id);
+      await say(bot, "hello main");
+      const thread = await bot.fork({ entryId: await lastEntryId(bot) });
+      await say(bot, "plan the trip", thread.conversationId);
+      await manager.titles?.idle();
+      expect(used).toEqual(["gpt-6-pool"]);
+      expect((await bot.threads())[0]?.title).toBe("From gpt-6-pool");
+      expect(reports).toEqual([]);
+    } finally {
+      await manager.close();
+      await db.close();
       await dir.cleanup();
     }
   });

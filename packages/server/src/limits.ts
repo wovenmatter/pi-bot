@@ -200,6 +200,34 @@ export function accountLabel(provider: string): string {
   }
 }
 
+const NOTE_REASON: Record<LimitKind, string> = {
+  five_hour: "5-hour limit",
+  weekly: "weekly limit",
+  usage: "usage limit",
+  credits: "out of credits",
+};
+
+/**
+ * The note put in front of a user turn that runs on a fallback main model, so the replying model
+ * says so. Stable for as long as the same fallback runs (prompt caching).
+ */
+export function fallbackNote(primary: string, kind: LimitKind, active: string): string {
+  return `[Note: ${primary} is unavailable (${NOTE_REASON[kind]}); you are ${active}. Mention this briefly in your reply.]`;
+}
+
+const NOTE_PREFIX =
+  /^\[Note: \S+ is unavailable \([^)\n]*\); you are \S+\. Mention this briefly in your reply\.\]\n\n/;
+
+/** Whether a user turn already starts with a fallback note. */
+export function hasFallbackNote(text: string): boolean {
+  return NOTE_PREFIX.test(text);
+}
+
+/** A user turn's text without its fallback note (the chat shows what the user wrote). */
+export function stripFallbackNote(text: string): string {
+  return text.replace(NOTE_PREFIX, "");
+}
+
 /** One limited model (or, for `credits`, every model on the provider's account). */
 export type LimitEntry = {
   readonly model: string;

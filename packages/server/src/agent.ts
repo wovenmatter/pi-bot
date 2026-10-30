@@ -1,4 +1,10 @@
-import type { AssistantMessage, FetchFunction, Models } from "@earendil-works/pi-ai";
+import {
+  type AssistantMessage,
+  contentText,
+  type FetchFunction,
+  type Message,
+  type Models,
+} from "@earendil-works/pi-ai";
 import {
   type AgentChange,
   type CompactionSettings,
@@ -6,13 +12,20 @@ import {
   defineExtension,
   type Harness,
   type HarnessOptions,
+  type HookApi,
   section,
 } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { createCompactionRegistry, NativeCompaction } from "./compaction/context.ts";
 import { type ModelRef, type Profile, parseModelRef, type RawConfig } from "./config.ts";
 import type { BotEnvironmentAdapter } from "./env.ts";
-import { classifyLimit, type Limit, type LimitCarrier, observeLimits } from "./limits.ts";
+import {
+  classifyLimit,
+  hasFallbackNote,
+  type Limit,
+  type LimitCarrier,
+  observeLimits,
+} from "./limits.ts";
 import type { BeforeCompactHook } from "./memory.ts";
 import type { BotRecord } from "./storage/registry.ts";
 import { type SubagentLog, subagentExtension } from "./subagent.ts";
@@ -82,6 +95,11 @@ export type BotAgentOptions = {
     model: ModelRef,
     limit: Limit,
   ) => Promise<string | undefined>;
+  /**
+   * The fallback note while `conversationId` answers on a fallback main model. New turns store it
+   * (`Bot.send`); this covers the turn that was switched mid-way.
+   */
+  readonly fallbackNote?: (conversationId: number) => Promise<string | undefined>;
 };
 
 const LIMIT_TEXT: Record<Limit["kind"], string> = {
@@ -105,6 +123,32 @@ export function limitHook(onLimit: NonNullable<BotAgentOptions["onLimit"]>) {
     if (!next) return;
     message.errorMessage = `${model.provider}/${model.modelId} ${LIMIT_TEXT[found.kind]}. Pi Bot switched to the fallback ${next}; you can retry your request.`;
   };
+}
+
+/**
+ * Put the fallback note in front of the turn's user message for this request when it lacks one
+ * (the turn was sent before the switch). Later turns carry it in their stored input.
+ */
+export function withFallbackNote(
+  messages: readonly Message[],
+  note: string | undefined,
+): readonly Message[] | undefined {
+  if (!note) return undefined;
+  let index = messages.length - 1;
+  while (index >= 0 && messages[index]?.role !== "user") index -= 1;
+  const user = messages[index];
+  if (user?.role !== "user") return undefined;
+  const content = user.content;
+  const text = typeof content === "string" ? content : contentText(content);
+  if (hasFallbackNote(text)) return undefined;
+  const noted: Message = {
+    ...user,
+    content:
+      typeof content === "string"
+        ? `${note}\n\n${content}`
+        : [{ type: "text", text: `${note}\n\n` }, ...content],
+  };
+  return [...messages.slice(0, index), noted, ...messages.slice(index + 1)];
 }
 
 /** The agent every new bot's main channel starts with (its profile's main model). Threads inherit it via fork. */
@@ -183,6 +227,17 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     name: "pi-bot-preamble",
     sections: [section("preamble", () => preamble(options), { tag: false })],
   });
+  const fallbackNote = options.fallbackNote;
+  const beforeRequest: typeof native.beforeRequest = fallbackNote
+    ? async (request, api: HookApi, ctx) => {
+        const noted = withFallbackNote(
+          request.messages,
+          await fallbackNote(Number(api.conversationId)),
+        );
+        const next = noted ? { messages: noted } : request;
+        return (await native.beforeRequest(next, api, ctx)) ?? (noted ? next : undefined);
+      }
+    : native.beforeRequest;
   const extension = defineExtension({
     name: "pi-bot",
     // One implementation for the main channel and every thread.
@@ -190,7 +245,7 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
       {
         task: "pi.generation",
         handlers: {
-          beforeRequest: native.beforeRequest,
+          beforeRequest,
           ...(options.onLimit ? { afterResponse: limitHook(options.onLimit) } : {}),
         },
       },

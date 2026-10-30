@@ -111,8 +111,6 @@ from a throwaway instance with a faux "demo" provider and sample bots.
   unit-tested with a fake; see [security](docs/security.md#credentials).
 - **Scheduled memory extraction.** `[extraction]` is validated, but nothing runs it; the
   pre-compaction extraction hook is a no-op.
-- **Background pool work.** The pool's `background = true` flag is stored but no background job
-  uses it yet.
 
 ## Credits and caveats
 

@@ -8,9 +8,12 @@ import {
   section,
 } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
-import { type Profile, parseModelRef } from "./config.ts";
+import { backgroundModel, type PoolModel, type Profile, parseModelRef } from "./config.ts";
 
 export const SUBAGENT_EXTENSION = "pi-bot-subagent";
+
+/** The `run_subagent` model alias for the profile's background model. */
+const BACKGROUND = "background";
 
 /** Reasoning levels `run_subagent` accepts (Pi Durable's thinking levels). */
 export const SUBAGENT_REASONING = [
@@ -49,12 +52,34 @@ export function poolSection(profile: Profile): string | undefined {
   if (profile.pool.length === 0) return undefined;
   const lines = [
     `Your model profile is "${profile.name}". You can hand self-contained work to these pool models with run_subagent; each runs separately with your tools but none of your conversation, so give it everything it needs in the task:`,
-    ...profile.pool.map((entry) => `- ${entry.model}${entry.useFor ? `: ${entry.useFor}` : ""}`),
+    ...profile.pool.map(
+      (entry) =>
+        `- ${entry.model}${entry.useFor ? `: ${entry.useFor}` : ""}${entry.background ? " (background model)" : ""}`,
+    ),
     "Pick the model and reasoning level that fit the task (cheaper for simple work). Independent subagents can run at once. If a call fails, pick another pool model or do the work yourself.",
+    `For background work (housekeeping, summaries nobody waits for), use model "background": ${backgroundModel(profile)}.`,
     'If a pool model hit a usage limit, ran out of credits or is rate limited, quietly use another suitable pool model (or do the work yourself) and tell the user in one short line, e.g. "I couldn\'t use <model>, so I used <other model> instead." Say only what the error said; do not guess when a limit resets.',
   ];
   if (profile.guidance) lines.push(`Guidance: ${profile.guidance}`);
   return lines.join("\n");
+}
+
+/**
+ * The pool entry `run_subagent` runs for `model`. `"background"` is the profile's background
+ * model: its pool entry flagged `background`, else the main model.
+ */
+export function subagentModel(profile: Profile, model: string): PoolModel | undefined {
+  if (model === BACKGROUND) {
+    const ref = backgroundModel(profile);
+    return (
+      profile.pool.find((entry) => entry.model === ref) ?? {
+        model: ref,
+        useFor: "",
+        background: true,
+      }
+    );
+  }
+  return profile.pool.find((entry) => entry.model === model);
 }
 
 /**
@@ -73,7 +98,10 @@ export function subagentExtension(options: SubagentOptions): Extension {
         description:
           "Run a self-contained task on a model from your profile's pool and get its complete answer back. The subagent has your tools but not this conversation: include all context in task.",
         parameters: Type.Object({
-          model: Type.String({ description: "A pool model, provider/model-id" }),
+          model: Type.String({
+            description:
+              'A pool model, provider/model-id, or "background" for the profile\'s background model',
+          }),
           reasoning: Type.Optional(
             Type.Union(
               SUBAGENT_REASONING.map((level) => Type.Literal(level)),
@@ -88,7 +116,7 @@ export function subagentExtension(options: SubagentOptions): Extension {
         executionMode: "parallel",
         execute: async (args, api, context) => {
           const profile = options.profile();
-          const entry = profile.pool.find((pool) => pool.model === args.model);
+          const entry = subagentModel(profile, args.model);
           if (!entry) {
             return fail(
               profile.pool.length

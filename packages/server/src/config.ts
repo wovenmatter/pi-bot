@@ -220,6 +220,11 @@ export type PiBotConfig = RawConfig & {
   };
   readonly roles: {
     readonly titles: ModelRef;
+    /**
+     * `[models.titles] model` is set in the file. Then it titles every thread; otherwise a bot's
+     * pool background model goes first and the default title model is its fallback.
+     */
+    readonly titlesConfigured: boolean;
   };
   /** `[profiles]` normalized; legacy `[models] orchestrator`/`background` become a default profile. */
   readonly modelProfiles: ProfileSet;
@@ -301,9 +306,14 @@ export function normalizeProfiles(raw: RawConfig): ProfileSet {
   return { defaultId, profiles };
 }
 
+/** A profile's pool model flagged `background`, if it has one. */
+export function backgroundPoolModel(profile: Profile): string | undefined {
+  return profile.pool.find((entry) => entry.background)?.model;
+}
+
 /** The model background work of a profile uses: its pool model flagged `background`, else its main model. */
 export function backgroundModel(profile: Profile): string {
-  return profile.pool.find((entry) => entry.background)?.model ?? profile.main;
+  return backgroundPoolModel(profile) ?? profile.main;
 }
 
 export class ConfigError extends Error {
@@ -313,6 +323,12 @@ export class ConfigError extends Error {
 function expandPath(value: string, baseDir: string): string {
   const expanded = value === "~" || value.startsWith("~/") ? homedir() + value.slice(1) : value;
   return isAbsolute(expanded) ? expanded : resolve(baseDir, expanded);
+}
+
+/** Whether the parsed document sets `[models.titles] model` itself (before defaults). */
+function titlesModelSet(input: unknown): boolean {
+  const models = (input as { models?: { titles?: { model?: unknown } } } | null)?.models;
+  return typeof models?.titles?.model === "string";
 }
 
 /** Validate an already-parsed TOML document. Relative paths resolve against `baseDir`. */
@@ -348,7 +364,10 @@ export function validateConfig(
         : resolve(dataDir, "credentials.key"),
       ...(raw.server.web_dir ? { webDir: expandPath(raw.server.web_dir, baseDir) } : {}),
     },
-    roles: { titles: parseModelRef(raw.models.titles.model) },
+    roles: {
+      titles: parseModelRef(raw.models.titles.model),
+      titlesConfigured: titlesModelSet(input),
+    },
     modelProfiles,
   };
 }

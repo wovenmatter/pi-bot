@@ -76,7 +76,9 @@ the working agreement for every human or agent who changes this repository.
   (key `provider/model`, `provider/*` for credits; persisted in `pibot_limits`, restored by
   `load()` before bots open; `SettingsService` credential writes call `clear(provider)`) and re-applies every bot's
   `effectiveModel(profile)`; if this conversation switched, the error text is rewritten to a
-  retryable one so the turn continues on the fallback. Expiry re-applies (auto-return). Status
+  retryable one so the turn continues on the fallback. On a fallback, each user turn's input starts
+  with `fallbackNote` (never the system prompt; `Bot.send` stores it, the generation hook adds it to
+  a turn switched mid-way, the chat strips it). Expiry re-applies (auto-return). Status
   (`fallback` / `paused` / `returned`, 10 min) is `BotSummary.modelStatus`, pushed via `bots.changed`.
 - Account notes (`pibot_notes`, Settings → Accounts → Plans and budget) are guidance for Admin
   Bot (plans, keys, comfort spend), never caps and never secrets. Profile tools are Admin Bot only and follow confirm-unless-asked.

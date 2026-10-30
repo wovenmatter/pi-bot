@@ -20,13 +20,16 @@ default_profile = "default"
 
 # Thread titles: generated once from a thread's first message with Woven Matter's title prompt.
 # Shown read-only in the thread list and used for search; threads can't be renamed.
+# Precedence: an explicit model here titles every thread. Without one, each bot's pool background
+# model is used, falling back quietly to the default openai-codex/gpt-6-luna.
 [models.titles]
 model = "openai-codex/gpt-6-luna"
 reasoning = "high"                  # minimal | low | medium | high | xhigh
 
 # A profile: the main model runs the main channel and every thread; it can hand self-contained
 # tasks to pool models with run_subagent (it picks the model and reasoning level). background = true
-# marks the pool entry for background work, which nothing runs yet. Admin Bot
+# marks the pool entry for background work: thread titles (when [models.titles] model is unset) and
+# run_subagent with model = "background"; without one, background work uses the main model. Admin Bot
 # and Settings → Profiles edit these; changes apply from each bot's next reply.
 [profiles.default]
 name = "Default"

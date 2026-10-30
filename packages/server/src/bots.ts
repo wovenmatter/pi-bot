@@ -8,9 +8,9 @@ import {
 } from "@earendil-works/pi-durable";
 import { type SqliteDatabase, SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { type BotHarnessOptions, defaultAgent } from "./agent.ts";
-import { type ModelRef, type Profile, parseModelRef } from "./config.ts";
+import { backgroundPoolModel, type ModelRef, type Profile, parseModelRef } from "./config.ts";
 import { conversationId as toConversationId, entryId as toEntryId } from "./ids.ts";
-import type { Limit, LimitEntry, ModelAvailability } from "./limits.ts";
+import { fallbackNote, type Limit, type LimitEntry, type ModelAvailability } from "./limits.ts";
 import type { ProfileStore } from "./profiles.ts";
 import { sharedDatabaseView } from "./storage/database.ts";
 import {
@@ -63,13 +63,22 @@ export class Bot {
   readonly harness: Harness;
   readonly #registry: BotRegistry;
   readonly #titles: ThreadTitles | undefined;
+  readonly #note: () => string | undefined;
   readonly #rounds = new Map<number, number>();
 
-  constructor(record: BotRecord, harness: Harness, registry: BotRegistry, titles?: ThreadTitles) {
+  constructor(
+    record: BotRecord,
+    harness: Harness,
+    registry: BotRegistry,
+    titles?: ThreadTitles,
+    /** The fallback note for new turns while the bot runs a fallback main model. */
+    note: () => string | undefined = () => undefined,
+  ) {
     this.record = record;
     this.harness = harness;
     this.#registry = registry;
     this.#titles = titles;
+    this.#note = note;
   }
 
   get id(): string {
@@ -126,13 +135,15 @@ export class Bot {
   /**
    * Send a message to the main channel or a thread: a user message (round 0), or with `round` a
    * bot-to-bot message. The first message of an untitled thread also starts its title generation,
-   * as Woven titles a conversation from its first prompt.
+   * as Woven titles a conversation from its first prompt. While the bot runs a fallback main model,
+   * the stored input starts with the fallback note (the chat hides it).
    */
   async send(text: string, conversationId?: number, round = 0) {
     const conversation = await this.conversation(conversationId);
     this.#rounds.set(conversation.id, round);
+    const note = this.#note();
     const submission = await conversation.submit(
-      { type: "input", content: text, whenBusy: "followUp" },
+      { type: "input", content: note ? `${note}\n\n${text}` : text, whenBusy: "followUp" },
       ctx,
     );
     const main = await this.main();
@@ -261,6 +272,7 @@ export class ThreadTitles {
   readonly #registry: BotRegistry;
   readonly #onReport: (error: unknown) => void;
   readonly #onTitled: (botId: string, conversationId: number) => void;
+  readonly #background: (botId: string) => ModelRef | undefined;
   readonly #inFlight = new Map<string, Promise<void>>();
   readonly #abort = new AbortController();
 
@@ -269,11 +281,14 @@ export class ThreadTitles {
     registry: BotRegistry,
     onReport: (error: unknown) => void = () => {},
     onTitled: (botId: string, conversationId: number) => void = () => {},
+    /** A bot's pool background model, tried before the default title model. */
+    background: (botId: string) => ModelRef | undefined = () => undefined,
   ) {
     this.#generator = generator;
     this.#registry = registry;
     this.#onReport = onReport;
     this.#onTitled = onTitled;
+    this.#background = background;
   }
 
   /** Title the thread from `firstPrompt` unless it already has a title or a request running. */
@@ -283,7 +298,11 @@ export class ThreadTitles {
     const run = (async () => {
       const thread = await this.#registry.getThread(botId, conversationId);
       if (!thread || thread.title) return;
-      const title = await this.#generator.generate(firstPrompt, this.#abort.signal);
+      const title = await this.#generator.generate(
+        firstPrompt,
+        this.#abort.signal,
+        this.#background(botId),
+      );
       if (await this.#registry.setThreadTitleIfUntitled(botId, conversationId, title)) {
         this.#onTitled(botId, conversationId);
       }
@@ -411,8 +430,18 @@ export class BotManager {
     this.#options = options;
     this.registry = new BotRegistry(options.db);
     this.titles = options.titles
-      ? new ThreadTitles(options.titles, this.registry, options.onReport, (botId) =>
-          options.onThreadsChanged?.(botId),
+      ? new ThreadTitles(
+          options.titles,
+          this.registry,
+          options.onReport,
+          (botId) => options.onThreadsChanged?.(botId),
+          (botId) => {
+            const profile = this.profileOf(botId);
+            const pool = profile && backgroundPoolModel(profile);
+            return pool && this.#options.availability?.limit(pool) === undefined
+              ? parseModelRef(pool)
+              : undefined;
+          },
         )
       : undefined;
   }
@@ -461,6 +490,49 @@ export class BotManager {
     await this.#applyProfile(await this.get(id));
     this.#options.onBotsChanged?.();
     return this.record(id);
+  }
+
+  /** The profile a bot runs (undefined without profiles). */
+  profileOf(id: string): Profile | undefined {
+    return this.#options.profiles?.resolve(this.#assigned.get(id));
+  }
+
+  /**
+   * Models for a bot's background work (memory extraction), in order: its pool's background model,
+   * then the main model it runs now (a fallback while main is limited). Limited models are skipped;
+   * callers fall back to the next one quietly.
+   */
+  backgroundModels(id: string): string[] {
+    const profile = this.profileOf(id);
+    if (!profile) return [];
+    const availability = this.#options.availability;
+    const candidates = [
+      backgroundPoolModel(profile),
+      effectiveModel(profile, availability).model,
+    ].filter((ref): ref is string => ref !== undefined && availability?.limit(ref) === undefined);
+    return [...new Set(candidates)];
+  }
+
+  /**
+   * The note in front of a turn while a bot answers on a fallback main model because main is
+   * limited (`fallbackNote`). With `conversationId`, only when that conversation runs the fallback
+   * (subagent children do not).
+   */
+  async fallbackNote(id: string, conversationId?: number): Promise<string | undefined> {
+    const note = this.#noteFor(id);
+    if (!note || conversationId === undefined) return note;
+    const bot = await this.#bots.get(id)?.catch(() => undefined);
+    const conversation = await bot?.harness.conversation(toConversationId(conversationId), ctx);
+    const model = conversation ? (await conversation.agent(ctx)).model : undefined;
+    const active = this.#status.get(id)?.active;
+    return model && `${model.provider}/${model.modelId}` === active ? note : undefined;
+  }
+
+  #noteFor(id: string): string | undefined {
+    const status = this.#status.get(id);
+    const limit = status?.limits[0];
+    if (status?.kind !== "fallback" || !limit) return undefined;
+    return fallbackNote(status.primary, limit.kind, status.active);
   }
 
   /** A bot's main-model status (fallback, paused, or recently returned); undefined: normal. */
@@ -712,7 +784,7 @@ export class BotManager {
     const { attach, ...options } = this.#options.harnessOptions(record, this);
     const harness = await Harness.open(storage, options, ctx);
     attach?.(harness);
-    const bot = new Bot(record, harness, this.registry, this.titles);
+    const bot = new Bot(record, harness, this.registry, this.titles, () => this.#noteFor(id));
     let report: RecoveryReport;
     try {
       report = await this.#recover(bot);

@@ -74,8 +74,13 @@ export class TitleError extends Error {
 
 export type TitleGeneratorOptions = {
   readonly models: Models | (() => Models);
-  /** `[models.titles].model`. */
+  /** `[models.titles].model` (or its default). */
   readonly model: ModelRef;
+  /**
+   * `[models.titles] model` is set explicitly: it titles every thread. Otherwise a bot's pool
+   * background model (passed to `generate`) goes first and `model` is its quiet fallback.
+   */
+  readonly explicit?: boolean;
   /** `[models.titles].reasoning`. */
   readonly reasoning: TitleReasoning;
   /** Per-request timeout; titles are best-effort. */
@@ -97,10 +102,42 @@ export class TitleGenerator {
     return this.#options.model;
   }
 
-  async generate(firstPrompt: string, signal?: AbortSignal): Promise<string> {
+  /**
+   * The models a title is tried on, in order. Precedence: an explicit `[models.titles] model`
+   * alone; else the bot's pool background model (`background`), then the default title model.
+   */
+  candidates(background?: ModelRef): ModelRef[] {
+    const { model, explicit } = this.#options;
+    if (explicit || !background) return [model];
+    const same = background.provider === model.provider && background.modelId === model.modelId;
+    return same ? [model] : [background, model];
+  }
+
+  /**
+   * Title `firstPrompt`. A failing candidate quietly falls back to the next one; only the last
+   * failure is thrown.
+   */
+  async generate(
+    firstPrompt: string,
+    signal?: AbortSignal,
+    background?: ModelRef,
+  ): Promise<string> {
+    let failure: unknown;
+    for (const model of this.candidates(background)) {
+      if (signal?.aborted) break;
+      try {
+        return await this.#generateOn(model, firstPrompt, signal);
+      } catch (error) {
+        failure = error;
+      }
+    }
+    throw failure ?? new TitleError("title request aborted");
+  }
+
+  async #generateOn(ref: ModelRef, firstPrompt: string, signal?: AbortSignal): Promise<string> {
     const source = this.#options.models;
     const models = typeof source === "function" ? source() : source;
-    const { provider, modelId } = this.#options.model;
+    const { provider, modelId } = ref;
     const model: Model<Api> | undefined = models.getModel(provider, modelId);
     if (!model) throw new TitleError(`unknown title model ${provider}/${modelId}`);
     const timeout = AbortSignal.timeout(this.#options.timeoutMs ?? 60_000);

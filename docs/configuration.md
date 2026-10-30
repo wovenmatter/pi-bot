@@ -44,7 +44,9 @@ use_for = "Careful writing and code review"
 - **Pool**: if non-empty, the main model gets `run_subagent {model, task, reasoning?}`, which runs
   the task on a pool model in a separate child conversation and returns the result. A failure
   comes back as an error, so the main model can try another pool model and tell you in one line.
-  `background = true` marks at most one pool entry for background work, which nothing uses yet.
+  `background = true` marks at most one pool entry for background work: thread titles (unless
+  `[models.titles] model` is set) and `run_subagent` with `model = "background"` (the main model
+  when no entry is marked). Titles fall back to the next model quietly, with no banner.
 - **Fallbacks** (at most 5, no duplicates, not the main model) only cover the main model.
 - Edit profiles in Settings → Profiles or ask Admin Bot. Changes apply from each bot's next reply.
   Deleting a profile moves its bots back to the default; the default can't be deleted.
@@ -69,6 +71,12 @@ pauses on its main model. The chat shows a banner with what was hit, the account
 reset time in your local zone (or "reset time not reported") and the fallback in use; the sidebar
 shows a dot. Pool models never switch automatically.
 
+While a bot answers on a fallback, each turn's input starts with a short note for the model
+(`[Note: <main> is unavailable (5-hour limit); you are <fallback>. Mention this briefly in your
+reply.]`), so the reply says so. The note is part of the stored user turn, never the system
+prompt, and the chat hides it. The turn that was switched mid-way gets it for its retried
+requests only.
+
 Marked limits are saved in SQLite (`pibot_limits`) and restored on start; any whose reset or
 cooldown has passed is dropped. Writing a provider's credentials through the server (Settings or
 Admin Bot: a key set or removed, or a sign-in to ChatGPT, Claude or Grok that completes) clears
@@ -86,8 +94,10 @@ native call fails. Covered history stays in SQLite; only the model context gets 
 
 ## Thread titles
 
-A thread's title is generated once, in the background, from its first message by the
-`[models.titles]` model (max 50 characters). Threads can't be named or renamed by hand; the main
+A thread's title is generated once, in the background, from its first message (max 50
+characters). Which model: `[models.titles] model` when it is set in the file; otherwise the bot's
+pool background model, falling back quietly to the default title model
+(`openai-codex/gpt-6-luna`). Threads can't be named or renamed by hand; the main
 channel has no title. A failed request leaves the thread "Untitled thread".
 
 ## Settings page
