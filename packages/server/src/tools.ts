@@ -5,6 +5,7 @@ import { describeProfile, type ProfileStore } from "./profiles.ts";
 import type { RestartAccepted } from "./server.ts";
 import type { SettingsService } from "./settings/service.ts";
 import type { BotRecord } from "./storage/registry.ts";
+import { displayEntry } from "./transcript.ts";
 
 /**
  * What bot tools reach: the bot manager, and (for Admin Bot) settings and restart. Late-bound,
@@ -158,6 +159,110 @@ function commonTools(botId: string, platform: BotPlatform) {
             round,
           );
           return `Delivered to ${(await manager.record(args.botId)).name}.`;
+        }),
+    }),
+  ];
+}
+
+const MAX_SHOWN_CHARS = 2000;
+const SNIPPET_CHARS = 80;
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+
+/** A snippet of `text` around the first `needle` (lowercase), on one line. */
+function snippet(text: string, needle: string): string {
+  const flat = text.replace(/\s+/g, " ");
+  const at = flat.toLowerCase().indexOf(needle);
+  const start = Math.max(0, at - SNIPPET_CHARS);
+  const end = Math.min(flat.length, at + needle.length + SNIPPET_CHARS);
+  return `${start > 0 ? "…" : ""}${flat.slice(start, end)}${end < flat.length ? "…" : ""}`;
+}
+
+/** Every bot: read and search its own main channel and threads (never another bot's). */
+function historyTools(botId: string, platform: BotPlatform) {
+  return [
+    defineTool({
+      name: "read_thread",
+      description:
+        "Read one of your own threads (or your main channel) as a compact transcript: its own messages, newest last. Thread ids come from search_history.",
+      parameters: Type.Object({
+        threadId: Type.Integer({ description: "Conversation id of your thread or main channel" }),
+        limit: Type.Optional(
+          Type.Integer({ minimum: 1, maximum: 200, description: "Newest messages (default 40)" }),
+        ),
+      }),
+      replay: "safe",
+      execute: (args) =>
+        run(async () => {
+          const bot = await platform.manager().get(botId);
+          const conversation = await bot.conversation(args.threadId);
+          const thread = (await bot.conversations()).find(
+            (item) => item.conversationId === conversation.id,
+          );
+          const limit = Math.min(Math.max(args.limit ?? 40, 1), 200);
+          const lines: string[] = [];
+          for await (const entry of bot.ownEntries(conversation.id, 0, "descending")) {
+            const shown = displayEntry(entry);
+            if (!shown || (!shown.text.trim() && !shown.error)) continue;
+            const body = shown.text.trim() || `(error: ${shown.error})`;
+            lines.push(`[${shown.id}] ${shown.role}: ${clip(body, MAX_SHOWN_CHARS)}`);
+            if (lines.length >= limit) break;
+          }
+          const main = (await bot.main()).id === conversation.id;
+          const header = main
+            ? `Main channel (conversation ${conversation.id})`
+            : `Thread ${conversation.id}: ${thread?.title || "Untitled thread"}`;
+          return [header, ...(lines.length ? lines.reverse() : ["(no messages yet)"])].join("\n");
+        }),
+    }),
+    defineTool({
+      name: "search_history",
+      description:
+        "Search your own main channel and threads for text (case-insensitive substring). Returns snippets with the conversation id and thread title, newest first; open one with read_thread.",
+      parameters: Type.Object({
+        query: Type.String({ description: "Text to look for" }),
+        limit: Type.Optional(
+          Type.Integer({ minimum: 1, maximum: 50, description: "Most results (default 10)" }),
+        ),
+      }),
+      replay: "safe",
+      execute: (args) =>
+        run(async () => {
+          const needle = args.query.trim().toLowerCase();
+          if (!needle) throw new Error("query is empty");
+          const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
+          const bot = await platform.manager().get(botId);
+          const hits: {
+            conversationId: number;
+            title: string;
+            entryId: number;
+            role: string;
+            snippet: string;
+          }[] = [];
+          for (const { conversationId, title } of await bot.conversations()) {
+            let found = 0;
+            for await (const entry of bot.ownEntries(conversationId, 0, "descending")) {
+              const shown = displayEntry(entry);
+              if (!shown?.text.toLowerCase().includes(needle)) continue;
+              hits.push({
+                conversationId,
+                title,
+                entryId: shown.id,
+                role: shown.role,
+                snippet: snippet(shown.text, needle),
+              });
+              if (++found >= limit) break;
+            }
+          }
+          const main = (await bot.main()).id;
+          const results = hits
+            .sort((a, b) => b.entryId - a.entryId)
+            .slice(0, limit)
+            .map((hit) => ({
+              ...hit,
+              title: hit.conversationId === main ? "Main channel" : hit.title || "Untitled thread",
+            }));
+          return results.length ? results : `No messages contain "${args.query.trim()}".`;
         }),
     }),
   ];
@@ -512,6 +617,7 @@ export function botTools(record: BotRecord, platform: BotPlatform): Extension {
     name: "pi-bot-tools",
     tools: [
       ...commonTools(record.id, platform),
+      ...historyTools(record.id, platform),
       ...(record.kind === "admin" ? adminTools(platform) : teamTools(record.id, platform)),
     ],
   });

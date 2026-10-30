@@ -23,7 +23,7 @@ Manage all of this in Settings → Bots, by asking Admin Bot, or by telling a bo
 
 | Who                 | Tools                                                                                                                                                                                                                                                                                                                                        |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Every bot           | `list_bots`, `create_bot`, `message_bot`, `web_search`, `fetch_url`                                                                                                                                                                                                                                                                          |
+| Every bot           | `list_bots`, `create_bot`, `message_bot`, `web_search`, `fetch_url`, `search_history`, `read_thread`                                                                                                                                                                                                                                         |
 | Every bot but Admin | `rename_me`, `my_team` (`start`, `add`, `remove`, `stop`, `become_orchestrator`, `stop_orchestrator`)                                                                                                                                                                                                                                        |
 | Admin Bot only      | `rename_bot`, `set_team` (`promote`, `demote`, `join`, `leave`, `replace_manager`, `make_orchestrator`, `clear_orchestrator`), `settings_status`, `read_config`, `update_config`, `restart_server`, `list_profiles`, `save_profile`, `delete_profile`, `set_default_profile`, `set_bot_profile`, `read_account_notes`, `write_account_notes` |
 | Bots with a pool    | `run_subagent`                                                                                                                                                                                                                                                                                                                               |
@@ -35,6 +35,12 @@ Manage all of this in Settings → Bots, by asking Admin Bot, or by telling a bo
   page as readable text (see [security](security.md#web-tools) for what it refuses). Both are
   offered to every bot and its subagents whether or not a key is set, so the tool list stays the
   same; Claude models get them through the same inventory as every other tool.
+- **`search_history`** `{query, limit?}` (1–50, default 10) finds a case-insensitive substring in
+  the bot's own main channel and threads and returns snippets, newest first, with conversation id,
+  entry id and thread title. **`read_thread`** `{threadId, limit?}` (1–200, default 40) returns a
+  thread's (or the main channel's) own messages as a compact transcript, each clipped to 2,000
+  characters; messages a thread inherited from its parent belong to the parent. Both read only the
+  calling bot's conversations (never another bot's or a subagent's) and are not given to subagents.
 - **`create_bot`**: a bot created by a manager or team member joins that team.
 - **`message_bot`** delivers to the target's main channel, labelled with the sender, queued if
   the target is busy. It doesn't wait for a reply; the target answers with `message_bot`. A bot

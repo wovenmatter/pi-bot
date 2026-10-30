@@ -286,6 +286,57 @@ describe("bot tools", () => {
     expect(hasTool(seen[before], "rename_bot")).toBe(false);
   });
 
+  it("searches and reads only the bot's own main channel and threads", async () => {
+    const ada = await manager.get((await manager.create("Ada")).id);
+    const bob = await manager.get((await manager.create("Bob")).id);
+    faux.setResponses(Array.from({ length: 5 }, () => reply));
+    await say(ada, "The code word is Pelican");
+    await say(bob, "bob also says pelican");
+    const main = await ada.main();
+    const forkAt = (await main.entries({ order: "descending" }, 1, undefined, ctx)).items[0];
+    const thread = await ada.fork({ entryId: Number(forkAt?.id) });
+    const sent = await ada.send("pelican migration plans", thread.conversationId);
+    await sent.submission.wait(ctx);
+    await manager.registry.setThreadTitleIfUntitled(ada.id, thread.conversationId, "Bird trips");
+
+    // Ada searches, reads her thread, then tries a conversation that isn't hers.
+    const calls: [string, Record<string, string | number>][] = [
+      ["search_history", { query: "PELICAN", limit: 5 }],
+      ["read_thread", { threadId: thread.conversationId }],
+      ["read_thread", { threadId: 999 }],
+    ];
+    const step: Step = (context) => {
+      const json = JSON.stringify(context);
+      seen.push(json);
+      const turn = json.slice(json.lastIndexOf('"content":"look it up"'));
+      const next = calls[turn.split('"role":"toolResult"').length - 1];
+      if (!next) return fauxAssistantMessage([fauxText("done")]);
+      return fauxAssistantMessage([fauxToolCall(next[0], next[1])], { stopReason: "toolUse" });
+    };
+    faux.setResponses(Array.from({ length: 5 }, () => step));
+    await say(ada, "look it up");
+    const last = JSON.parse(seen.at(-1) ?? "{}") as {
+      messages: { role: string; content: { type: string; text?: string }[] }[];
+    };
+    const results = last.messages
+      .filter((message) => message.role === "toolResult")
+      .map((message) => message.content.map((part) => part.text ?? "").join(""));
+    expect(results).toHaveLength(3);
+
+    const hits = JSON.parse(results[0] ?? "[]") as { conversationId: number; title: string }[];
+    // Newest first: the thread message, then the main channel one; never Bob's.
+    expect(hits.map((hit) => [hit.conversationId, hit.title])).toEqual([
+      [thread.conversationId, "Bird trips"],
+      [main.id, "Main channel"],
+    ]);
+    expect(results[0]).toContain("The code word is Pelican");
+    expect(results[0]).not.toContain("bob also says");
+
+    expect(results[1]).toMatch(/^Thread \d+: Bird trips\n\[\d+\] user: pelican migration plans\n/);
+    expect(results[1]).not.toContain("The code word"); // inherited entries belong to main
+    expect(results[2]).toContain("no thread 999");
+  });
+
   it("limits messages per pair over a sliding hour", () => {
     let now = 0;
     const limiter = new MessageLimiter(2, () => now);
