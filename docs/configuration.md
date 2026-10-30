@@ -15,7 +15,7 @@ lists every key with its default. Unknown keys are rejected. Secrets never go in
 | `[profiles.<id>]` | Model profiles, below                                                                                                              |
 | `[compaction]`    | `enabled`, `reserve_tokens = 16384`, `keep_recent_tokens = 20000`, `background_tokens = 0`, `native = "auto"`, per-model overrides |
 | `[bot_to_bot]`    | `max_messages_per_hour_per_pair = 30`; `max_rounds_per_request = 5` (see [bots and teams](bots-and-teams.md))                      |
-| `[extraction]`    | `schedule` (cron), `timezone`: validated only; scheduled extraction doesn't run yet                                                |
+| `[extraction]`    | `enabled = true`, `schedule = "0 3 * * *"` (cron), `timezone = "UTC"`, `idle_minutes = 30`; see [memory](#memory)                  |
 | `[search]`        | `provider = "exa"` (or `brave`, `firecrawl`): tried first by `web_search`; keys in Settings → Search                               |
 | `[git]`           | `user_name`, `user_email`: commit identity in bot containers                                                                       |
 | `[environment]`   | `backend = "none"` or `"docker"`, optional `image`; see [environments](environments.md)                                            |
@@ -45,8 +45,9 @@ use_for = "Careful writing and code review"
   the task on a pool model in a separate child conversation and returns the result. A failure
   comes back as an error, so the main model can try another pool model and tell you in one line.
   `background = true` marks at most one pool entry for background work: thread titles (unless
-  `[models.titles] model` is set) and `run_subagent` with `model = "background"` (the main model
-  when no entry is marked). Titles fall back to the next model quietly, with no banner.
+  `[models.titles] model` is set), memory extraction and `run_subagent` with `model =
+  "background"` (the main model when no entry is marked). Titles and extraction fall back to the
+  next model quietly, with no banner.
 - **Fallbacks** (at most 5, no duplicates, not the main model) only cover the main model.
 - Edit profiles in Settings → Profiles or ask Admin Bot. Changes apply from each bot's next reply.
   Deleting a profile moves its bots back to the default; the default can't be deleted.
@@ -91,6 +92,20 @@ context overflow) and what prefix to cover. With `native = "auto"`, these provid
 compaction API: `openai`, `xai`, `openai-codex`, `anthropic` and `claude-subscription`. Everything
 else (OpenRouter, OpenCode Go) uses Pi Durable's summarizer, which is also the fallback when a
 native call fails. Covered history stays in SQLite; only the model context gets shorter.
+
+## Memory
+
+Each bot has a memory: a list of durable facts and preferences (at most 200, oldest dropped),
+shown to it as a `memory` prompt section. It changes only when facts are added, so the prompt
+stays cacheable. Extraction runs one bot at a time, in the background, on the `[extraction]`
+schedule (in `timezone`) and once a bot has been idle `idle_minutes` after new messages. It reads
+the user and assistant messages of the main channel and threads since the bot's checkpoint
+(`pibot_memory`, the newest entry id read; at most the newest ~60k characters per run), asks the
+pool background model (else the main model as it runs now, skipping limited models) for new facts,
+drops ones already known (case and punctuation ignored) and saves facts and checkpoint together.
+Bots with nothing new are skipped; a failed run leaves the checkpoint and is retried after another
+idle period or on the next schedule. Errors only go to the server log. Set `enabled = false` to
+turn it off.
 
 ## Thread titles
 

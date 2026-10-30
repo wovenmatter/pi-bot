@@ -80,6 +80,10 @@ the working agreement for every human or agent who changes this repository.
   with `fallbackNote` (never the system prompt; `Bot.send` stores it, the generation hook adds it to
   a turn switched mid-way, the chat strips it). Expiry re-applies (auto-return). Status
   (`fallback` / `paused` / `returned`, 10 min) is `BotSummary.modelStatus`, pushed via `bots.changed`.
+- Memory (`memory.ts`): `MemoryExtractor` appends durable facts to `pibot_memory` (facts plus an
+  entry-id checkpoint per bot) on `[extraction]`'s schedule and after `idle_minutes`, one bot at a
+  time, off the turn path, on `BotManager.backgroundModels`. Bots see it as the `memory` section,
+  which changes only when facts are added.
 - Account notes (`pibot_notes`, Settings → Accounts → Plans and budget) are guidance for Admin
   Bot (plans, keys, comfort spend), never caps and never secrets. Profile tools are Admin Bot only and follow confirm-unless-asked.
 - Tests use faux providers; never real keys.

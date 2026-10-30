@@ -109,8 +109,6 @@ from a throwaway instance with a faux "demo" provider and sample bots.
 
 - **macOS Keychain store on a real Mac.** It is implemented over the `security` CLI but only
   unit-tested with a fake; see [security](docs/security.md#credentials).
-- **Scheduled memory extraction.** `[extraction]` is validated, but nothing runs it; the
-  pre-compaction extraction hook is a no-op.
 
 ## Credits and caveats
 

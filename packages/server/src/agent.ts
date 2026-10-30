@@ -86,6 +86,8 @@ export type BotAgentOptions = {
   readonly fetch?: FetchFunction;
   /** Memory extraction before every compaction; a no-op stub by default. */
   readonly onBeforeCompact?: BeforeCompactHook;
+  /** The bot's extracted memory as prompt text (`memorySection`); undefined: none yet. */
+  readonly memory?: () => Promise<string | undefined>;
   /**
    * A request in `conversationId` on `model` hit a usage limit or ran out of credits. Returns the
    * fallback the conversation runs now (the failed request is retried on it), if it switched.
@@ -222,10 +224,14 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
   });
   const profile = () =>
     typeof options.profile === "function" ? options.profile() : options.profile;
-  // The bot's identity and standing instructions; subagents run without it.
+  // The bot's identity, standing instructions and memory; subagents run without them.
+  const memory = options.memory;
   const identity = defineExtension({
     name: "pi-bot-preamble",
-    sections: [section("preamble", () => preamble(options), { tag: false })],
+    sections: [
+      section("preamble", () => preamble(options), { tag: false }),
+      ...(memory ? [section("memory", () => memory())] : []),
+    ],
   });
   const fallbackNote = options.fallbackNote;
   const beforeRequest: typeof native.beforeRequest = fallbackNote

@@ -8,6 +8,7 @@ import { type ModelRef, type PiBotConfig, parseModelRef } from "./config.ts";
 import { type OpenedCredentialStore, openCredentialStore } from "./credentials/index.ts";
 import { type BotEnvironmentAdapter, DockerEnvironmentAdapter } from "./env.ts";
 import { ModelAvailability } from "./limits.ts";
+import { MemoryExtractor, memorySection } from "./memory.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
 import { ProfileStore, persistProfiles } from "./profiles.ts";
 import { type PiBotServer, type RestartAccepted, startServer } from "./server.ts";
@@ -168,6 +169,7 @@ export async function startPiBot(
           onLimit: (conversationId, model, limit) =>
             self.reportLimit(bot.id, conversationId, model, limit),
           fallbackNote: (conversationId) => self.fallbackNote(bot.id, conversationId),
+          memory: async () => memorySection((await self.registry.memory(bot.id)).facts),
         }),
       onBotClosed: (bot, reason) => {
         if (reason !== "closed") log(`bot ${bot.id} harness ${reason}`);
@@ -214,6 +216,18 @@ export async function startPiBot(
       },
     });
     manager = opened;
+    const extraction = config.extraction;
+    const memory = extraction.enabled
+      ? new MemoryExtractor({
+          manager: opened,
+          models,
+          schedule: extraction.schedule,
+          timeZone: extraction.timezone,
+          idleMs: extraction.idle_minutes * 60_000,
+          log,
+        })
+      : undefined;
+    memory?.start();
     settings = new SettingsService({
       credentials: credentials.store,
       models: options.settingsModels?.(credentials.store) ?? models,
@@ -258,6 +272,7 @@ export async function startPiBot(
       reconciled,
       async close() {
         await server?.close();
+        await memory?.close();
         await opened.close();
         availability.close();
         await availability.flushed();

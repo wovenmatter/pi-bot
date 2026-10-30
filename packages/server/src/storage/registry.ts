@@ -9,6 +9,16 @@ export const THREADS_TABLE = "pibot_threads";
 export const NOTES_TABLE = "pibot_notes";
 /** Marked main-model usage limits (`ModelAvailability`), so they outlive a restart. */
 export const LIMITS_TABLE = "pibot_limits";
+/** Each bot's extracted memory (one fact per line) and its extraction checkpoint. */
+export const MEMORY_TABLE = "pibot_memory";
+
+/** A bot's memory: facts oldest first, and the newest entry id extraction has read. */
+export type BotMemory = {
+  readonly facts: readonly string[];
+  /** Entry ids are per bot session and only grow, so one checkpoint covers every conversation. */
+  readonly checkpoint: number;
+  readonly updatedAt?: string;
+};
 
 export type BotRecord = {
   readonly id: string;
@@ -161,6 +171,12 @@ export class BotRegistry {
         key TEXT PRIMARY KEY,
         entry TEXT NOT NULL
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS ${MEMORY_TABLE} (
+        bot_id TEXT PRIMARY KEY,
+        facts TEXT NOT NULL,
+        checkpoint INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
     `);
     // Older databases lack later columns: add each missing one (existing bots are plain bots).
     const columns = new Set(
@@ -293,6 +309,35 @@ export class BotRegistry {
       `INSERT INTO ${NOTES_TABLE} (name, text, updated_at) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at`,
       name,
       text,
+      at,
+    );
+  }
+
+  /** A bot's memory; empty with checkpoint 0 before its first extraction. */
+  async memory(botId: string): Promise<BotMemory> {
+    const row = await this.#db.get<{ facts: string; checkpoint: number; updated_at: string }>(
+      `SELECT facts, checkpoint, updated_at FROM ${MEMORY_TABLE} WHERE bot_id = ?`,
+      botId,
+    );
+    if (!row) return { facts: [], checkpoint: 0 };
+    return {
+      facts: row.facts.split("\n").filter((fact) => fact.trim()),
+      checkpoint: row.checkpoint,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async saveMemory(
+    botId: string,
+    facts: readonly string[],
+    checkpoint: number,
+    at = new Date().toISOString(),
+  ): Promise<void> {
+    await this.#db.run(
+      `INSERT INTO ${MEMORY_TABLE} (bot_id, facts, checkpoint, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(bot_id) DO UPDATE SET facts = excluded.facts, checkpoint = excluded.checkpoint, updated_at = excluded.updated_at`,
+      botId,
+      facts.join("\n"),
+      checkpoint,
       at,
     );
   }

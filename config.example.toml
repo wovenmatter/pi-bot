@@ -48,10 +48,15 @@ background = true
 [profiles.default.pool."openrouter/anthropic/claude-sonnet-5"]
 use_for = "Careful writing and code review"
 
-# Scheduled memory extraction: validated only, not run yet.
+# Memory extraction: each bot's new messages since its last extraction go to its background model
+# (else its main model), and new durable facts are appended to the bot's memory, which it sees in
+# its prompt. Runs on the schedule and when a bot has been idle idle_minutes after new messages;
+# bots with nothing new are skipped. Without this section: on, nightly 03:00 UTC plus 30 idle minutes.
 [extraction]
+enabled = true
 schedule = "0 3 * * *"              # 5-field cron
 timezone = "America/New_York"       # IANA zone the schedule is evaluated in
+idle_minutes = 30                   # 0 = schedule only
 
 [bot_to_bot]
 max_rounds_per_request = 5          # message_bot hops in the chain that follows one user message

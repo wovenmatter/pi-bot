@@ -9,6 +9,7 @@ import {
   BotRegistry,
   botPrefix,
   LIMITS_TABLE,
+  MEMORY_TABLE,
   NOTES_TABLE,
   prefixedObjects,
   THREADS_TABLE,
@@ -60,7 +61,8 @@ describe("shared storage", () => {
       expect(names).toContain(THREADS_TABLE);
       // Nothing outside the shared tables escapes a bot prefix.
       for (const name of names) {
-        if ([BOTS_TABLE, THREADS_TABLE, NOTES_TABLE, LIMITS_TABLE].includes(name)) continue;
+        if ([BOTS_TABLE, THREADS_TABLE, NOTES_TABLE, LIMITS_TABLE, MEMORY_TABLE].includes(name))
+          continue;
         expect(name.startsWith(a.prefix) || name.startsWith(b.prefix), name).toBe(true);
       }
       const aTables = await prefixedObjects(t.db, a.prefix);

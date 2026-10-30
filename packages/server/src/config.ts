@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
+import { isCronExpression } from "./cron.ts";
 import { TITLE_REASONING } from "./titles.ts";
 
 /** `provider/model-id`, e.g. `openai/gpt-6-sol`. The model id may contain further slashes. */
@@ -43,13 +44,6 @@ export function isAllowedBindHost(host: string): boolean {
     return /^fd7a:115c:a1e0:/.test(bare);
   }
   return false;
-}
-
-const CRON_FIELD = /^(\*|\d+(-\d+)?)(\/\d+)?(,(\*|\d+(-\d+)?)(\/\d+)?)*$/;
-
-function isCronExpression(value: string): boolean {
-  const fields = value.trim().split(/\s+/);
-  return fields.length === 5 && fields.every((field) => CRON_FIELD.test(field));
 }
 
 function isTimeZone(value: string): boolean {
@@ -135,13 +129,20 @@ export const configSchema = z.strictObject({
       }),
     )
     .default({}),
+  /**
+   * Memory extraction: durable facts from each bot's new messages go into its memory, on the
+   * schedule and once a bot has been idle `idle_minutes` after new messages. On by default.
+   */
   extraction: z
     .strictObject({
+      enabled: z.boolean().default(true),
       schedule: z
         .string()
         .default("0 3 * * *")
         .refine(isCronExpression, "expected a 5-field cron expression"),
       timezone: z.string().default("UTC").refine(isTimeZone, "unknown IANA time zone"),
+      /** Minutes without new messages before a bot's new messages are extracted; 0: schedule only. */
+      idle_minutes: z.number().int().min(0).max(10_080).default(30),
     })
     .prefault({}),
   bot_to_bot: z

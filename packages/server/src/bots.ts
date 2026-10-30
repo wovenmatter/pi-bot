@@ -4,6 +4,7 @@ import {
   type Conversation,
   type ConversationRecord,
   configure,
+  type EntryRecord,
   Harness,
 } from "@earendil-works/pi-durable";
 import { type SqliteDatabase, SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
@@ -233,19 +234,60 @@ export class Bot {
 
   /** The text of a thread's first own user message, or undefined before it has one. */
   async firstUserText(conversationId: number): Promise<string | undefined> {
+    for await (const entry of this.ownEntries(conversationId)) {
+      const shown = displayEntry(entry);
+      if (shown?.role === "user" && shown.text.trim()) return shown.text;
+    }
+    return undefined;
+  }
+
+  /** The bot's own history: the main channel, then every thread (newest first) with its title. */
+  async conversations(): Promise<{ readonly conversationId: number; readonly title: string }[]> {
+    const main = await this.main();
+    return [
+      { conversationId: main.id, title: "" },
+      ...(await this.#registry.listThreads(this.id)).map((thread) => ({
+        conversationId: thread.conversationId,
+        title: thread.title,
+      })),
+    ];
+  }
+
+  /**
+   * A conversation's own entries, oldest first (`order: "descending"`: newest first), after entry
+   * `afterId`. Entries a thread inherited from its parent are skipped: they belong to the parent.
+   */
+  async *ownEntries(
+    conversationId: number,
+    afterId = 0,
+    order: "ascending" | "descending" = "ascending",
+  ): AsyncGenerator<EntryRecord> {
     const conversation = await this.harness.conversation(toConversationId(conversationId), ctx);
-    if (!conversation) return undefined;
+    if (!conversation) return;
     let cursor: Parameters<Conversation["entries"]>[2];
     do {
-      const page = await conversation.entries({ order: "ascending" }, 200, cursor, ctx);
+      const page = await conversation.entries(
+        { order, ...(afterId > 0 ? { minEntryId: toEntryId(afterId + 1) } : {}) },
+        200,
+        cursor,
+        ctx,
+      );
       for (const entry of page.items) {
-        if (entry.conversationId !== conversationId) continue;
-        const shown = displayEntry(entry);
-        if (shown?.role === "user" && shown.text.trim()) return shown.text;
+        if (entry.conversationId === conversationId) yield entry;
       }
       cursor = page.next;
     } while (cursor !== undefined);
-    return undefined;
+  }
+
+  /** The newest entry id across the main channel and threads (0 for an empty bot). */
+  async latestEntryId(): Promise<number> {
+    let latest = 0;
+    for (const { conversationId } of await this.conversations()) {
+      const conversation = await this.harness.conversation(toConversationId(conversationId), ctx);
+      const page = await conversation?.entries({ order: "descending" }, 1, undefined, ctx);
+      latest = Math.max(latest, page?.items[0]?.id ?? 0);
+    }
+    return latest;
   }
 
   /** Every thread, newest first; with `query`, only threads whose title matches every term. */
