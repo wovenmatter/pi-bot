@@ -2,6 +2,7 @@ import { Trash2 } from "lucide-react";
 import { Icon } from "../../components/Icon.tsx";
 import { Loading } from "../../components/ui.tsx";
 import type { AccountStatus, SearchProviderId } from "../../protocol.ts";
+import { AccountHelp } from "./Accounts.tsx";
 import { KeyForm } from "./shared.tsx";
 
 /** Web search keys and the default provider. */
@@ -23,7 +24,7 @@ export function SearchSettings({
     <>
       <section className="settings-section" aria-labelledby="search-default-heading">
         <h3 id="search-default-heading">Default provider</h3>
-        <p className="muted">Used when a bot searches the web. Saved to config.toml.</p>
+        <p className="muted">Used when a bot searches the web.</p>
         <div className="tabs" role="radiogroup" aria-label="Default search provider">
           {search.providers.map((provider) => (
             // biome-ignore lint/a11y/useSemanticElements: segmented control, as in Enterprise
@@ -52,6 +53,7 @@ export function SearchSettings({
                   <small
                     className={provider.configured ? "account-status configured" : "account-status"}
                   >
+                    <span className="status-dot" aria-hidden="true" />
                     {provider.detail ?? (provider.configured ? "Configured" : "Not set")}
                   </small>
                 </div>
@@ -68,17 +70,6 @@ export function SearchSettings({
                   </button>
                 ) : null}
               </div>
-              <p className="muted account-help">
-                {provider.help}
-                {provider.link ? (
-                  <>
-                    {" "}
-                    <a href={provider.link} target="_blank" rel="noreferrer">
-                      Get a key
-                    </a>
-                  </>
-                ) : null}
-              </p>
               <KeyForm
                 label={`${provider.label} API key`}
                 placeholder={
@@ -87,6 +78,9 @@ export function SearchSettings({
                 disabled={disabled}
                 onSave={(key) => onSaveKey(provider, key)}
               />
+              <div className="account-meta">
+                <AccountHelp help={provider.help} link={provider.link} />
+              </div>
             </li>
           ))}
         </ul>

@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, X } from "lucide-react";
+import { CircleAlert, CircleCheck, Copy, ExternalLink, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Icon } from "../../components/Icon.tsx";
 import { Loading } from "../../components/ui.tsx";
@@ -128,7 +128,7 @@ export function LoginPanel({
   return (
     <section className="login-panel" aria-label={`Sign in: ${login.label}`}>
       <div className="login-panel-header">
-        <strong>{login.label}</strong>
+        <strong>Sign in to {login.label}</strong>
         <button
           type="button"
           className="icon-button"
@@ -145,7 +145,7 @@ export function LoginPanel({
             <a href={view.deviceCode.verificationUri} target="_blank" rel="noreferrer">
               {view.deviceCode.verificationUri}
             </a>{" "}
-            on any device and enter this code:
+            and enter:
           </p>
           <div className="login-code">
             <code>{view.deviceCode.userCode}</code>
@@ -162,7 +162,7 @@ export function LoginPanel({
       ) : null}
       {view.authUrl ? (
         <div className="login-step">
-          <p>{view.authUrl.instructions ?? "Open this link and sign in:"}</p>
+          {view.authUrl.instructions ? <p>{view.authUrl.instructions}</p> : null}
           <div className="login-url">
             <a className="secondary" href={view.authUrl.url} target="_blank" rel="noreferrer">
               <Icon icon={ExternalLink} size={13} weight="control" />
@@ -179,8 +179,7 @@ export function LoginPanel({
           </div>
           {localhostRedirect ? (
             <p className="muted">
-              The page ends on a localhost address that won't load on this device. Copy that whole
-              URL from the address bar and paste it below.
+              It ends on a localhost address that won't load. Paste that full URL below.
             </p>
           ) : null}
         </div>
@@ -197,22 +196,24 @@ export function LoginPanel({
       ) : null}
       {view.status === "done" ? (
         <div className="notice success" role="status">
+          <Icon icon={CircleCheck} size={16} />
           <span>Signed in.</span>
         </div>
       ) : null}
       {view.status === "error" ? (
         <div className="notice error" role="alert">
+          <Icon icon={CircleAlert} size={16} />
           <span>{view.error}</span>
         </div>
       ) : null}
       {view.status === "error" && onRetry && alternates.length ? (
-        <p className="account-alternates muted">
-          Try instead:{" "}
+        <p className="account-alternates">
+          Try instead
           {alternates.map((method) => (
             <button
               key={method.id}
               type="button"
-              className="text-button"
+              className="link-button"
               onClick={() => onRetry(method.id)}
             >
               {method.label}

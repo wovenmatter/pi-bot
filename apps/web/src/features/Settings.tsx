@@ -188,9 +188,7 @@ export function AccountsSection({
   return (
     <>
       <p className="muted settings-intro">
-        Keys are stored in the credential store and are never shown again; only the last four
-        characters appear here. Sign-ins work from any browser: open the link or code shown, then
-        paste back what the provider gives you.
+        Keys are write-only: only their last four characters are ever shown.
       </p>
       <AccountsList accounts={accounts} login={login} disabled={!connected} actions={actions} />
     </>

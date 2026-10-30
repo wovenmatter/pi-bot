@@ -53,8 +53,9 @@
   --segment-radius: 6px;
   --row-height: 28px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
-  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-family: var(--sans);
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink);
@@ -1481,15 +1482,86 @@ input[type="file"] {
   gap: 4px;
 }
 .account-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
+}
+.status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
 }
 .account-status.configured {
   color: var(--success-ink);
 }
-.account-help {
-  margin: 0;
+.account-status.configured .status-dot {
+  background: var(--success);
+}
+.account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+.account-meta:empty {
+  display: none;
+}
+.account-help {
+  margin: 0;
+}
+details.account-help {
+  flex-basis: 100%;
+  order: 1;
+}
+details.account-help > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+details.account-help > summary::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-left: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1px) rotate(45deg);
+  transition: transform 0.12s ease-out;
+}
+details.account-help[open] > summary::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+details.account-help > summary:hover {
+  color: var(--ink);
+}
+details.account-help > p {
+  max-width: 600px;
+  margin: 6px 0 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+/* Inline text actions: links that are buttons (other sign-in methods). */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-size: inherit;
+  text-underline-offset: 2px;
+}
+.link-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .settings-inline-form {
   display: flex;
@@ -1498,6 +1570,9 @@ input[type="file"] {
 .settings-inline-form > input {
   flex: 1;
   font-family: var(--mono);
+}
+.settings-inline-form > input::placeholder {
+  font-family: var(--sans);
 }
 .team-controls {
   display: flex;
@@ -1685,11 +1760,13 @@ input[type="file"] {
   margin: -4px -4px -4px auto;
 }
 .account-alternates {
-  margin: 6px 0 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  color: var(--muted);
   font-size: 12px;
-}
-.account-alternates .text-button {
-  padding: 0 4px;
 }
 .onboarding {
   max-width: 760px;

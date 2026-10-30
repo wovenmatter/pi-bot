@@ -21,6 +21,34 @@ function statusText(account: AccountStatus): string {
   return account.method === "oauth" ? "Not signed in" : "Not set";
 }
 
+/** Longer than this, provider help folds away under "How it works". */
+const SHORT_HELP = 90;
+
+/** Short help stays inline; longer provider instructions fold away until asked for. */
+export function AccountHelp({ help, link }: { help: string; link?: string }) {
+  const getKey = link ? (
+    <a href={link} target="_blank" rel="noreferrer">
+      Get a key
+    </a>
+  ) : null;
+  if (help.length <= SHORT_HELP) {
+    return (
+      <span className="account-help">
+        {help} {getKey}
+      </span>
+    );
+  }
+  return (
+    <>
+      <details className="account-help">
+        <summary>How it works</summary>
+        <p>{help}</p>
+      </details>
+      {getKey}
+    </>
+  );
+}
+
 /** One sign-in slot: status (never the key itself) and its action. */
 export function AccountRow({
   account,
@@ -41,6 +69,7 @@ export function AccountRow({
         <div className="settings-row-text">
           <strong>{account.label}</strong>
           <small className={account.configured ? "account-status configured" : "account-status"}>
+            <span className="status-dot" aria-hidden="true" />
             {statusText(account)}
           </small>
         </div>
@@ -70,17 +99,6 @@ export function AccountRow({
           )}
         </div>
       </div>
-      <p className="muted account-help">
-        {account.help}
-        {account.link ? (
-          <>
-            {" "}
-            <a href={account.link} target="_blank" rel="noreferrer">
-              Get a key
-            </a>
-          </>
-        ) : null}
-      </p>
       {keyed ? (
         <KeyForm
           label={`${account.label} ${account.method === "token" ? "token" : "API key"}`}
@@ -95,22 +113,25 @@ export function AccountRow({
           onSave={(key) => actions.onSaveKey(account, key)}
         />
       ) : null}
-      {!keyed && !login && alternates.length ? (
-        <p className="account-alternates muted">
-          Other way to sign in:{" "}
-          {alternates.map((method) => (
-            <button
-              key={method.id}
-              type="button"
-              className="text-button"
-              disabled={disabled}
-              onClick={() => actions.onSignIn(account, method.id)}
-            >
-              {method.label}
-            </button>
-          ))}
-        </p>
-      ) : null}
+      <div className="account-meta">
+        <AccountHelp help={account.help} link={account.link} />
+        {!keyed && !login && alternates.length ? (
+          <span className="account-alternates">
+            Or sign in with
+            {alternates.map((method) => (
+              <button
+                key={method.id}
+                type="button"
+                className="link-button"
+                disabled={disabled}
+                onClick={() => actions.onSignIn(account, method.id)}
+              >
+                {method.label}
+              </button>
+            ))}
+          </span>
+        ) : null}
+      </div>
       {login ? (
         <LoginPanel
           login={login}

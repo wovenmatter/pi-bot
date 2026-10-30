@@ -89,6 +89,17 @@ describe("Settings sections", () => {
     // Environment credentials can't be removed from here.
     expect(html).toContain("From OPENROUTER_API_KEY");
     expect(html).not.toContain('aria-label="Remove OpenRouter"');
+    // Short help stays inline; long provider instructions fold under "How it works".
+    expect(html).not.toContain("How it works");
+    const long = "Open the sign-in page on any device, approve, then paste the code it shows here.";
+    const folded = renderToStaticMarkup(
+      <AccountsList
+        accounts={[{ ...(accounts[0] as AccountStatus), help: `${long} ${long}` }]}
+        actions={actions}
+      />,
+    );
+    expect(folded).toContain("<summary>How it works</summary>");
+    expect(folded).toContain(long);
   });
 
   it("shows the sign-in link, device code and the open prompt", () => {
@@ -331,7 +342,7 @@ describe("Settings sections", () => {
       ],
     };
     const row = renderToStaticMarkup(<AccountsList accounts={[chatgpt]} actions={actions} />);
-    expect(row).toContain("Other way to sign in");
+    expect(row).toContain("Or sign in with");
     expect(row).toContain("Browser, then paste the redirect URL");
     expect(row).not.toContain(">Device code<");
 
