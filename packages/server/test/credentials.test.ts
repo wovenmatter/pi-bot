@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseConfig } from "../src/config.ts";
 import {
   EncryptedSqliteCredentialStore,
-  KeychainCredentialStore,
   loadOrCreateKeyFile,
   openCredentialStore,
 } from "../src/credentials/index.ts";
@@ -130,17 +129,13 @@ describe("credentials", () => {
     await expect(loadOrCreateKeyFile(keyFile)).rejects.toThrow(/chmod 600/);
   });
 
-  it("selects the backend per platform; the Keychain store is a stub", async () => {
+  it("uses encrypted SQLite on Linux by default", async () => {
     const config = parseConfig(
       `[models]\norchestrator = "openai/gpt-6-sol"\nbackground = "openai/gpt-6-luna"\n[storage]\ndata_dir = "${dir.path}"\n`,
     );
     const db = await openSharedDatabase(config.paths.database);
     try {
       expect((await openCredentialStore(config, db, "linux")).backend).toBe("encrypted-sqlite");
-      const mac = await openCredentialStore(config, db, "darwin");
-      expect(mac.backend).toBe("encrypted-sqlite");
-      expect(mac.note).toMatch(/stub/);
-      await expect(new KeychainCredentialStore().read("openai")).rejects.toThrow(/not implemented/);
     } finally {
       await db.close();
     }

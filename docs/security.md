@@ -19,8 +19,18 @@ conversation, change settings and accounts, and run tools. It relies on the netw
 
 - Stored in an encrypted SQLite table in the shared database, AES-256-GCM, with a key file
   (default `<data_dir>/credentials.key`, mode 0600). The database is 0600 and the data dir 0700.
-- `[credentials] backend = "auto"` would use the macOS Keychain on a Mac, but that store is a stub,
-  so it falls back to encrypted SQLite everywhere; `backend = "keychain"` fails at startup.
+- `[credentials] backend = "auto"` uses the macOS Keychain on a Mac when `/usr/bin/security` and a
+  default keychain work, else encrypted SQLite; Linux always uses encrypted SQLite.
+  `backend = "keychain"` fails at startup off macOS or without `security`.
+- Keychain layout: one generic password per provider (service `io.wovenmatter.pi-bot`, account =
+  provider id, value = the credential JSON) plus an `_index` item listing provider ids and types.
+  Items are per macOS user, so two instances under one user share them. Writes go through the
+  `security` CLI (no native modules): the value is sent as hex on stdin to `security -i`, so it
+  is not on any command line; values too long for one `security -i` line (over ~4000 characters
+  of hex, e.g. large OAuth tokens) go on argv instead, where other local processes can briefly
+  see them. Each write is read back to confirm it. This store is untested on a real Mac.
+- The first time the Keychain store opens with no `_index` item, credentials already in encrypted
+  SQLite are copied in (the SQLite rows stay). Later deletions are not copied back.
 - Secrets are write-only: the UI shows at most the last four characters, no response carries a
   secret, `pi-bot credentials` lists provider and type only, and `config.toml` holds no secrets.
 - Admin Bot never asks for secrets in chat; sign-ins and keys stay in Settings.
