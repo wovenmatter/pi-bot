@@ -809,9 +809,12 @@ input[type="file"] {
   min-height: 0;
   overflow: hidden;
 }
+/* Banners line up with the message column. */
 .conversation-main > .notice {
   flex: none;
-  margin: 8px 16px 0;
+  width: calc(100% - 64px);
+  max-width: 768px;
+  margin: 12px auto 0;
 }
 .thread-header {
   display: flex;
