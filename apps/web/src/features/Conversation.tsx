@@ -1,4 +1,11 @@
-import { ArrowDown, ArrowUp, CornerUpLeft, GitBranch, MessageSquareReply } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CornerUpLeft,
+  GitBranch,
+  MessageSquare,
+  MessageSquareReply,
+} from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
@@ -212,10 +219,13 @@ export function Conversation({
           {loading && state.entries.length === 0 ? (
             <Loading />
           ) : state.entries.length === 0 && state.pending.length === 0 && !state.running ? (
-            <Empty title={isThread ? "New thread" : `Talk to ${bot.name}`}>
+            <Empty
+              icon={isThread ? MessageSquareReply : MessageSquare}
+              title={isThread ? "New thread" : `Say hello to ${bot.name}`}
+            >
               {isThread
-                ? "This thread continues from the message you picked."
-                : "This is the bot's main conversation. Start a thread from any message."}
+                ? "It picks up from the message you chose."
+                : "This is its main conversation. Start a thread from any message."}
             </Empty>
           ) : (
             <>

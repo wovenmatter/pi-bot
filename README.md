@@ -402,7 +402,9 @@ subset of the Enterprise `apps/web/src/styles.css`, which mirrors the desktop ap
 same three themes (Green, Cognac, Dark), set as CSS variables on
 `html[data-theme]`. The selected theme is stored in localStorage under
 `wovenmatter.dashboard.theme`, the same key the desktop app uses. Pi Bot's own rules
-are at the end of the file.
+are at the end of the file; a few shared rules (sidebar actions and headings, input focus and
+hover, empty states, the conversation header) were refined in place for Pi Bot and no longer
+match Enterprise exactly.
 
 ## Not in milestone 1
 

@@ -1,7 +1,8 @@
 /*
  * Pi Bot web stylesheet: the subset of the WovenMatter Enterprise web stylesheet
- * (platform apps/web/src/styles.css) that Pi Bot uses, copied unchanged and filtered by
- * class (see the generator note in the README). Its tokens mirror the WovenMatter desktop app:
+ * (platform apps/web/src/styles.css) that Pi Bot uses, filtered by class (see the generator
+ * note in the README) and since refined in place for Pi Bot (rail actions and headings, input
+ * focus, empty states, conversation header). Its tokens mirror the WovenMatter desktop app:
  * app/App/Views/DashboardColors.swift (DashboardColors, DashboardPalette),
  * DashboardStyle.swift (DashboardTheme: green, cognac, dark) and DashboardDesign.swift
  * (DashboardMetrics). Pi Bot additions follow at the end. CSS pixels map 1:1 to points.
@@ -381,7 +382,21 @@ input:not([type="checkbox"], [type="radio"], [type="file"]):focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--ink) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+input:not([type="checkbox"], [type="radio"], [type="file"]),
+textarea,
+select {
+  transition:
+    border-color 0.12s ease-out,
+    box-shadow 0.12s ease-out,
+    background-color 0.12s ease-out;
+}
+input:not([type="checkbox"], [type="radio"], [type="file"], :disabled, :focus):hover,
+textarea:not(:disabled, :focus):hover,
+select:not(:disabled, :focus):hover {
+  background: color-mix(in srgb, var(--soft) 80%, transparent);
 }
 input[readonly] {
   color: var(--muted);
@@ -523,12 +538,22 @@ input[type="file"] {
 .empty h2 {
   margin: 0;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 15px;
 }
 .empty p {
-  max-width: 520px;
+  max-width: 420px;
   margin: 0 0 12px;
-  font-size: 12.5px;
+  font-size: 13px;
+}
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 10px;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--accent);
 }
 /* ---------- Shell and rails ---------- */
 .app-shell {
@@ -754,8 +779,8 @@ input[type="file"] {
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 1px;
-  padding: 0 8px 12px;
+  gap: 6px;
+  padding: 8px 8px 12px;
 }
 /* ---------- Pages ---------- */
 .main-content {
@@ -792,18 +817,18 @@ input[type="file"] {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 10px 0 16px;
+  gap: 10px;
+  height: 48px;
+  padding: 0 12px 0 20px;
   border-bottom: 1px solid var(--line);
 }
 .thread-header h2 {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -811,7 +836,8 @@ input[type="file"] {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
+  margin-left: auto;
 }
 /* DashboardConversation: 768 column, 32 side inset, 24 top. */
 .transcript {
@@ -1154,8 +1180,11 @@ input[type="file"] {
   line-height: 20px;
   resize: none;
 }
-.composer-area textarea:focus {
+.composer-area textarea:focus,
+.composer-area textarea:hover {
   border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .composer-area textarea:disabled {
   opacity: 1;
@@ -1765,11 +1794,6 @@ details.account-help > p {
 .settings-inline-form > input::placeholder {
   font-family: var(--sans);
 }
-.team-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 /* Settings → Profiles */
 .badge {
   display: inline-block;
@@ -1960,11 +1984,6 @@ details.account-help > p {
   align-items: center;
   gap: 8px;
   margin-top: 4px;
-}
-.model-group > summary {
-  padding: 6px 0;
-  font-size: 13px;
-  cursor: pointer;
 }
 .login-panel {
   display: grid;

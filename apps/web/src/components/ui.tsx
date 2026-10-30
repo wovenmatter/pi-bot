@@ -1,4 +1,4 @@
-import { CircleAlert, LoaderCircle } from "lucide-react";
+import { CircleAlert, LoaderCircle, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Icon } from "./Icon.tsx";
 
@@ -38,9 +38,22 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
   );
 }
 
-export function Empty({ title, children }: { title: string; children?: ReactNode }) {
+export function Empty({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: LucideIcon;
+  children?: ReactNode;
+}) {
   return (
     <div className="empty">
+      {icon ? (
+        <span className="empty-icon" aria-hidden="true">
+          <Icon icon={icon} size={20} />
+        </span>
+      ) : null}
       <h2>{title}</h2>
       {children ? <p>{children}</p> : null}
     </div>
