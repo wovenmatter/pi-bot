@@ -181,8 +181,9 @@ The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
   thread-title model plus title reasoning (`[models.titles]`, validated and written to
   `config.toml`); and the models each signed-in provider offers. The old `#/settings/models` tab
   folded in here and its links land on Profiles.
-- **Bots** — one row per bot with its profile and team (move, promote/demote, hand a team to a
-  member), then deleted bots and Restore.
+- **Bots** — an optional **Top bot** picker (None or any bot but Admin Bot), then one row per bot
+  with its profile and team (move, promote/demote, hand a team to a member), then deleted bots and
+  Restore. The top bot is listed right after Admin Bot with a small "Top bot" label.
 - **Search** — Exa (default), Brave and Firecrawl keys, and `[search] provider`.
 - **GitHub** — an SSH key for git over SSH (generate an ed25519 key server-side, or paste an
   unencrypted OpenSSH private key; only the public key and SHA256 fingerprint are shown back) and
@@ -264,10 +265,20 @@ built-in tools, and Pi Bot's tool calls execute in the container).
 - **Teams** are optional and one level: any non-Admin Bot can be a manager (managers have no
   manager). Move bots, promote/demote and hand a team to a member in Settings → Bots, by asking
   Admin Bot, or by telling a bot to start a team. Demoting or deleting a manager ungroups its team; a
-  restored manager comes back without one. The sidebar pins Admin Bot, then nests members under their
-  manager.
+  restored manager comes back without one. The sidebar pins Admin Bot, then the top bot (if any),
+  then nests members under their manager.
+- **Top bot** (optional, at most one) sits above every team: up to three levels (top bot → managers
+  → members), Admin Bot always apart and never the top bot. Pick one (or None) in Settings → Bots,
+  ask Admin Bot (`set_team` `make_top`/`clear_top`), or tell a bot to take or give up the role
+  (`my_team` `become_top`/`stop_top`). Setting a new top bot replaces the old one, which stays a
+  normal bot and keeps its team. Design choice: the top bot is never a member of a team (becoming
+  top takes it off one) but **may lead its own team**, which it keeps; handing that team to a member
+  leaves it top and ungrouped. Deleting the top bot clears the slot; a restored bot isn't top. Its
+  system prompt says it oversees every bot and team and lists them; other bots are told who it is.
+  Stored as `is_top` with a partial unique index (one row at most); older databases gain the column
+  on start with every bot kept.
 - WebSocket: `bots.create {name, managerId?}`, `bots.setManager`, `bots.setTeam`,
-  `bots.replaceManager`; the server pushes `{type: "bots.changed"}` when the list changes.
+  `bots.replaceManager`, `bots.setTop {botId | null}`; the server pushes `{type: "bots.changed"}` when the list changes.
 
 ### Model profiles
 

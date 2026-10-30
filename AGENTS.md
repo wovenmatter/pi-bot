@@ -44,6 +44,9 @@ the working agreement for every human or agent who changes this repository.
 - Exactly one Admin Bot (`kind = 'admin'`, auto-created): only it gets account/config tools; it is
   never on a team and can't be deleted or renamed. Teams are one level (`manager`, `manager_id`);
   rules live in `BotManager` (`BotRuleError`).
+- Optional top bot (`is_top`, unique partial index, `BotManager.setTop`, `bots.setTop`): at most
+  one, never Admin Bot, never a team member but may lead its own team; replacing it leaves the old
+  one a normal bot with its team; deleting it clears the slot.
 
 ## Model profiles
 
