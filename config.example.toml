@@ -94,7 +94,7 @@ backend = "none"
 # image = "pi-bot-env:latest"   # default: built from packages/server/docker on first use
 
 [credentials]
-# auto = encrypted SQLite (a macOS Keychain store exists only as a stub, so Macs fall back to it too).
-# "keychain" is not implemented yet and fails at startup.
+# auto = the macOS Keychain on a Mac (via /usr/bin/security), encrypted SQLite elsewhere.
+# "keychain" fails at startup off macOS. See docs/security.md#credentials.
 backend = "auto"
 # key_file = "~/.local/share/pi-bot/credentials.key"   # AES-256-GCM key, mode 0600

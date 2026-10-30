@@ -84,7 +84,7 @@ export type BotAgentOptions = {
   readonly compaction?: CompactionConfig;
   /** Fetch for provider requests (native compaction and generation); tests inject a fake. */
   readonly fetch?: FetchFunction;
-  /** Memory extraction before every compaction; a no-op stub by default. */
+  /** Runs before every compaction; a no-op by default (`MemoryExtractor` reads stored messages). */
   readonly onBeforeCompact?: BeforeCompactHook;
   /** The bot's extracted memory as prompt text (`memorySection`); undefined: none yet. */
   readonly memory?: () => Promise<string | undefined>;

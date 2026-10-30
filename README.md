@@ -109,6 +109,8 @@ from a throwaway instance with a faux "demo" provider and sample bots.
 
 - **macOS Keychain store on a real Mac.** It is implemented over the `security` CLI but only
   unit-tested with a fake; see [security](docs/security.md#credentials).
+- **Viewing or editing a bot's memory.** Extracted facts reach the bot's prompt, but the UI doesn't
+  show them and bots have no tool to change them.
 
 ## Credits and caveats
 
