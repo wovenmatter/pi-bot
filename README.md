@@ -114,7 +114,6 @@ from a throwaway instance with a faux "demo" provider and sample bots.
 - **Web search tool.** Exa, Brave and Firecrawl keys and `[search] provider` are stored, but no
   bot tool uses them yet.
 - **Stop/abort** of a running reply, in the UI or the protocol.
-- **Clearing a marked usage limit** when credentials change (it clears at the reset or cooldown).
 - **Purging deleted bots.** Deletion is soft; data stays in the database.
 
 ## Credits and caveats

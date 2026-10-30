@@ -1,11 +1,14 @@
 import { validateSqliteSchemaPrefix } from "@earendil-works/chord/sqlite";
 import type { SqliteDatabase, SqliteExecutor } from "@earendil-works/pi-durable/storage/sqlite";
+import type { LimitEntry } from "../limits.ts";
 
 /** Shared tables. Bot tables all start with `pibot_<32 hex>_`, so these can never collide. */
 export const BOTS_TABLE = "pibot_bots";
 export const THREADS_TABLE = "pibot_threads";
 /** Free-text notes, e.g. the user's plans and comfort spend (`account`), which Admin Bot reads. */
 export const NOTES_TABLE = "pibot_notes";
+/** Marked main-model usage limits (`ModelAvailability`), so they outlive a restart. */
+export const LIMITS_TABLE = "pibot_limits";
 
 export type BotRecord = {
   readonly id: string;
@@ -154,6 +157,10 @@ export class BotRegistry {
         text TEXT NOT NULL,
         updated_at TEXT NOT NULL
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS ${LIMITS_TABLE} (
+        key TEXT PRIMARY KEY,
+        entry TEXT NOT NULL
+      ) STRICT;
     `);
     // Older databases lack later columns: add each missing one (existing bots are plain bots).
     const columns = new Set(
@@ -288,6 +295,32 @@ export class BotRegistry {
       text,
       at,
     );
+  }
+
+  /** Stored usage limits; `entry` is whatever was saved (`ModelAvailability.load` checks it). */
+  async limits(): Promise<{ key: string; entry: unknown }[]> {
+    const rows = await this.#db.all<{ key: string; entry: string }>(
+      `SELECT key, entry FROM ${LIMITS_TABLE} ORDER BY key`,
+    );
+    return rows.map((row) => {
+      try {
+        return { key: row.key, entry: JSON.parse(row.entry) as unknown };
+      } catch {
+        return { key: row.key, entry: undefined };
+      }
+    });
+  }
+
+  async saveLimit(key: string, entry: LimitEntry): Promise<void> {
+    await this.#db.run(
+      `INSERT INTO ${LIMITS_TABLE} (key, entry) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET entry = excluded.entry`,
+      key,
+      JSON.stringify(entry),
+    );
+  }
+
+  async deleteLimit(key: string): Promise<void> {
+    await this.#db.run(`DELETE FROM ${LIMITS_TABLE} WHERE key = ?`, key);
   }
 
   /** Live bots only; soft-deleted bots are hidden. */

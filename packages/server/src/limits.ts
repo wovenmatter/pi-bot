@@ -213,15 +213,43 @@ export type LimitEntry = {
   readonly at: number;
 };
 
+/** Where marked limits outlive a restart (`pibot_limits`; `BotRegistry` implements it). */
+export type LimitStore = {
+  /** Entries as stored; `load()` checks each one. */
+  limits(): Promise<readonly { readonly key: string; readonly entry: unknown }[]>;
+  saveLimit(key: string, entry: LimitEntry): Promise<void>;
+  deleteLimit(key: string): Promise<void>;
+};
+
 export type AvailabilityOptions = {
   readonly now?: () => number;
   readonly cooldownMs?: number;
+  /** Persist marked limits; `load()` reads them back after a restart. */
+  readonly store?: LimitStore;
+  /** A store write failed (the in-memory state is still right). */
+  readonly onError?: (error: unknown) => void;
 };
 
+function isLimitEntry(value: unknown): value is LimitEntry {
+  const entry = value as Partial<LimitEntry> | null;
+  return (
+    typeof entry === "object" &&
+    entry !== null &&
+    typeof entry.model === "string" &&
+    typeof entry.provider === "string" &&
+    typeof entry.account === "string" &&
+    ["five_hour", "weekly", "usage", "credits"].includes(entry.kind as string) &&
+    typeof entry.retryAt === "number" &&
+    typeof entry.at === "number" &&
+    (entry.resetsAt === undefined || typeof entry.resetsAt === "number")
+  );
+}
+
 /**
- * Which main models are out, shared by every bot on the server (in memory: a restart tries every
- * model again). An entry ends at its reset, or after the cooldown when the reset is unknown; then
- * the model is tried again and a new limit marks it again.
+ * Which main models are out, shared by every bot on the server. With a store, marked limits are
+ * saved and `load()` restores the live ones after a restart. An entry ends at its reset, or after
+ * the cooldown when the reset is unknown; then the model is tried again and a new limit marks it
+ * again. New credentials for a provider clear its limits (`clear`).
  */
 export class ModelAvailability {
   readonly #entries = new Map<string, LimitEntry>();
@@ -229,10 +257,42 @@ export class ModelAvailability {
   readonly #listeners = new Set<() => void>();
   readonly #now: () => number;
   readonly #cooldownMs: number;
+  readonly #store: LimitStore | undefined;
+  readonly #onError: (error: unknown) => void;
+  /** Store writes, in order. */
+  #writes: Promise<void> = Promise.resolve();
 
   constructor(options: AvailabilityOptions = {}) {
     this.#now = options.now ?? Date.now;
     this.#cooldownMs = options.cooldownMs ?? LIMIT_COOLDOWN_MS;
+    this.#store = options.store;
+    this.#onError = options.onError ?? (() => {});
+  }
+
+  /**
+   * Restore the stored limits that are still live (expired ones are deleted). Run before any bot
+   * opens; returns the restored entries.
+   */
+  async load(): Promise<LimitEntry[]> {
+    if (!this.#store) return [];
+    const now = this.#now();
+    const restored: LimitEntry[] = [];
+    for (const { key, entry } of await this.#store.limits()) {
+      if (!isLimitEntry(entry) || entry.retryAt <= now) {
+        this.#write((store) => store.deleteLimit(key));
+        continue;
+      }
+      this.#install(key, entry, now);
+      restored.push(entry);
+    }
+    if (restored.length) this.#emit();
+    await this.flushed();
+    return restored;
+  }
+
+  /** Resolves once every store write so far has finished (tests, shutdown). */
+  flushed(): Promise<void> {
+    return this.#writes;
   }
 
   /** Mark `ref` (its whole provider account for `credits`) out until its reset or the cooldown. */
@@ -251,6 +311,13 @@ export class ModelAvailability {
       at: now,
     };
     const key = limit.kind === "credits" ? `${parsed.provider}/*` : entry.model;
+    this.#install(key, entry, now);
+    this.#write((store) => store.saveLimit(key, entry));
+    this.#emit();
+    return entry;
+  }
+
+  #install(key: string, entry: LimitEntry, now: number): void {
     this.#entries.set(key, entry);
     clearTimeout(this.#timers.get(key));
     const timer = setTimeout(
@@ -262,8 +329,12 @@ export class ModelAvailability {
     );
     timer.unref?.();
     this.#timers.set(key, timer);
-    this.#emit();
-    return entry;
+  }
+
+  #write(op: (store: LimitStore) => Promise<void>): void {
+    const store = this.#store;
+    if (!store) return;
+    this.#writes = this.#writes.then(() => op(store)).catch(this.#onError);
   }
 
   /** The live limit on `ref`, if any. */
@@ -275,6 +346,7 @@ export class ModelAvailability {
       if (!entry) continue;
       if (entry.retryAt > now) return entry;
       this.#entries.delete(key);
+      this.#write((store) => store.deleteLimit(key));
     }
     return undefined;
   }
@@ -291,6 +363,7 @@ export class ModelAvailability {
       this.#entries.delete(key);
       clearTimeout(this.#timers.get(key));
       this.#timers.delete(key);
+      this.#write((store) => store.deleteLimit(key));
       changed = true;
     }
     if (changed) this.#emit();
@@ -310,6 +383,7 @@ export class ModelAvailability {
 
   #expire(key: string): void {
     this.#entries.delete(key);
+    this.#write((store) => store.deleteLimit(key));
     this.#emit();
   }
 

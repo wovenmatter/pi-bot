@@ -20,6 +20,7 @@ import {
 } from "../src/limits.ts";
 import { ProfileStore } from "../src/profiles.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
+import { BotRegistry } from "../src/storage/registry.ts";
 import { tempDir } from "./helpers.ts";
 
 const ctx = BACKGROUND_CONTEXT;
@@ -181,6 +182,44 @@ describe("ModelAvailability", () => {
     availability.close();
   });
 
+  it("persists marked limits; a new instance restores the live ones and drops the rest", async () => {
+    const dir = await tempDir();
+    const db = await openSharedDatabase(join(dir.path, "db.sqlite"));
+    try {
+      const registry = new BotRegistry(db);
+      await registry.migrate();
+      let now = NOW;
+      const first = new ModelAvailability({ now: () => now, store: registry });
+      first.mark("openai-codex/gpt-6-sol", { kind: "weekly", resetsAt: NOW + 86_400_000 });
+      first.mark("openrouter/a/b", { kind: "credits" });
+      first.mark("faux/x", { kind: "usage" });
+      first.clear("faux");
+      await first.flushed();
+      first.close();
+      expect((await registry.limits()).map((row) => row.key)).toEqual([
+        "openai-codex/gpt-6-sol",
+        "openrouter/*",
+      ]);
+      await db.run("INSERT INTO pibot_limits (key, entry) VALUES ('broken', 'not json')");
+
+      // After the restart the credits cooldown (no reset given) is over; the weekly limit is not.
+      now = NOW + LIMIT_COOLDOWN_MS;
+      const second = new ModelAvailability({ now: () => now, store: registry });
+      expect((await second.load()).map((entry) => entry.model)).toEqual(["openai-codex/gpt-6-sol"]);
+      expect(second.limit("openai-codex/gpt-6-sol")).toMatchObject({
+        kind: "weekly",
+        resetsAt: NOW + 86_400_000,
+        account: "ChatGPT account",
+      });
+      expect(second.available("openrouter/c/d")).toBe(true);
+      expect((await registry.limits()).map((row) => row.key)).toEqual(["openai-codex/gpt-6-sol"]);
+      second.close();
+    } finally {
+      await db.close();
+      await dir.cleanup();
+    }
+  });
+
   it("observes HTTP error responses without consuming them", async () => {
     const seen: unknown[] = [];
     const fetch = observingFetch(
@@ -230,7 +269,7 @@ describe("main-model fallbacks", () => {
     return fauxAssistantMessage([fauxText(`reply from ${model.id}`)]);
   };
 
-  const open = async (fallbacks: string[], cooldownMs?: number) => {
+  const open = async (fallbacks: string[], cooldownMs?: number, persist = false) => {
     const config = parseConfig(`
 [profiles.default]
 name = "Default"
@@ -238,10 +277,17 @@ main = "faux/faux-1"
 ${fallbacks.length ? `fallbacks = [${fallbacks.map((ref) => `"${ref}"`).join(", ")}]` : ""}
 `);
     const profiles = new ProfileStore(config.modelProfiles);
-    availability = new ModelAvailability(cooldownMs ? { cooldownMs } : {});
     const models = createModels();
     models.setProvider(faux.provider);
     db = await openSharedDatabase(join(dir.path, "db.sqlite"));
+    // As the app does: stored limits are restored before any bot opens.
+    const registry = new BotRegistry(db);
+    await registry.migrate();
+    availability = new ModelAvailability({
+      ...(cooldownMs ? { cooldownMs } : {}),
+      ...(persist ? { store: registry } : {}),
+    });
+    await availability.load();
     manager = await BotManager.open({
       db,
       profiles,
@@ -348,4 +394,40 @@ ${fallbacks.length ? `fallbacks = [${fallbacks.map((ref) => `"${ref}"`).join(", 
     await turn(bot.id, "hi");
     expect(calls).toEqual(["faux-1"]);
   }, 30_000);
+
+  it("keeps a marked limit across a restart; clearing the account's limits returns to main", async () => {
+    const m = await open(["faux/faux-2"], undefined, true);
+    const bot = await m.create("Worker");
+    const resetsAt = Date.now() + 3_600_000;
+    availability.mark("faux/faux-1", { kind: "weekly", resetsAt });
+    await availability.flushed();
+    await until(async () => (await mainModel(bot.id))?.modelId === "faux-2");
+
+    // Restart: a new manager and availability on the same database.
+    await manager?.close();
+    availability.close();
+    await db?.close();
+    const again = await open(["faux/faux-2"], undefined, true);
+    expect(availability.limit("faux/faux-1")).toMatchObject({ kind: "weekly", resetsAt });
+    expect(await mainModel(bot.id)).toEqual({ provider: "faux", modelId: "faux-2" });
+    expect(again.modelStatus(bot.id)).toMatchObject({ kind: "fallback", active: "faux/faux-2" });
+    calls.length = 0;
+    await turn(bot.id, "still out?");
+    expect(calls).toEqual(["faux-2"]);
+
+    // New credentials for the account (Settings calls `clear(provider)`): back on main.
+    availability.clear("faux");
+    await until(async () => (await mainModel(bot.id))?.modelId === "faux-1");
+    expect(again.modelStatus(bot.id)).toMatchObject({ kind: "returned", active: "faux/faux-1" });
+    await availability.flushed();
+    expect(await new BotRegistry(db as NonNullable<typeof db>).limits()).toEqual([]);
+  }, 30_000);
 });
+
+async function until(check: () => Promise<boolean>): Promise<void> {
+  for (let tries = 0; tries < 200; tries++) {
+    if (await check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("timed out");
+}

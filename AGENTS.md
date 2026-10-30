@@ -70,7 +70,8 @@ the working agreement for every human or agent who changes this repository.
   `observeLimits` wraps the models runtime with an observing fetch and attaches the HTTP evidence as
   `message.pibotLimit`; the Claude provider sets it from SDK rate-limit events. The agent's
   `afterResponse` hook (`limitHook`) calls `BotManager.reportLimit`, which marks `ModelAvailability`
-  (in memory, key `provider/model`, `provider/*` for credits) and re-applies every bot's
+  (key `provider/model`, `provider/*` for credits; persisted in `pibot_limits`, restored by
+  `load()` before bots open; `SettingsService` credential writes call `clear(provider)`) and re-applies every bot's
   `effectiveModel(profile)`; if this conversation switched, the error text is rewritten to a
   retryable one so the turn continues on the fallback. Expiry re-applies (auto-return). Status
   (`fallback` / `paused` / `returned`, 10 min) is `BotSummary.modelStatus`, pushed via `bots.changed`.

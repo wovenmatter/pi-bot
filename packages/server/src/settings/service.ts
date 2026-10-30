@@ -182,6 +182,11 @@ export type SettingsOptions = {
   readonly config: PiBotConfig;
   /** The SSH key or git identity changed (bot containers rewrite theirs). */
   readonly onGitChanged?: () => void;
+  /**
+   * A provider's credentials were written here: a key set or removed, or a sign-in completed
+   * (`provider` is the credential-store / pi-ai provider id). Clears its marked usage limits.
+   */
+  readonly onCredentialsChanged?: (provider: string) => void;
 };
 
 /**
@@ -197,9 +202,11 @@ export class SettingsService {
   #configChanged = false;
 
   readonly #onGitChanged: (() => void) | undefined;
+  readonly #onCredentialsChanged: ((provider: string) => void) | undefined;
 
   constructor(options: SettingsOptions) {
     this.#onGitChanged = options.onGitChanged;
+    this.#onCredentialsChanged = options.onCredentialsChanged;
     this.#credentials = options.credentials;
     this.#models = options.models;
     this.#config = options.config;
@@ -301,6 +308,7 @@ export class SettingsService {
       throw new SettingsError(`expected a token starting with ${spec.prefix}`);
     }
     await this.#credentials.modify(spec.provider, async () => ({ type: "api_key", key }));
+    this.#onCredentialsChanged?.(spec.provider);
   }
 
   async remove(accountId: string): Promise<void> {
@@ -311,6 +319,7 @@ export class SettingsService {
     // xAI's sign-in and key share a slot: only remove what this entry owns.
     if (current && (current.type === wantType || spec.anyCredential)) {
       await this.#credentials.delete(spec.provider);
+      this.#onCredentialsChanged?.(spec.provider);
     }
   }
 
@@ -378,7 +387,10 @@ export class SettingsService {
         { agentName: "pi-bot" },
       )
       .then(
-        () => this.#finish(session, { kind: "done" }),
+        () => {
+          this.#onCredentialsChanged?.(spec.provider);
+          this.#finish(session, { kind: "done" });
+        },
         (error: unknown) =>
           this.#finish(session, {
             kind: "error",

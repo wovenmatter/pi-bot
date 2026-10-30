@@ -331,7 +331,24 @@ describe("settings over the websocket", () => {
     >;
   };
 
+  it("clears a provider's marked usage limits when its key is set or removed", async () => {
+    const hour = { kind: "weekly", resetsAt: Date.now() + 3_600_000 } as const;
+    app.availability.mark("openai/gpt-x", hour);
+    app.availability.mark("openrouter/a/b", { kind: "credits" });
+    await client.request("credentials.set", { accountId: "openai", key: OPENAI_KEY });
+    expect(app.availability.available("openai/gpt-x")).toBe(true);
+    // Other accounts keep theirs.
+    expect(app.availability.available("openrouter/a/b")).toBe(false);
+    app.availability.mark("openai/gpt-x", hour);
+    await client.request("credentials.remove", { accountId: "openai" });
+    expect(app.availability.available("openai/gpt-x")).toBe(true);
+    await app.availability.flushed();
+    expect((await app.manager.registry.limits()).map((row) => row.key)).toEqual(["openrouter/*"]);
+  });
+
   it("runs a remote OAuth sign-in: chosen method, auth URL, pasted redirect", async () => {
+    // A completed sign-in ends the account's marked limits.
+    app.availability.mark("openai-codex/gpt-fake", { kind: "five_hour" });
     await expect(
       client.request("login.start", { accountId: "openai-codex", method: "nope" }),
     ).rejects.toThrow(/unknown sign-in method/);
@@ -343,12 +360,14 @@ describe("settings over the websocket", () => {
     // The method was picked up front: the provider's picker never reaches the browser.
     const paste = await promptAt(loginId, 0);
     expect(paste.prompt.type).toBe("manual_code");
+    expect(app.availability.available("openai-codex/gpt-fake")).toBe(false);
     await client.request("login.respond", {
       loginId,
       promptId: paste.promptId,
       value: "http://localhost:1455/auth/callback?code=good&state=s",
     });
     await waitLogin(loginId, "done");
+    expect(app.availability.available("openai-codex/gpt-fake")).toBe(true);
     expect(await credentials.read("openai-codex")).toMatchObject({ type: "oauth", access: ACCESS });
     expect((await account("openai-codex"))?.detail).toMatch(/^Signed in · token valid until/);
     expect(JSON.stringify(client.messages)).not.toContain(ACCESS);

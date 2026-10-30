@@ -67,8 +67,14 @@ bot whose chain includes that model moves to the first available fallback, and s
 (with a short "back on …" notice) when the main model resets. With no fallback left the bot
 pauses on its main model. The chat shows a banner with what was hit, the account and model, the
 reset time in your local zone (or "reset time not reported") and the fallback in use; the sidebar
-shows a dot. The state is in memory, so a restart forgets it. Pool models never switch
-automatically. Changing credentials doesn't clear a marked limit yet.
+shows a dot. Pool models never switch automatically.
+
+Marked limits are saved in SQLite (`pibot_limits`) and restored on start; any whose reset or
+cooldown has passed is dropped. Writing a provider's credentials through the server (Settings or
+Admin Bot: a key set or removed, or a sign-in to ChatGPT, Claude or Grok that completes) clears
+that provider's marked limits, and its bots switch back to their main model. Credentials changed
+by the `pi-bot` CLI in another process don't clear them; the limit then ends at its reset or
+cooldown, or on the next credential change through the server.
 
 ## Compaction
 

@@ -13,6 +13,7 @@ import { ProfileStore, persistProfiles } from "./profiles.ts";
 import { type PiBotServer, type RestartAccepted, startServer } from "./server.ts";
 import { SettingsService } from "./settings/service.ts";
 import { openSharedDatabase } from "./storage/database.ts";
+import { BotRegistry } from "./storage/registry.ts";
 import { TitleGenerator } from "./titles.ts";
 import type { BotPlatform } from "./tools.ts";
 
@@ -21,6 +22,8 @@ export type PiBotApp = {
   readonly credentials: OpenedCredentialStore;
   readonly models: Models;
   readonly manager: BotManager;
+  /** Marked main-model usage limits (persisted in `pibot_limits`). */
+  readonly availability: ModelAvailability;
   readonly server: PiBotServer;
   readonly env?: BotEnvironmentAdapter;
   /** Startup environment reconcile (in the background; never rejects). */
@@ -126,7 +129,18 @@ export async function startPiBot(
         (error: unknown) => log(`config: could not write profiles: ${String(error)}`),
       );
     }
-    const availability = new ModelAvailability();
+    // Marked usage limits outlive a restart: restore the live ones before any bot opens.
+    const registry = new BotRegistry(db);
+    await registry.migrate();
+    const availability = new ModelAvailability({
+      store: registry,
+      onError: (error) => log(`usage limits: could not save: ${String(error)}`),
+    });
+    for (const entry of await availability.load()) {
+      log(
+        `usage limit (from before the restart): ${entry.model} (${entry.account}): ${entry.kind}, retry ${new Date(entry.retryAt).toISOString()}`,
+      );
+    }
     const opened = await BotManager.open({
       db,
       ensureAdmin: true,
@@ -190,6 +204,8 @@ export async function startPiBot(
       credentials: credentials.store,
       models: options.settingsModels?.(credentials.store) ?? models,
       config,
+      // New credentials for a provider account end its marked limits; bots go back to main.
+      onCredentialsChanged: (provider) => availability.clear(provider),
       ...(env?.gitChanged
         ? {
             onGitChanged: () =>
@@ -215,6 +231,7 @@ export async function startPiBot(
       credentials,
       models,
       manager: opened,
+      availability,
       server,
       ...(env ? { env } : {}),
       reconciled,
@@ -222,6 +239,7 @@ export async function startPiBot(
         await server?.close();
         await opened.close();
         availability.close();
+        await availability.flushed();
         env?.close?.();
         await db.close();
       },
