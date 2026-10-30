@@ -1759,8 +1759,6 @@ details.account-api-key {
 }
 details.account-api-key > .settings-list {
   margin: 6px 0 2px;
-  padding-left: 10px;
-  border-left: 2px solid var(--line);
 }
 /* Inline text actions: links that are buttons (other sign-in methods). */
 .link-button {
