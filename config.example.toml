@@ -19,7 +19,7 @@ data_dir = "~/.local/share/pi-bot"
 default_profile = "default"
 
 # Thread titles: generated once from a thread's first message with Woven Matter's title prompt.
-# Metadata only (thread listing and search); the UI shows no thread names and threads can't be renamed.
+# Shown read-only in the thread list and used for search; threads can't be renamed.
 [models.titles]
 model = "openai-codex/gpt-6-luna"
 reasoning = "high"                  # minimal | low | medium | high | xhigh

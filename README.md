@@ -119,10 +119,12 @@ Limits:
 
 ## Thread titles
 
-Threads have no visible names: the web client shows each thread as a reply link under the
-message it forked from, and nothing renames a thread (`thread.fork` takes no title). A title
-is still generated as metadata for thread listing and search (`threads.list` with `query`),
-the way Woven Matter titles conversations (`CodexConversationTitleGenerator.swift`):
+Threads are never named or renamed by hand (`thread.fork` takes no title). Their generated
+title is shown read-only: the web client lists a bot's threads by title in the sidebar, uses it
+as the thread header and on the reply link under the message it forked from ("Untitled thread"
+until one arrives; the list refetches when a reply ends). The title is also used for thread
+search (`threads.list` with `query`). It is generated the way Woven Matter titles
+conversations (`CodexConversationTitleGenerator.swift`):
 
 - On the first user message of an untitled thread, the server sends Woven's title prompt
   (verbatim) plus that message to `[models.titles]` (default `openai-codex/gpt-6-luna`,

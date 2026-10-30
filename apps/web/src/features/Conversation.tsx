@@ -12,6 +12,7 @@ import {
   type ConversationState,
   emptyConversation,
   mergeEntries,
+  threadLabel,
 } from "./conversation-state.ts";
 
 export function Conversation({
@@ -22,6 +23,7 @@ export function Conversation({
   threads,
   onMainConversation,
   onForked,
+  onRunEnd,
 }: {
   client: PiBotClient;
   connected: boolean;
@@ -31,7 +33,11 @@ export function Conversation({
   threads: ThreadSummary[];
   onMainConversation: (id: number) => void;
   onForked: (thread: ThreadSummary) => void;
+  /** A reply finished: thread titles may have been generated meanwhile. */
+  onRunEnd?: () => void;
 }) {
+  const runEnd = useRef(onRunEnd);
+  runEnd.current = onRunEnd;
   const [state, setState] = useState<ConversationState>(emptyConversation);
   const [viewed, setViewed] = useState<number | undefined>(undefined);
   const [mainId, setMainId] = useState<number | undefined>(undefined);
@@ -59,6 +65,7 @@ export function Conversation({
     const stop = client.onEvent((message) => {
       if (cancelled || message.botId !== bot.id || message.conversationId !== opened) return;
       if (message.event.kind === "error") setError(message.event.message);
+      if (message.event.kind === "run" && message.event.state === "end") runEnd.current?.();
       setState((current) => applyStreamEvent(current, message.event));
     });
     client
@@ -147,7 +154,8 @@ export function Conversation({
   const isThread = viewed !== undefined && mainId !== undefined && viewed !== mainId;
   const thread = threads.find((item) => item.conversationId === viewed);
   const fromThread = thread !== undefined && thread.parentConversationId !== mainId;
-  // Threads hang off the message they were forked from, like replies; they have no names.
+  // Threads hang off the message they were forked from, like replies, under their generated
+  // (read-only) titles.
   const repliesTo = (entry: DisplayEntry) =>
     threads.filter(
       (item) =>
@@ -167,14 +175,14 @@ export function Conversation({
     <div className="conversation-layout">
       <div className="conversation-main">
         <header className="thread-header">
-          <h2>{isThread ? "Thread" : bot.name}</h2>
+          <h2 className={isThread && !thread?.title ? "untitled" : undefined}>
+            {isThread ? threadLabel(thread) : bot.name}
+          </h2>
           {isThread ? (
-            <span className="thread-subtitle">
-              {fromThread ? "reply in a thread" : `reply in ${bot.name}`}
-            </span>
+            <span className="thread-subtitle">{fromThread ? "in a thread" : `in ${bot.name}`}</span>
           ) : null}
           <div className="thread-header-actions">
-            <span className="thread-subtitle" title="Model profile">
+            <span className="profile-chip" title="Profile">
               {bot.profileName}
             </span>
             {isThread ? (
@@ -329,14 +337,14 @@ function Message({
         {entry.error ? <small className="danger">{entry.error}</small> : null}
         {replies.length > 0 ? (
           <div className="thread-replies">
-            {replies.map((reply, index) => (
+            {replies.map((reply) => (
               <a
                 key={reply.conversationId}
-                className="thread-reply-link"
+                className={`thread-reply-link${reply.title ? "" : " untitled"}`}
                 href={routeHref({ botId, conversationId: reply.conversationId })}
               >
                 <Icon icon={MessageSquareReply} size={12} weight="control" />
-                <span>{replies.length === 1 ? "Thread" : `Thread ${index + 1}`}</span>
+                <span>{threadLabel(reply)}</span>
               </a>
             ))}
           </div>

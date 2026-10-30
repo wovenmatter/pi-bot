@@ -86,6 +86,8 @@ export type ThreadSummary = {
   parentConversationId: number;
   forkedAt: number;
   createdAt: string;
+  /** Generated from the thread's first message; absent until then. Read-only: never renamed. */
+  title?: string;
 };
 
 export type ConversationSnapshot = {

@@ -84,6 +84,14 @@ export function App() {
     if (connection === "open" && route.botId) void refreshThreads(route.botId);
   }, [connection, route.botId, refreshThreads]);
 
+  // Opening a thread picks up titles generated since the list was loaded.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch on each thread switch
+  useEffect(() => {
+    if (connection === "open" && route.botId && route.conversationId !== undefined) {
+      void refreshThreads(route.botId);
+    }
+  }, [route.conversationId]);
+
   async function createBot(name: string) {
     setError(undefined);
     try {
@@ -130,6 +138,7 @@ export function App() {
           botId={route.botId}
           conversationId={route.conversationId}
           mainConversationId={mainConversationId}
+          threads={threads}
           settings={route.settings}
           connection={connection}
           theme={theme}
@@ -171,6 +180,7 @@ export function App() {
               threads={threads}
               onMainConversation={setMainConversationId}
               onForked={onForked}
+              onRunEnd={() => void refreshThreads(bot.id)}
             />
           ) : bots ? (
             <Empty title="Create a bot">

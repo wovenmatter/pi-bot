@@ -1,9 +1,20 @@
-import { Bot, MessageSquare, Plus, Settings, ShieldCheck, Trash2, Users, X } from "lucide-react";
+import {
+  Bot,
+  MessageSquare,
+  MessageSquareReply,
+  Plus,
+  Settings,
+  ShieldCheck,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { type FormEvent, useState } from "react";
 import type { ConnectionState } from "../api.ts";
 import { Brand } from "../components/Brand.tsx";
 import { Icon } from "../components/Icon.tsx";
-import type { BotSummary } from "../protocol.ts";
+import { threadLabel } from "../features/conversation-state.ts";
+import type { BotSummary, ThreadSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
 import { THEMES, type Theme } from "../theme.ts";
 import { groupBots } from "./bot-groups.ts";
@@ -13,6 +24,7 @@ export function Sidebar({
   botId,
   conversationId,
   mainConversationId,
+  threads = [],
   settings,
   connection,
   theme,
@@ -24,6 +36,8 @@ export function Sidebar({
   botId?: string;
   conversationId?: number;
   mainConversationId?: number;
+  /** The selected bot's threads, newest first; listed by their generated titles. */
+  threads?: readonly ThreadSummary[];
   settings?: boolean;
   connection: ConnectionState;
   theme: Theme;
@@ -169,6 +183,21 @@ export function Sidebar({
                 <Icon icon={MessageSquare} />
                 <span className="rail-title">Main</span>
               </a>
+              {threads.map((thread) => {
+                const active = thread.conversationId === conversationId;
+                return (
+                  <a
+                    key={thread.conversationId}
+                    href={routeHref({ botId: selected.id, conversationId: thread.conversationId })}
+                    className={`nav-link thread-link${active ? " active" : ""}${thread.title ? "" : " untitled"}`}
+                    aria-current={active ? "page" : undefined}
+                    title={threadLabel(thread)}
+                  >
+                    <Icon icon={MessageSquareReply} />
+                    <span className="rail-title">{threadLabel(thread)}</span>
+                  </a>
+                );
+              })}
             </div>
           </>
         ) : null}

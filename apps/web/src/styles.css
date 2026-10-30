@@ -601,12 +601,15 @@ input[type="file"] {
 .sidebar .icon-button {
   color: var(--ink);
 }
+/* The bot and thread list scrolls; Settings and the theme switch stay pinned at the bottom. */
 .sidebar > nav {
   display: flex;
-  flex: none;
+  flex: 1;
   flex-direction: column;
   gap: 1px;
-  padding: 0 8px;
+  min-height: 0;
+  padding: 0 8px 8px;
+  overflow-y: auto;
 }
 /* DashboardRailRow: 28 high, 12 inset, 13 regular, 13-in-15 glyph, 8 radius. */
 .nav-link {
@@ -887,7 +890,7 @@ input[type="file"] {
 .response-actions small {
   display: inline;
 }
-/* Threads hang off the message they fork from, as replies (no thread names). */
+/* Threads hang off the message they fork from, as replies under their generated titles. */
 .thread-replies {
   display: flex;
   flex-wrap: wrap;
@@ -897,14 +900,27 @@ input[type="file"] {
 .thread-reply-link {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  padding: 0 8px;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: var(--segment-radius);
   color: var(--muted);
   font-size: 12px;
   text-decoration: none;
+  transition:
+    background-color 0.12s ease-out,
+    color 0.12s ease-out;
+}
+.thread-reply-link > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-reply-link > svg {
+  flex: none;
 }
 .thread-reply-link:hover {
   background: var(--whisper);
@@ -1299,6 +1315,18 @@ input[type="file"] {
 .nav-link.child {
   padding-left: 24px;
 }
+.nav-link.untitled > span,
+.thread-header h2.untitled,
+.thread-reply-link.untitled > span {
+  color: var(--muted);
+  font-style: italic;
+}
+.nav-link.thread-link > svg {
+  color: var(--muted);
+}
+.nav-link.thread-link.active > svg {
+  color: var(--ink);
+}
 .sidebar-create {
   display: flex;
   gap: 6px;
@@ -1328,6 +1356,18 @@ input[type="file"] {
 .thread-subtitle {
   color: var(--muted);
   font-size: 12px;
+  white-space: nowrap;
+}
+/* The bot's profile, as a quiet chip in the conversation header. */
+.profile-chip {
+  max-width: 180px;
+  padding: 2px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--whisper);
+  color: var(--muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 /* Inherited history in a thread reads as context, not as the thread's own messages. */

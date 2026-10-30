@@ -1,4 +1,8 @@
-import type { DisplayEntry, StreamEvent } from "../protocol.ts";
+import type { DisplayEntry, StreamEvent, ThreadSummary } from "../protocol.ts";
+
+/** A thread's read-only name: its generated title, else a placeholder until one arrives. */
+export const threadLabel = (thread: ThreadSummary | undefined): string =>
+  thread?.title || "Untitled thread";
 
 export type PendingMessage = { key: number; text: string };
 

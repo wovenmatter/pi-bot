@@ -70,6 +70,37 @@ describe("bot groups", () => {
     expect(html).toContain("Delete Lead");
     expect(html).toContain("rail-member");
   });
+
+  it("lists the selected bot's threads by their generated titles, read-only", () => {
+    const html = renderToStaticMarkup(
+      <Sidebar
+        bots={bots}
+        botId="lead"
+        conversationId={7}
+        mainConversationId={1}
+        threads={[
+          {
+            conversationId: 7,
+            parentConversationId: 1,
+            forkedAt: 3,
+            createdAt: "",
+            title: "Q4 plan",
+          },
+          { conversationId: 8, parentConversationId: 1, forkedAt: 4, createdAt: "" },
+        ]}
+        settings={false}
+        connection="open"
+        theme="green"
+        onTheme={noop}
+        onCreate={async () => {}}
+        onDelete={noop}
+      />,
+    );
+    expect(html).toMatch(/href="#\/lead\/7"[^>]*aria-current="page"/);
+    expect(html).toContain(">Q4 plan<");
+    expect(html).toContain(">Untitled thread<");
+    expect(html).not.toMatch(/rename/i);
+  });
 });
 
 describe("teams panel", () => {
