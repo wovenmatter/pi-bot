@@ -113,7 +113,8 @@ type ContainerState = "missing" | "running" | "stopped";
  * Chromium, run as the non-root `bot` user (passwordless sudo) with the bot's own named volume at
  * /workspace. Nothing from the host is mounted, there is no Docker socket, no resource limits and
  * full network. Created on first use (`--restart unless-stopped`), stopped on soft delete (volume
- * kept), started again on restore, and reconciled at server startup. Every tool call runs in the
+ * kept), started again on restore, removed with its volume only on the user's purge, and reconciled at
+ * server startup. Every tool call runs in the
  * container through the environment agent; model and search credentials never enter it.
  */
 export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
@@ -169,9 +170,11 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
     const previous = this.#locks.get(botId) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(run);
     this.#locks.set(botId, next);
-    void next.finally(() => {
+    // Not `finally`: that copy would re-reject with no handler; the caller gets `next` itself.
+    const release = () => {
       if (this.#locks.get(botId) === next) this.#locks.delete(botId);
-    });
+    };
+    next.then(release, release);
     return next;
   }
 
@@ -281,6 +284,32 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
       if (result.code !== 0 && !/no such container/i.test(result.stderr)) {
         throw new Error(`docker stop container: ${result.stderr.trim()}`);
       }
+    });
+  }
+
+  /**
+   * Purge (user-only, for an already soft-deleted bot): remove its container and its workspace
+   * volume. Either one already missing is fine; Docker unreachable or any other failure throws.
+   */
+  purge(botId: string): Promise<void> {
+    this.#connections.get(botId)?.close();
+    this.#connections.delete(botId);
+    return this.#locked(botId, async () => {
+      this.#ready.delete(botId);
+      const container = containerName(botId);
+      const volume = volumeName(botId);
+      const remove = async (args: string[], missing: RegExp, what: string) => {
+        const result = await this.#docker.run(args).catch((error: unknown) => {
+          throw new Error(`docker remove ${what}: ${(error as Error).message}`);
+        });
+        if (result.code !== 0 && !missing.test(result.stderr)) {
+          throw new Error(`docker remove ${what}: ${result.stderr.trim() || "failed"}`);
+        }
+      };
+      // The container first: a volume in use cannot be removed.
+      await remove(["rm", "-f", container], /no such container/i, `container ${container}`);
+      await remove(["volume", "rm", volume], /no such volume/i, `volume ${volume}`);
+      this.#log(`bot ${botId}: removed container ${container} and volume ${volume}`);
     });
   }
 

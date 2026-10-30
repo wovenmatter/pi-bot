@@ -26,7 +26,8 @@ under his direction.
   next fallback, and it switches back when the limit resets. Reset times are never guessed.
 - **Threads with auto-compaction.** Every bot has one long-lived main channel; threads fork off
   any message and inherit its context. Long contexts are compacted automatically, natively
-  where the provider supports it. Nothing is ever deleted from the database.
+  where the provider supports it. Nothing is deleted from the database unless you permanently
+  delete a deleted bot.
 - **Per-bot Docker environments.** Optionally, each bot gets its own container with a
   persistent workspace, where its bash/read/write/edit tools run.
 - **Subscription sign-ins and API keys.** Claude, ChatGPT and Grok subscriptions, plus API keys
@@ -112,7 +113,6 @@ from a throwaway instance with a faux "demo" provider and sample bots.
   pre-compaction extraction hook is a no-op.
 - **Background pool work.** The pool's `background = true` flag is stored but no background job
   uses it yet.
-- **Purging deleted bots.** Deletion is soft; data stays in the database.
 
 ## Credits and caveats
 

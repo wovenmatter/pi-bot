@@ -139,6 +139,7 @@ type Container = { running: boolean; image: string; args: string[] };
 /** A fake `docker` CLI: containers in memory, `exec -i … agent.mjs` spawns the real agent locally. */
 function fakeDocker(options: { imageExists?: boolean } = {}) {
   const containers = new Map<string, Container>();
+  const volumes = new Set<string>();
   const calls: { args: string[]; input?: string }[] = [];
   const spawns: string[][] = [];
   let images = new Set<string>(options.imageExists === false ? [] : ["*"]);
@@ -168,6 +169,7 @@ function fakeDocker(options: { imageExists?: boolean } = {}) {
         case "run": {
           const name = rest[rest.indexOf("--name") + 1] ?? "";
           containers.set(name, { running: true, image: rest.at(-1) ?? "", args: [...rest] });
+          volumes.add(`${name}-workspace`);
           return ok("id\n");
         }
         case "start":
@@ -187,6 +189,20 @@ function fakeDocker(options: { imageExists?: boolean } = {}) {
           );
         case "exec":
           return ok();
+        case "rm": {
+          const name = rest.at(-1) ?? "";
+          if (!containers.delete(name)) {
+            return { code: 1, stdout: "", stderr: `Error: No such container: ${name}` };
+          }
+          return ok(`${name}\n`);
+        }
+        case "volume": {
+          const name = rest.at(-1) ?? "";
+          if (!volumes.delete(name)) {
+            return { code: 1, stdout: "", stderr: `Error: get ${name}: no such volume` };
+          }
+          return ok(`${name}\n`);
+        }
         default:
           return { code: 1, stdout: "", stderr: `unexpected ${command}` };
       }
@@ -196,7 +212,7 @@ function fakeDocker(options: { imageExists?: boolean } = {}) {
       return localAgent();
     },
   };
-  return { docker, containers, calls, spawns };
+  return { docker, containers, volumes, calls, spawns };
 }
 
 const BOT_A = "11111111-1111-4111-8111-111111111111";
@@ -302,6 +318,48 @@ describe("DockerEnvironmentAdapter", () => {
     expect(fake.containers.get(containerName(BOT_A))?.running).toBe(true);
     expect(fake.containers.get(containerName(BOT_B))?.running).toBe(false);
     fresh.close();
+  });
+
+  it("removes only the purged bot's container and volume; missing ones are fine", async () => {
+    const fake = fakeDocker();
+    adapter = new DockerEnvironmentAdapter({ docker: fake.docker });
+    await adapter.ensure(BOT_A);
+    await adapter.ensure(BOT_B);
+    await adapter.dispose(BOT_A);
+    fake.calls.length = 0;
+
+    await adapter.purge(BOT_A);
+    expect(fake.calls.map((call) => call.args)).toEqual([
+      ["rm", "-f", `pi-bot-${BOT_A}`],
+      ["volume", "rm", `pi-bot-${BOT_A}-workspace`],
+    ]);
+    expect(fake.containers.has(containerName(BOT_A))).toBe(false);
+    expect(fake.volumes.has(volumeName(BOT_A))).toBe(false);
+    expect(fake.containers.get(containerName(BOT_B))?.running).toBe(true);
+    expect(fake.volumes.has(volumeName(BOT_B))).toBe(true);
+
+    // Already gone: still fine.
+    await expect(adapter.purge(BOT_A)).resolves.toBeUndefined();
+  });
+
+  it("fails a purge clearly when Docker is unavailable", async () => {
+    const down: DockerCli = {
+      run: async () => ({ code: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" }),
+      spawn: () => localAgent(),
+    };
+    adapter = new DockerEnvironmentAdapter({ docker: down });
+    await expect(adapter.purge(BOT_A)).rejects.toThrow(
+      `docker remove container pi-bot-${BOT_A}: Cannot connect to the Docker daemon`,
+    );
+    const missing: DockerCli = {
+      run: async () => {
+        throw new Error("spawn docker ENOENT");
+      },
+      spawn: () => localAgent(),
+    };
+    const other = new DockerEnvironmentAdapter({ docker: missing });
+    await expect(other.purge(BOT_A)).rejects.toThrow(/spawn docker ENOENT/);
+    other.close();
   });
 
   it("rewrites git in running containers when Settings changes it", async () => {

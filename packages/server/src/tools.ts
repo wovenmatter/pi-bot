@@ -72,9 +72,26 @@ export class MessageLimiter {
     this.#sent.set(key, recent);
     return true;
   }
+
+  /** Drop every pair a purged bot was part of. */
+  forget(botId: string): void {
+    for (const key of [...this.#sent.keys()]) {
+      const [from, to] = key.split(">");
+      if (from === botId || to === botId) this.#sent.delete(key);
+    }
+  }
+
+  get size(): number {
+    return this.#sent.size;
+  }
 }
 
 const limiters = new WeakMap<BotPlatform, MessageLimiter>();
+
+/** A bot was purged: forget its bot-to-bot message counts. */
+export function forgetBotMessages(platform: BotPlatform, botId: string): void {
+  limiters.get(platform)?.forget(botId);
+}
 
 function limiter(platform: BotPlatform): MessageLimiter {
   let found = limiters.get(platform);

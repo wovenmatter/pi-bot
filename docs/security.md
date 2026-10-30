@@ -67,4 +67,5 @@ With Docker on ([environments](environments.md)):
 ## Data
 
 Deleting a bot is a soft delete, and compaction never deletes history, so everything bots have
-seen stays in `pi-bot.sqlite`. Protect the data dir and its backups accordingly.
+seen stays in `pi-bot.sqlite` until you permanently delete a deleted bot (which drops its tables
+but not copies in backups or freed SQLite pages). Protect the data dir and its backups accordingly.

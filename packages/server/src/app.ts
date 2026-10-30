@@ -15,7 +15,7 @@ import { SettingsService } from "./settings/service.ts";
 import { openSharedDatabase } from "./storage/database.ts";
 import { BotRegistry } from "./storage/registry.ts";
 import { TitleGenerator } from "./titles.ts";
-import type { BotPlatform } from "./tools.ts";
+import { type BotPlatform, forgetBotMessages } from "./tools.ts";
 
 export type PiBotApp = {
   readonly db: SqliteDatabase;
@@ -171,6 +171,14 @@ export async function startPiBot(
         if (reason !== "closed") log(`bot ${bot.id} harness ${reason}`);
       },
       ...(env ? { onBotDeleted: (bot) => env.dispose(bot.id) } : {}),
+      onBotPurged: async (botId) => {
+        forgetBotMessages(platform, botId);
+        if (!env) return undefined;
+        if (!env.purge)
+          return { removed: false, error: `the ${env.kind} environment can't remove workspaces` };
+        await env.purge(botId);
+        return { removed: true };
+      },
       ...(env?.restore
         ? {
             onBotRestored: (bot) =>

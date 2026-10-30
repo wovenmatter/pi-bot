@@ -316,6 +316,8 @@ class Connection {
         const restored = await manager.restore(request.botId);
         return restored ? { restored: true, bot: bot(restored) } : { restored: false };
       }
+      case "bots.purge":
+        return { purged: true, ...(await manager.purge(request.botId)) };
       case "bots.rename":
         return { bot: bot(await manager.rename(request.botId, request.name)) };
       case "bots.setManager":

@@ -23,6 +23,9 @@ export const requestSchema = z.discriminatedUnion("type", [
   // User-only, from Settings → Bots → Deleted bots. Never exposed to agent tools.
   z.object({ id: requestId, type: z.literal("bots.listDeleted") }),
   z.object({ id: requestId, type: z.literal("bots.restore"), botId }),
+  // User-only "Delete permanently": a soft-deleted bot's data, container and workspace volume.
+  // Live bots and the Admin Bot are refused. Never exposed to agent tools.
+  z.strictObject({ id: requestId, type: z.literal("bots.purge"), botId }),
   // Rename any bot but Admin Bot (its name is fixed).
   z.strictObject({
     id: requestId,

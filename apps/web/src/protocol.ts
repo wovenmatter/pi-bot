@@ -208,6 +208,15 @@ export type Requests = {
     body: { botId: string };
     result: { restored: true; bot: BotSummary } | { restored: false };
   };
+  /** Permanently remove a deleted bot. `environment` is absent without an environment backend. */
+  "bots.purge": {
+    body: { botId: string };
+    result: {
+      purged: true;
+      tables: number;
+      environment?: { removed: boolean; error?: string };
+    };
+  };
   "bots.rename": { body: { botId: string; name: string }; result: { bot: BotSummary } };
   "bots.setManager": { body: { botId: string; manager: boolean }; result: { bot: BotSummary } };
   "bots.setTeam": {

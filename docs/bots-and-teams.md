@@ -69,4 +69,12 @@ Only you delete bots, from the UI. Deletion is soft: the bot gets a `deleted_at`
 tables, threads and history stay. Its container is stopped, its volume kept. A deleted bot is
 hidden, not loaded at startup and can't be messaged. **Settings → Bots → Deleted bots** lists them
 with a **Restore** button, which brings the bot back with all its history. Bots can create bots but
-never delete or restore them. Purging is not implemented.
+never delete, restore or purge them.
+
+**Delete permanently** (next to Restore, behind a confirm dialog) purges a deleted bot
+(`bots.purge`, refused for live bots and Admin Bot). In one database transaction it drops every
+table under the bot's `pibot_<id>_` prefix (its Pi Durable session: main channel, threads,
+entries, tasks, documents), its thread rows and its registry row (profile assignment, team and
+orchestrator flags); then it removes its Docker container and workspace volume and forgets its
+bot-to-bot message counts. Usage limits are per model, not per bot, so nothing there changes. Other
+bots' conversations (messages they received from it) are theirs and stay. It can't be undone.

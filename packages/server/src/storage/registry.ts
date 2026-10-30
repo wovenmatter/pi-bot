@@ -365,8 +365,8 @@ export class BotRegistry {
 
   /**
    * Soft delete: stamp `deleted_at` and nothing else. The bot's prefixed Pi Durable tables, its
-   * thread rows and all its data stay in the database, so `restore()` can bring it back.
-   * Purging is deferred.
+   * thread rows and all its data stay in the database, so `restore()` can bring it back. Only
+   * the user's explicit `purge()` removes them.
    * Returns false for an unknown or already deleted bot.
    */
   async markDeleted(id: string, at = new Date().toISOString()): Promise<boolean> {
@@ -396,6 +396,41 @@ export class BotRegistry {
       id,
     );
     return row !== undefined;
+  }
+
+  /**
+   * Permanently remove a soft-deleted bot (the user's purge), in one transaction: every schema
+   * object under its own prefix (its Pi Durable session: conversations, threads' entries, tasks,
+   * documents, schema version), its thread rows and its registry row (profile assignment, team
+   * and orchestrator flags). Team links other rows hold to it are cleared. Returns the dropped
+   * tables, or undefined (nothing touched) for an unknown, live or Admin bot.
+   */
+  async purge(id: string): Promise<string[] | undefined> {
+    return this.#db.transaction(async (tx) => {
+      const row = await tx.get<{ schema_prefix: string; kind: string }>(
+        `SELECT schema_prefix, kind FROM ${BOTS_TABLE} WHERE id = ? AND deleted_at IS NOT NULL`,
+        id,
+      );
+      if (!row || row.kind === "admin") return undefined;
+      // Only ever the bot's own `pibot_<32 hex>_` prefix, never another bot's or a shared table.
+      if (row.schema_prefix !== botPrefix(id)) {
+        throw new Error(`bot ${id} has an unexpected table prefix; not purged`);
+      }
+      const objects = await prefixedObjects(tx, row.schema_prefix);
+      const quoted = (name: string) => `"${name.replaceAll('"', '""')}"`;
+      // Views and triggers first; indexes go with their tables.
+      for (const object of objects) {
+        if (object.type === "view" || object.type === "trigger") {
+          await tx.exec(`DROP ${object.type.toUpperCase()} IF EXISTS ${quoted(object.name)}`);
+        }
+      }
+      const tables = objects.filter((object) => object.type === "table").map((t) => t.name);
+      for (const table of tables) await tx.exec(`DROP TABLE IF EXISTS ${quoted(table)}`);
+      await tx.run(`DELETE FROM ${THREADS_TABLE} WHERE bot_id = ?`, id);
+      await tx.run(`UPDATE ${BOTS_TABLE} SET manager_id = NULL WHERE manager_id = ?`, id);
+      await tx.run(`DELETE FROM ${BOTS_TABLE} WHERE id = ?`, id);
+      return tables;
+    });
   }
 
   async addThread(thread: ThreadRecord): Promise<void> {

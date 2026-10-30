@@ -12,9 +12,14 @@ export interface BotEnvironmentAdapter {
   harnessEnv(botId: string): HarnessEnvFactory;
   /**
    * Release the bot's runtime (containers) when it is soft-deleted. Keep volumes and other data on
-   * disk: bot deletion never removes data, and purging is deferred.
+   * disk: a soft delete never removes data.
    */
   dispose(botId: string): Promise<void>;
+  /**
+   * The user purged a deleted bot (Settings → Bots → Deleted bots → Delete permanently): remove
+   * its runtime and its workspace data. Already-missing pieces are fine; throws when it could not.
+   */
+  purge?(botId: string): Promise<void>;
   /** A soft-deleted bot came back: bring its runtime back up. */
   restore?(botId: string): Promise<void>;
   /** Server startup: every active bot's runtime exists and runs; others are stopped. */

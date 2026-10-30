@@ -38,9 +38,12 @@ the working agreement for every human or agent who changes this repository.
 ## Bot management
 
 - Deleting a bot is a soft delete (`pibot_bots.deleted_at`). Never drop or delete a bot's tables,
-  threads or data; purging is deferred and needs its own decision.
-- Only the user deletes or restores bots (WebSocket `bots.delete`, `bots.listDeleted`,
-  `bots.restore`). Bot tools may create bots but must never get a delete or restore tool.
+  threads or data except through the user's purge: `bots.purge` / `BotManager.purge`, only for an
+  already soft-deleted bot (never live bots or Admin Bot), DB part in one transaction, then the
+  bot's container and volume (`BotEnvironmentAdapter.purge`).
+- Only the user deletes, restores or purges bots (WebSocket `bots.delete`, `bots.listDeleted`,
+  `bots.restore`, `bots.purge`). Bot tools may create bots but must never get a delete, restore or
+  purge tool.
 - Exactly one Admin Bot (`kind = 'admin'`, auto-created): only it gets account/config tools; it is
   never on a team and can't be deleted or renamed. Teams are one level (`manager`, `manager_id`);
   rules live in `BotManager` (`BotRuleError`).

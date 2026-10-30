@@ -314,6 +314,11 @@ export type BotManagerOptions = {
   readonly onBotClosed?: (bot: BotRecord, reason: string) => void;
   /** After a soft delete: release runtime resources (containers). Never delete bot data. */
   readonly onBotDeleted?: (bot: BotRecord) => Promise<void>;
+  /**
+   * After a purge: forget the bot elsewhere and remove its runtime environment and data (container,
+   * workspace volume). Returns undefined without an environment; a throw is reported as not removed.
+   */
+  readonly onBotPurged?: (botId: string) => Promise<EnvironmentPurge | undefined>;
   /** After a restore: bring the bot's runtime environment (container) back up. */
   readonly onBotRestored?: (bot: BotRecord) => Promise<void>;
   /** Thread title generation (`[models.titles]`); threads stay untitled without it. */
@@ -356,6 +361,16 @@ export type ModelStatus = {
   readonly active: string;
   /** The limited models, in fallback order (empty for `returned`). */
   readonly limits: readonly LimitEntry[];
+};
+
+/** Whether a purge removed the bot's environment (container and workspace volume). */
+export type EnvironmentPurge = { readonly removed: boolean; readonly error?: string };
+
+export type PurgeResult = {
+  /** Tables of the bot's Pi Durable session that were dropped. */
+  readonly tables: number;
+  /** Undefined when bots have no environment backend. */
+  readonly environment?: EnvironmentPurge;
 };
 
 /** How long a `returned` status is reported after the switch back. */
@@ -664,7 +679,7 @@ export class BotManager {
       const bot = await this.get(id);
       await bot.main();
     } catch (error) {
-      // A half-created bot is soft-deleted like any other; its tables stay until purging exists.
+      // A half-created bot is soft-deleted like any other; its tables stay until the user purges it.
       await this.delete(id).catch(() => {});
       throw error;
     }
@@ -749,7 +764,7 @@ export class BotManager {
    * or orchestrator tool may call this. The registry row is marked deleted first, so no new open
    * can start, then the in-memory harness is closed and evicted and the bot's runtime environment
    * released. Its tables, threads and data stay in the database, so `restore()` can bring it back
-   * (from Settings → Bots → Deleted bots); purging is deferred.
+   * (from Settings → Bots → Deleted bots); only the user's explicit `purge()` removes it for good.
    */
   async delete(id: string): Promise<boolean> {
     const record = await this.registry.get(id);
@@ -775,6 +790,42 @@ export class BotManager {
   /** Soft-deleted bots, for the user's Settings → Bots → Deleted bots. User-only, like `delete`. */
   listDeleted(): Promise<DeletedBotRecord[]> {
     return this.registry.listDeleted();
+  }
+
+  /**
+   * Permanently remove a soft-deleted bot: the user's explicit "Delete permanently" in Settings →
+   * Bots → Deleted bots (`bots.purge`); no agent or orchestrator tool may call this. Live bots and
+   * the Admin Bot are refused. The database part (registry row, threads, every table of its Pi
+   * Durable session) is one transaction; then `onBotPurged` removes its container and workspace
+   * volume. An environment failure does not undo the data purge; it is reported in the result.
+   */
+  async purge(id: string): Promise<PurgeResult> {
+    if (this.#closed) throw new Error("bot manager is closed");
+    if ((await this.registry.admin())?.id === id) {
+      throw new BotRuleError("the Admin Bot cannot be deleted");
+    }
+    if (await this.registry.get(id)) {
+      throw new BotRuleError("only deleted bots can be deleted permanently; delete it first");
+    }
+    const tables = await this.registry.purge(id);
+    if (!tables) throw new NotFoundError(`no deleted bot ${id}`);
+    this.#bots.delete(id);
+    this.#assigned.delete(id);
+    this.#status.delete(id);
+    let environment: EnvironmentPurge | undefined;
+    try {
+      environment = await this.#options.onBotPurged?.(id);
+    } catch (error) {
+      environment = {
+        removed: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    this.#options.log?.(
+      `bot ${id}: purged (${tables.length} tables)${environment && !environment.removed ? `; environment not removed: ${environment.error}` : ""}`,
+    );
+    this.#options.onBotsChanged?.();
+    return { tables: tables.length, ...(environment ? { environment } : {}) };
   }
 
   /**

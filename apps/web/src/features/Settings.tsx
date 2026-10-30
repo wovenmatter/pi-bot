@@ -1,4 +1,4 @@
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
@@ -35,24 +35,52 @@ export function formatDeletedAt(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : dateFormat.format(date);
 }
 
-/** Presentational list of deleted bots; the only place a bot can be restored from. Settings → Bots
- * shows it below Admin Bot, after a separator, only while there are deleted bots. */
+/** The confirm dialog for "Delete permanently": names the bot and everything that goes. */
+export function purgeConfirmText(bot: Pick<DeletedBotSummary, "name">): string {
+  return [
+    `Delete ${bot.name} permanently?`,
+    `This removes its conversations, threads, memory and notes, its settings, and its Docker workspace volume and container.`,
+    "This can't be undone.",
+  ].join("\n\n");
+}
+
+/**
+ * Ask, then purge a deleted bot. Resolves undefined when the user cancels (nothing is sent),
+ * otherwise with the server's result.
+ */
+export async function purgeDeletedBot(
+  client: Pick<PiBotClient, "request">,
+  bot: DeletedBotSummary,
+  confirm: (message: string) => boolean = (message) => window.confirm(message),
+): Promise<Requests["bots.purge"]["result"] | undefined> {
+  if (!confirm(purgeConfirmText(bot))) return undefined;
+  return client.request("bots.purge", { botId: bot.id });
+}
+
+/** Presentational list of deleted bots; the only place a bot can be restored or purged from.
+ * Settings → Bots shows it below Admin Bot, after a separator, only while there are deleted bots. */
 export function DeletedBotsList({
   bots,
   restoring,
+  purging,
   disabled,
   onRestore,
+  onPurge,
 }: {
   bots: readonly DeletedBotSummary[] | undefined;
   restoring?: string;
+  purging?: string;
   disabled?: boolean;
   onRestore: (bot: DeletedBotSummary) => void;
+  onPurge?: (bot: DeletedBotSummary) => void;
 }) {
+  const busy = disabled || restoring !== undefined || purging !== undefined;
   return (
     <section className="settings-section" aria-labelledby="deleted-bots-heading">
       <h3 id="deleted-bots-heading">Deleted bots</h3>
       <p className="muted">
-        Deleted bots keep their conversations and threads. Restore one to bring it back.
+        Deleted bots keep their conversations and threads. Restore one to bring it back, or delete
+        it permanently.
       </p>
       {bots === undefined ? (
         <Loading />
@@ -68,16 +96,30 @@ export function DeletedBotsList({
                   Deleted <time dateTime={bot.deletedAt}>{formatDeletedAt(bot.deletedAt)}</time>
                 </small>
               </div>
-              <button
-                type="button"
-                className="secondary"
-                aria-label={`Restore ${bot.name}`}
-                disabled={disabled || restoring !== undefined}
-                onClick={() => onRestore(bot)}
-              >
-                <Icon icon={RotateCcw} size={13} weight="control" />
-                {restoring === bot.id ? "Restoring…" : "Restore"}
-              </button>
+              <div className="account-row-actions">
+                {onPurge ? (
+                  <button
+                    type="button"
+                    className="text-button danger"
+                    aria-label={`Delete ${bot.name} permanently`}
+                    disabled={busy}
+                    onClick={() => onPurge(bot)}
+                  >
+                    <Icon icon={Trash2} size={13} />
+                    {purging === bot.id ? "Deleting…" : "Delete permanently"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="secondary"
+                  aria-label={`Restore ${bot.name}`}
+                  disabled={busy}
+                  onClick={() => onRestore(bot)}
+                >
+                  <Icon icon={RotateCcw} size={13} weight="control" />
+                  {restoring === bot.id ? "Restoring…" : "Restore"}
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -436,6 +478,7 @@ function BotsSection({
 }: SectionProps & { onRestored: (bot: BotSummary) => void }) {
   const [deleted, setDeleted] = useState<DeletedBotSummary[]>();
   const [restoring, setRestoring] = useState<string>();
+  const [purging, setPurging] = useState<string>();
   const [live, setLive] = useState<BotSummary[]>();
   const [profiles, setProfiles] = useState<ProfileSummary[]>();
   const [busy, setBusy] = useState(false);
@@ -502,6 +545,23 @@ function BotsSection({
       setRestoring(undefined);
     }
   }
+  async function purge(target: DeletedBotSummary) {
+    onError(undefined);
+    setPurging(target.id);
+    try {
+      const result = await purgeDeletedBot(client, target);
+      if (result?.environment && !result.environment.removed) {
+        onError(
+          `${target.name} was deleted permanently, but its Docker workspace was not removed: ${result.environment.error ?? "unknown error"}`,
+        );
+      }
+      if (result) await refresh();
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setPurging(undefined);
+    }
+  }
   return (
     <BotsPanel
       bots={live}
@@ -527,8 +587,10 @@ function BotsSection({
         <DeletedBotsList
           bots={deleted}
           restoring={restoring}
+          purging={purging}
           disabled={!connected}
           onRestore={(bot) => void restore(bot)}
+          onPurge={(bot) => void purge(bot)}
         />
       ) : null}
     </BotsPanel>
