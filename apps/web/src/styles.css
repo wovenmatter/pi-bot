@@ -597,8 +597,7 @@ input[type="file"] {
   flex: none;
   border-radius: 6px;
 }
-.sidebar .icon-button,
-.sidebar .rail-action {
+.sidebar .icon-button {
   color: var(--ink);
 }
 .sidebar > nav {
@@ -682,7 +681,7 @@ input[type="file"] {
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
-/* Separate new-chat and menu actions: 24 × 28, 8 radius, quiet fills. */
+/* Separate new-chat and menu actions: 24 × 28, 8 radius, quiet fills, no native border. */
 .rail-action,
 .icon-button.rail-action {
   display: inline-grid;
@@ -691,16 +690,24 @@ input[type="file"] {
   width: 24px;
   height: var(--row-height);
   padding: 0;
+  border: 0;
   border-radius: var(--row-radius);
   background: transparent;
-  color: var(--ink);
+  box-shadow: none;
+  color: var(--muted);
+  transition:
+    background-color 0.12s ease-out,
+    color 0.12s ease-out,
+    opacity 0.12s ease-out;
 }
 .rail-action:hover {
-  background: var(--whisper);
+  background: var(--soft);
+  color: var(--ink);
 }
 .rail-action:active,
 .rail-action[aria-expanded="true"] {
   background: var(--soft);
+  color: var(--ink);
 }
 .working-dot {
   flex: none;
@@ -718,9 +725,10 @@ input[type="file"] {
   height: 26px;
   padding: 0 12px;
   border-radius: var(--row-radius);
-  color: var(--ink);
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   user-select: none;
 }
 .disclosure-heading > span {
@@ -729,9 +737,6 @@ input[type="file"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.disclosure-heading:hover {
-  background: var(--whisper);
 }
 .rail-empty {
   margin: 0;
@@ -1281,6 +1286,7 @@ input[type="file"] {
 }
 .disclosure-heading > .rail-action {
   height: 24px;
+  margin-right: 4px;
 }
 .rail-row .rail-action.reveal {
   opacity: 0;
@@ -1295,7 +1301,15 @@ input[type="file"] {
 .sidebar-create {
   display: flex;
   gap: 6px;
-  padding: 4px 0 8px;
+  padding: 2px 4px 10px;
+}
+.sidebar-create input:not([type="checkbox"], [type="radio"], [type="file"]) {
+  min-height: 32px;
+  background: var(--surface);
+}
+.sidebar-create .primary {
+  min-height: 32px;
+  padding-inline: 12px;
 }
 .sidebar-create input {
   flex: 1;

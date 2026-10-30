@@ -1,4 +1,4 @@
-import { Bot, MessageSquare, Plus, Settings, ShieldCheck, Trash2, Users } from "lucide-react";
+import { Bot, MessageSquare, Plus, Settings, ShieldCheck, Trash2, Users, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import type { ConnectionState } from "../api.ts";
 import { Brand } from "../components/Brand.tsx";
@@ -106,19 +106,27 @@ export function Sidebar({
       <nav>
         <div className="disclosure-heading">
           <span>Bots</span>
-          <button
-            type="button"
-            className="rail-action"
-            aria-label="New bot"
-            title="New bot"
-            aria-expanded={creating}
-            onClick={() => setCreating((open) => !open)}
-          >
-            <Icon icon={Plus} size={14} weight="control" />
-          </button>
+          {bots.length === 0 ? null : (
+            <button
+              type="button"
+              className="rail-action"
+              aria-label={creating ? "Cancel new bot" : "New bot"}
+              title={creating ? "Cancel" : "New bot"}
+              aria-expanded={creating}
+              onClick={() => setCreating((open) => !open)}
+            >
+              <Icon icon={creating ? X : Plus} size={14} weight="control" />
+            </button>
+          )}
         </div>
         {creating ? (
-          <form className="sidebar-create" onSubmit={(event) => void submit(event)}>
+          <form
+            className="sidebar-create"
+            onSubmit={(event) => void submit(event)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setCreating(false);
+            }}
+          >
             <input
               aria-label="Bot name"
               placeholder="Bot name"
