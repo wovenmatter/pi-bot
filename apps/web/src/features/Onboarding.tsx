@@ -1,6 +1,7 @@
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
+import { PiLogo } from "../components/Brand.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { ErrorNotice } from "../components/ui.tsx";
 import type { OnboardingStatus, ProviderModels } from "../protocol.ts";
@@ -49,9 +50,7 @@ export function Onboarding({
   return (
     <div className="onboarding">
       <header className="onboarding-hero">
-        <span className="brand-mark onboarding-mark" aria-hidden="true">
-          π
-        </span>
+        <PiLogo className="onboarding-mark" />
         <h1>Welcome to Pi Bot</h1>
         <p className="muted">Connect a model provider. Admin Bot takes it from there.</p>
       </header>

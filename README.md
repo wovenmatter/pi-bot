@@ -493,6 +493,15 @@ copied part is unchanged except `border: 0` on `.rail-action` (buttons otherwise
 browser's default border); layout tweaks to shared components (sidebar scrolling, banner
 column) are overrides in the Pi Bot section.
 
+The brand mark (sidebar header and onboarding) is Pi's official colour logo on its circular
+black badge, copied unchanged from WovenMatter
+(`app/App/SharedAssets.xcassets/HarnessLogos/harness-pi-primary.imageset/harness-pi-primary.svg`,
+the default "color" Pi logo there) to `apps/web/src/assets/pi-logo.svg`. WovenMatter takes the
+mark from Pi's press kit (https://pi.dev/press-kit, https://pi.dev/logo-auto.svg; Pi is MIT
+licensed) and draws it as-is, scaled to fit. Pi Bot does the same at 24px (44px on onboarding):
+the badge's black fill and thin white ring are part of the image, so no theme token or
+background was added and it looks the same in Green, Cognac and Dark.
+
 ## Not in milestone 1
 
 - macOS Keychain backend. It is a stub, so encrypted SQLite is used everywhere.

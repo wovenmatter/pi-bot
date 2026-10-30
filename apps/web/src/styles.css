@@ -1265,19 +1265,13 @@ input[type="file"] {
   padding: 0;
   overflow: hidden;
 }
-/* Brand mark: 24 square, 6 radius, like the Enterprise app icon slot. */
+/* Brand mark: Pi's logo on its own circular badge (the image carries its background), 24 square. */
 .brand-mark {
-  display: inline-grid;
+  display: block;
   flex: none;
-  place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
-  background: var(--primary-fill);
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1;
+  border-radius: 50%;
 }
 .sidebar > nav .disclosure-heading {
   margin-top: 10px;
@@ -2147,8 +2141,6 @@ details.account-api-key > .settings-list {
   width: 44px;
   height: 44px;
   margin-bottom: 6px;
-  border-radius: var(--control-radius);
-  font-size: 22px;
 }
 .onboarding-steps {
   display: flex;

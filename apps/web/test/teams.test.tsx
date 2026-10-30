@@ -69,6 +69,10 @@ describe("bot groups", () => {
     expect(order.every((at, i) => at > 0 && (i === 0 || at > (order[i - 1] ?? 0)))).toBe(true);
     expect(html).not.toContain("Delete Admin Bot");
     expect(html).toContain("Delete Lead");
+    expect(html).toMatch(
+      /<img class="brand-mark" src="data:image\/svg\+xml[^"]*%23F09082[^"]*%23F1BE58[^"]*" alt="" aria-hidden="true"\/>/,
+    );
+    expect(html).not.toContain(">π<");
     const adminLink = html.slice(html.lastIndexOf("<a", html.indexOf(">Admin Bot<")));
     expect(adminLink.slice(0, adminLink.indexOf("</a>"))).toContain("lucide-sliders-horizontal");
     expect(html).not.toContain("lucide-shield");
@@ -427,6 +431,10 @@ describe("onboarding", () => {
       />,
     );
     expect(html).toContain("Sign in to a provider");
+    expect(html).toMatch(
+      /<img class="brand-mark onboarding-mark" src="data:image\/svg\+xml[^"]*%23F09082/,
+    );
+    expect(html).not.toMatch(/>\s*π\s*</);
     expect(html).toMatch(/aria-current="step"[^>]*>.*Sign in</);
     expect(html).not.toContain("Choose Admin Bot");
   });
