@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { describeModelStatus, ModelStatusBanner } from "../src/components/ModelStatusBanner.tsx";
+import { MessageError } from "../src/components/ui.tsx";
 import { MAX_FALLBACKS, ProfileEditor } from "../src/features/settings/Profiles.tsx";
 import type { ModelStatusSummary, ProviderModels } from "../src/protocol.ts";
 
@@ -153,5 +154,14 @@ describe("fallback editor", () => {
       />,
     );
     expect(bad).toContain("A fallback can&#x27;t be the main model.");
+  });
+});
+
+describe("message errors", () => {
+  it("styles a failed reply like the error notice", () => {
+    const html = renderToStaticMarkup(<MessageError message="429 rate limited" />);
+    expect(html).toContain('class="notice error message-error"');
+    expect(html).toContain("Reply failed");
+    expect(html).toContain("429 rate limited");
   });
 });

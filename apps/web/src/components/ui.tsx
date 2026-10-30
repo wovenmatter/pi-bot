@@ -16,6 +16,19 @@ export function ErrorNotice({ message, onDismiss }: { message?: string; onDismis
   ) : null;
 }
 
+/** A reply that failed: the same error treatment as page notices, sized to sit under a message. */
+export function MessageError({ message }: { message: string }) {
+  return (
+    <div className="notice error message-error" role="note">
+      <Icon icon={CircleAlert} size={15} />
+      <span>
+        <strong>Reply failed</strong>
+        <span className="message-error-detail">{message}</span>
+      </span>
+    </div>
+  );
+}
+
 export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
     <div className="loading" role="status">

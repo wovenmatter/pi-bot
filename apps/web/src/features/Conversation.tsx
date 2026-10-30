@@ -4,7 +4,7 @@ import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
 import { ModelStatusBanner } from "../components/ModelStatusBanner.tsx";
 import { RichText } from "../components/RichText.tsx";
-import { Empty, ErrorNotice, Loading } from "../components/ui.tsx";
+import { Empty, ErrorNotice, Loading, MessageError } from "../components/ui.tsx";
 import type { BotSummary, DisplayEntry, ThreadSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
 import {
@@ -331,10 +331,12 @@ function Message({
             <strong>{botName}</strong>
           </div>
         ) : null}
-        <div className="message-content">
-          {entry.role === "assistant" ? <RichText>{entry.text}</RichText> : entry.text}
-        </div>
-        {entry.error ? <small className="danger">{entry.error}</small> : null}
+        {entry.text ? (
+          <div className="message-content">
+            {entry.role === "assistant" ? <RichText>{entry.text}</RichText> : entry.text}
+          </div>
+        ) : null}
+        {entry.error ? <MessageError message={entry.error} /> : null}
         {replies.length > 0 ? (
           <div className="thread-replies">
             {replies.map((reply) => (

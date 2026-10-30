@@ -870,8 +870,23 @@ input[type="file"] {
 .message > small {
   margin-top: 6px;
 }
-.message > small.danger {
-  color: var(--danger-ink);
+/* A failed reply: the error notice, inline under the message (matches the limit banner). */
+.notice.message-error {
+  width: fit-content;
+  max-width: 100%;
+  margin: 10px 0 0;
+  padding: 8px 12px;
+}
+.notice.message-error > span {
+  display: grid;
+  gap: 1px;
+}
+.message-error-detail {
+  color: color-mix(in srgb, var(--danger-ink) 82%, var(--ink));
+  font-size: 12px;
+}
+.message-user .notice.message-error {
+  margin-left: auto;
 }
 .message > div:has(> .text-button) {
   margin-top: 6px;
