@@ -33,6 +33,12 @@ Manage all of this in Settings → Bots, by asking Admin Bot, or by telling a bo
   the target is busy. It doesn't wait for a reply; the target answers with `message_bot`. A bot
   can't message itself, and each sender→target pair is limited by
   `[bot_to_bot] max_messages_per_hour_per_pair` (default 30, sliding hour, in memory).
+- **Rounds per request.** A request is the chain of bot-to-bot messages after one user message.
+  A user message is round 0 for the conversation it goes to; a `message_bot` call delivers round
+  _n_ + 1, where _n_ is the round the sending conversation last received. Past
+  `[bot_to_bot] max_rounds_per_request` (default 5) `message_bot` returns a tool error telling the
+  bot to reply to the user instead. Rounds are kept in memory per bot and conversation; a restart
+  starts them at 0, and a subagent's child conversation starts at 0.
 - **Names** are 1–80 characters and not unique. Admin Bot is always "Admin Bot".
 
 ## Main channel and threads

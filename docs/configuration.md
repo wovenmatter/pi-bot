@@ -14,7 +14,7 @@ lists every key with its default. Unknown keys are rejected. Secrets never go in
 | `[models.titles]` | Thread-title model, default `openai-codex/gpt-6-luna`, `reasoning = "high"`                                                        |
 | `[profiles.<id>]` | Model profiles, below                                                                                                              |
 | `[compaction]`    | `enabled`, `reserve_tokens = 16384`, `keep_recent_tokens = 20000`, `background_tokens = 0`, `native = "auto"`, per-model overrides |
-| `[bot_to_bot]`    | `max_messages_per_hour_per_pair = 30` (enforced); `max_rounds_per_request = 5` (validated, not enforced yet)                       |
+| `[bot_to_bot]`    | `max_messages_per_hour_per_pair = 30`; `max_rounds_per_request = 5` (see [bots and teams](bots-and-teams.md))                      |
 | `[extraction]`    | `schedule` (cron), `timezone`: validated only; scheduled extraction doesn't run yet                                                |
 | `[search]`        | `provider = "exa"` (or `brave`, `firecrawl`); stored for a search tool that doesn't exist yet                                      |
 | `[git]`           | `user_name`, `user_email`: commit identity in bot containers                                                                       |

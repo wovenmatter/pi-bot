@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ADMIN_PROMPT, createBotHarnessOptions } from "../src/agent.ts";
 import { type Bot, BotManager } from "../src/bots.ts";
+import { parseConfig } from "../src/config.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
 import { type BotPlatform, MessageLimiter } from "../src/tools.ts";
 import { FAUX_MODEL, profileOf, tempDir } from "./helpers.ts";
@@ -21,6 +22,7 @@ describe("bot tools", () => {
   let db: Awaited<ReturnType<typeof openSharedDatabase>>;
   let manager: BotManager;
   let openManager: () => Promise<BotManager>;
+  let platform: BotPlatform;
   const faux = fauxProvider({ tokensPerSecond: 5000 });
   // Each request's context as JSON: the prompt and tool declarations ride in system messages.
   const seen: string[] = [];
@@ -44,7 +46,7 @@ describe("bot tools", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     db = await openSharedDatabase(join(dir.path, "db.sqlite"));
-    const platform: BotPlatform = { manager: () => manager, maxMessagesPerHourPerPair: 1 };
+    platform = { manager: () => manager, maxMessagesPerHourPerPair: 1 };
     openManager = () =>
       BotManager.open({
         db,
@@ -146,6 +148,57 @@ describe("bot tools", () => {
     }
     expect(history).toContain('[Message from bot \\"Lead\\"');
     expect(history).not.toContain("again");
+  });
+
+  it("stops a bot-to-bot chain at max_rounds_per_request; a user message starts a new request", async () => {
+    // The config default reaches the tools.
+    const config = parseConfig('[models]\norchestrator = "faux/faux-1"\n', dir.path);
+    expect(config.bot_to_bot.max_rounds_per_request).toBe(5);
+    await manager.close();
+    platform = {
+      manager: () => manager,
+      maxRoundsPerRequest: config.bot_to_bot.max_rounds_per_request,
+    };
+    manager = await openManager();
+    const ping = await manager.create("Ping");
+    const pong = await manager.create("Pong");
+    // Each bot answers any message by messaging the other once, then replies.
+    const step: Step = (context) => {
+      const messages = (context as { messages: { role: string }[] }).messages;
+      if (messages.at(-1)?.role === "toolResult") return reply(context);
+      const other = JSON.stringify(context).includes("You are Ping") ? pong.id : ping.id;
+      return tool("message_bot", { botId: other, text: "your turn" })(context);
+    };
+    faux.setResponses(Array.from({ length: 60 }, () => step));
+    const settle = async () => {
+      for (let tries = 0; tries < 300 && (await manager.activeWork()) > 0; tries++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    };
+    const history = async (id: string) => {
+      const main = await (await manager.get(id)).main();
+      return JSON.stringify(
+        (await main.entries({ order: "ascending" }, 500, undefined, ctx)).items,
+      );
+    };
+    const received = async (id: string) =>
+      (await history(id)).split("[Message from bot").length - 1;
+    const limit = "bot-to-bot round limit reached (5 per request); reply to the user instead";
+
+    // User → Ping (round 0); Ping → Pong 1, → Ping 2, → Pong 3, → Ping 4, → Pong 5; Pong's 6th is refused.
+    await say(await manager.get(ping.id), "start");
+    await settle();
+    expect(await received(pong.id)).toBe(3);
+    expect(await received(ping.id)).toBe(2);
+    expect(await history(pong.id)).toContain(limit);
+    expect(await history(ping.id)).not.toContain(limit);
+
+    // A user message to Pong is round 0 again: five more hops, and Ping is refused this time.
+    await say(await manager.get(pong.id), "again");
+    await settle();
+    expect(await received(ping.id)).toBe(5);
+    expect(await received(pong.id)).toBe(5);
+    expect(await history(ping.id)).toContain(limit);
   });
 
   it("sets and clears the orchestrator from Admin Bot or a bot, and tells the orchestrator its role", async () => {

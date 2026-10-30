@@ -80,6 +80,7 @@ export async function startPiBot(
     settings: () => settings,
     ...(options.restart ? { restart: options.restart } : {}),
     maxMessagesPerHourPerPair: config.bot_to_bot.max_messages_per_hour_per_pair,
+    maxRoundsPerRequest: config.bot_to_bot.max_rounds_per_request,
   };
   const env =
     options.env ??

@@ -16,6 +16,8 @@ export type BotPlatform = {
   readonly restart?: () => Promise<RestartAccepted>;
   /** `[bot_to_bot] max_messages_per_hour_per_pair`: a guard against runaway bot loops. */
   readonly maxMessagesPerHourPerPair?: number;
+  /** `[bot_to_bot] max_rounds_per_request`: bot-to-bot hops after one user message. */
+  readonly maxRoundsPerRequest?: number;
 };
 
 type Result = { output: { type: "text"; text: string }[]; isError?: boolean };
@@ -113,18 +115,30 @@ function commonTools(botId: string, platform: BotPlatform) {
         botId: Type.String({ description: "Target bot id (from list_bots)" }),
         text: Type.String({ description: "The message" }),
       }),
-      execute: (args) =>
+      execute: (args, api) =>
         run(async () => {
           if (args.botId === botId) throw new Error("a bot cannot message itself");
           const manager = platform.manager();
           const sender = await manager.record(botId);
           const target = await manager.get(args.botId);
+          // A request is the chain of bot-to-bot messages after one user message.
+          const round = (await manager.get(botId)).round(api.conversationId) + 1;
+          const maxRounds = platform.maxRoundsPerRequest ?? 5;
+          if (round > maxRounds) {
+            throw new Error(
+              `bot-to-bot round limit reached (${maxRounds} per request); reply to the user instead`,
+            );
+          }
           if (!limiter(platform).take(botId, args.botId)) {
             throw new Error(
               `message limit reached: at most ${platform.maxMessagesPerHourPerPair ?? 30} messages per hour to ${target.record.name}`,
             );
           }
-          await target.send(`[Message from bot "${sender.name}" (id ${sender.id})]\n${args.text}`);
+          await target.send(
+            `[Message from bot "${sender.name}" (id ${sender.id})]\n${args.text}`,
+            undefined,
+            round,
+          );
           return `Delivered to ${(await manager.record(args.botId)).name}.`;
         }),
     }),

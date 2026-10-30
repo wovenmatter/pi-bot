@@ -113,7 +113,6 @@ from a throwaway instance with a faux "demo" provider and sample bots.
   uses it yet.
 - **Web search tool.** Exa, Brave and Firecrawl keys and `[search] provider` are stored, but no
   bot tool uses them yet.
-- **`[bot_to_bot] max_rounds_per_request`.** Validated, not enforced (the per-pair hourly limit is).
 - **Stop/abort** of a running reply, in the UI or the protocol.
 - **Clearing a marked usage limit** when credentials change (it clears at the reset or cooldown).
 - **Purging deleted bots.** Deletion is soft; data stays in the database.

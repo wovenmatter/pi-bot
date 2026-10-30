@@ -51,7 +51,7 @@ schedule = "0 3 * * *"              # 5-field cron
 timezone = "America/New_York"       # IANA zone the schedule is evaluated in
 
 [bot_to_bot]
-max_rounds_per_request = 5          # validated, not enforced yet
+max_rounds_per_request = 5          # message_bot hops in the chain that follows one user message
 max_messages_per_hour_per_pair = 30 # message_bot sends per sender→target pair, sliding hour
 
 # Automatic compaction, identical for the main channel and every thread. Covered turns stay in

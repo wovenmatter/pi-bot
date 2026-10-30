@@ -63,6 +63,7 @@ export class Bot {
   readonly harness: Harness;
   readonly #registry: BotRegistry;
   readonly #titles: ThreadTitles | undefined;
+  readonly #rounds = new Map<number, number>();
 
   constructor(record: BotRecord, harness: Harness, registry: BotRegistry, titles?: ThreadTitles) {
     this.record = record;
@@ -114,11 +115,22 @@ export class Bot {
   }
 
   /**
-   * Send a user message to the main channel or a thread. The first message of an untitled thread
-   * also starts its title generation, as Woven titles a conversation from its first prompt.
+   * The bot-to-bot round of the input a conversation last received: 0 after a user message, n
+   * after the nth `message_bot` hop of the chain that followed it (`[bot_to_bot]
+   * max_rounds_per_request`). In memory; a reopened bot starts at 0.
    */
-  async send(text: string, conversationId?: number) {
+  round(conversationId: number): number {
+    return this.#rounds.get(conversationId) ?? 0;
+  }
+
+  /**
+   * Send a message to the main channel or a thread: a user message (round 0), or with `round` a
+   * bot-to-bot message. The first message of an untitled thread also starts its title generation,
+   * as Woven titles a conversation from its first prompt.
+   */
+  async send(text: string, conversationId?: number, round = 0) {
     const conversation = await this.conversation(conversationId);
+    this.#rounds.set(conversation.id, round);
     const submission = await conversation.submit(
       { type: "input", content: text, whenBusy: "followUp" },
       ctx,
