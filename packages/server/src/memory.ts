@@ -12,13 +12,13 @@ export type BeforeCompactInput = {
 
 /**
  * The memory-extraction point of every compaction (main channel and threads alike). It runs
- * before the provider or Pi Durable summarizes, so a later milestone can extract durable facts
- * from the covered messages. A throw is reported and compaction continues.
+ * before the provider or Pi Durable summarizes, so durable facts can be extracted from the
+ * covered messages. A throw is reported and compaction continues.
  */
 export type BeforeCompactHook = (
   input: BeforeCompactInput,
   context: unknown,
 ) => void | Promise<void>;
 
-/** Milestone 2: wired, deliberately a no-op. */
+/** The hook in use: wired into every compaction, a no-op until memory extraction exists. */
 export const noopBeforeCompact: BeforeCompactHook = () => {};

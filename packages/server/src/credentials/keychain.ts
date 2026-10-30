@@ -6,8 +6,8 @@ export class KeychainUnavailableError extends Error {
 
 /**
  * macOS Keychain credential store (service `io.wovenmatter.pi-bot`, one generic password per
- * provider id). Stub in milestone 1: every operation throws, and `backend = "auto"` falls back
- * to the encrypted SQLite store until it is implemented.
+ * provider id). A stub for now: every operation throws, `backend = "auto"` uses the encrypted
+ * SQLite store instead and `backend = "keychain"` is rejected when the store is opened.
  */
 export class KeychainCredentialStore implements CredentialStore {
   static readonly service = "io.wovenmatter.pi-bot";

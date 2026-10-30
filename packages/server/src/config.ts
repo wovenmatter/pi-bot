@@ -199,7 +199,10 @@ export const configSchema = z.strictObject({
     .prefault({}),
   credentials: z
     .strictObject({
-      /** `auto`: Keychain on macOS, encrypted SQLite elsewhere. */
+      /**
+       * `auto`: encrypted SQLite everywhere for now (on macOS it would pick the Keychain, but that
+       * store is a stub, so it falls back). `keychain` throws while the store is a stub.
+       */
       backend: z.enum(["auto", "encrypted-sqlite", "keychain"]).default("auto"),
       /** AES-256-GCM key file, mode 0600, outside the database. Defaults to `<data_dir>/credentials.key`. */
       key_file: z.string().optional(),
