@@ -160,6 +160,7 @@ export async function startPiBot(
               `bot ${bot.id}: subagent ${event.phase} on ${event.model}${event.reasoning ? ` (${event.reasoning})` : ""}${event.detail ? `: ${event.detail}` : ""}`,
             ),
           platform,
+          web: { credentials: credentials.store, provider: config.search.provider },
           compaction: config.compaction,
           ...(env ? { env } : {}),
           onReport: (error) => log(`bot ${bot.id}: ${String(error)}`),

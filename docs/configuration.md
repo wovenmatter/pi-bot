@@ -16,7 +16,7 @@ lists every key with its default. Unknown keys are rejected. Secrets never go in
 | `[compaction]`    | `enabled`, `reserve_tokens = 16384`, `keep_recent_tokens = 20000`, `background_tokens = 0`, `native = "auto"`, per-model overrides |
 | `[bot_to_bot]`    | `max_messages_per_hour_per_pair = 30`; `max_rounds_per_request = 5` (see [bots and teams](bots-and-teams.md))                      |
 | `[extraction]`    | `schedule` (cron), `timezone`: validated only; scheduled extraction doesn't run yet                                                |
-| `[search]`        | `provider = "exa"` (or `brave`, `firecrawl`); stored for a search tool that doesn't exist yet                                      |
+| `[search]`        | `provider = "exa"` (or `brave`, `firecrawl`): tried first by `web_search`; keys in Settings → Search                               |
 | `[git]`           | `user_name`, `user_email`: commit identity in bot containers                                                                       |
 | `[environment]`   | `backend = "none"` or `"docker"`, optional `image`; see [environments](environments.md)                                            |
 | `[credentials]`   | `backend = "auto"` (always encrypted SQLite today), optional `key_file`; see [security](security.md)                               |

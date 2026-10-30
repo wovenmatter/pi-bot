@@ -23,11 +23,18 @@ Manage all of this in Settings → Bots, by asking Admin Bot, or by telling a bo
 
 | Who                 | Tools                                                                                                                                                                                                                                                                                                                                        |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Every bot           | `list_bots`, `create_bot`, `message_bot`                                                                                                                                                                                                                                                                                                     |
+| Every bot           | `list_bots`, `create_bot`, `message_bot`, `web_search`, `fetch_url`                                                                                                                                                                                                                                                                          |
 | Every bot but Admin | `rename_me`, `my_team` (`start`, `add`, `remove`, `stop`, `become_orchestrator`, `stop_orchestrator`)                                                                                                                                                                                                                                        |
 | Admin Bot only      | `rename_bot`, `set_team` (`promote`, `demote`, `join`, `leave`, `replace_manager`, `make_orchestrator`, `clear_orchestrator`), `settings_status`, `read_config`, `update_config`, `restart_server`, `list_profiles`, `save_profile`, `delete_profile`, `set_default_profile`, `set_bot_profile`, `read_account_notes`, `write_account_notes` |
 | Bots with a pool    | `run_subagent`                                                                                                                                                                                                                                                                                                                               |
 | With Docker on      | `bash`, `read`, `write`, `edit`, run in the bot's container ([environments](environments.md))                                                                                                                                                                                                                                                |
+- **`web_search`** `{query, count?}` (1–10, default 5) uses `[search] provider`; if that provider
+  has no key, the first of Exa, Brave and Firecrawl that has one (the result says so). It returns
+  a numbered list: title, URL, date when known, a one-line snippet. Without any search key it
+  says to add one in Settings → Search. **`fetch_url`** `{url, maxChars?}` returns one public
+  page as readable text (see [security](security.md#web-tools) for what it refuses). Both are
+  offered to every bot and its subagents whether or not a key is set, so the tool list stays the
+  same; Claude models get them through the same inventory as every other tool.
 - **`create_bot`**: a bot created by a manager or team member joins that team.
 - **`message_bot`** delivers to the target's main channel, labelled with the sender, queued if
   the target is busy. It doesn't wait for a reply; the target answers with `message_bot`. A bot

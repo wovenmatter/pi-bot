@@ -38,6 +38,22 @@ With Docker on ([environments](environments.md)):
 - Containers have full internet access, passwordless sudo for the `bot` user, and no resource
   limits. They get no host mounts and no Docker socket.
 
+## Web tools
+
+- `web_search` reads the search key from the credential store on each call and sends it only to
+  that provider; keys never enter prompts, tool results or logs, and provider errors are reported
+  without the response body.
+- `fetch_url` runs on the host, so it refuses anything Pi Bot itself or the tailnet could be
+  reached through: non-http(s) URLs and hosts that are, or resolve to, unspecified, loopback,
+  private, link-local, CGNAT (`100.64.0.0/10`, the tailnet), multicast or reserved IPv4, or IPv6
+  loopback, link-local, unique-local (`fc00::/7`, which holds the tailnet's `fd7a:115c:a1e0::/48`),
+  multicast or NAT64 addresses (IPv4-mapped IPv6 is checked as IPv4). Redirects are followed by hand
+  (at most 5) and every hop is checked again. Pages are capped (20 s, 2 MB read, 20,000 characters
+  returned by default, at most 100,000).
+- The check resolves the host before the request, and the request resolves it again, so a DNS
+  server that answers differently the second time (DNS rebinding) could still slip through. With
+  Docker on, a bot's container can reach the network anyway (see above).
+
 ## Data
 
 Deleting a bot is a soft delete, and compaction never deletes history, so everything bots have

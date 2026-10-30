@@ -28,7 +28,8 @@ const text = (value: unknown): Result => ({
   ],
 });
 
-async function run(body: () => Promise<unknown>): Promise<Result> {
+/** A tool result from `body`'s value; a throw becomes an error result with its message. */
+export async function run(body: () => Promise<unknown>): Promise<Result> {
   try {
     return text(await body());
   } catch (error) {

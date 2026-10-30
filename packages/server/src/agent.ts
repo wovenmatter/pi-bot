@@ -17,6 +17,7 @@ import type { BeforeCompactHook } from "./memory.ts";
 import type { BotRecord } from "./storage/registry.ts";
 import { type SubagentLog, subagentExtension } from "./subagent.ts";
 import { type BotPlatform, botTools } from "./tools.ts";
+import { type WebToolsOptions, webTools } from "./web.ts";
 
 export type CompactionConfig = RawConfig["compaction"];
 
@@ -63,6 +64,8 @@ export type BotAgentOptions = {
   readonly onSubagent?: SubagentLog;
   /** Bot tools (list/create/message bots, teams, Admin Bot's settings); omitted: none. */
   readonly platform?: BotPlatform;
+  /** `web_search` and `fetch_url` (the app always passes it); omitted: no web tools. */
+  readonly web?: WebToolsOptions;
   readonly env?: BotEnvironmentAdapter;
   readonly onReport?: (error: unknown, info: unknown) => void;
   readonly compaction?: CompactionConfig;
@@ -205,6 +208,8 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     extension,
     ...(options.env ? [CodingTools] : []),
     ...(tools ? [tools] : []),
+    // Subagents keep the web tools: research is typical delegated work.
+    ...(options.web ? [webTools(options.web)] : []),
     subagent,
   ];
   const registry = createCompactionRegistry();

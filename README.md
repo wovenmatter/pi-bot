@@ -111,8 +111,6 @@ from a throwaway instance with a faux "demo" provider and sample bots.
   pre-compaction extraction hook is a no-op.
 - **Background pool work.** The pool's `background = true` flag is stored but no background job
   uses it yet.
-- **Web search tool.** Exa, Brave and Firecrawl keys and `[search] provider` are stored, but no
-  bot tool uses them yet.
 - **Stop/abort** of a running reply, in the UI or the protocol.
 - **Purging deleted bots.** Deletion is soft; data stays in the database.
 

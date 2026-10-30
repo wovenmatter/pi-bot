@@ -27,7 +27,9 @@ Bot, not caps, and never secrets.
 ## Search providers
 
 Settings → Search stores keys for **Exa** (default), **Brave Search** and **Firecrawl**, plus the
-`[search] provider` choice. No bot has a web search tool yet, so these are stored for later.
+`[search] provider` choice. Every bot's `web_search` tool uses the chosen provider, or another one
+with a key when it has none ([bots and teams](bots-and-teams.md#bot-tools)). A changed default
+applies after a restart; keys apply from the next search.
 
 ## Headless sign-in
 
