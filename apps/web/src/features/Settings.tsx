@@ -35,7 +35,8 @@ export function formatDeletedAt(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : dateFormat.format(date);
 }
 
-/** Presentational list of deleted bots; the only place a bot can be restored from. */
+/** Presentational list of deleted bots; the only place a bot can be restored from. Settings → Bots
+ * shows it below Admin Bot, after a separator, only while there are deleted bots. */
 export function DeletedBotsList({
   bots,
   restoring,
@@ -502,34 +503,35 @@ function BotsSection({
     }
   }
   return (
-    <>
-      <BotsPanel
-        bots={live}
-        profiles={profiles}
-        disabled={!connected || busy}
-        onSetProfile={(bot, profileId) =>
-          void act(() => client.request("bots.setProfile", { botId: bot.id, profileId }))
-        }
-        onPlace={(bot, placement) => void place(bot, placement)}
-        onReplaceManager={(manager, newManagerId) =>
-          void act(() =>
-            client.request("bots.replaceManager", { managerId: manager.id, newManagerId }),
-          )
-        }
-        onSetOrchestrator={(botId) =>
-          void act(() => client.request("bots.setOrchestrator", { botId }))
-        }
-        onRename={(bot, name) =>
-          void act(() => client.request("bots.rename", { botId: bot.id, name }))
-        }
-      />
-      <DeletedBotsList
-        bots={deleted}
-        restoring={restoring}
-        disabled={!connected}
-        onRestore={(bot) => void restore(bot)}
-      />
-    </>
+    <BotsPanel
+      bots={live}
+      profiles={profiles}
+      disabled={!connected || busy}
+      onSetProfile={(bot, profileId) =>
+        void act(() => client.request("bots.setProfile", { botId: bot.id, profileId }))
+      }
+      onPlace={(bot, placement) => void place(bot, placement)}
+      onReplaceManager={(manager, newManagerId) =>
+        void act(() =>
+          client.request("bots.replaceManager", { managerId: manager.id, newManagerId }),
+        )
+      }
+      onSetOrchestrator={(botId) =>
+        void act(() => client.request("bots.setOrchestrator", { botId }))
+      }
+      onRename={(bot, name) =>
+        void act(() => client.request("bots.rename", { botId: bot.id, name }))
+      }
+    >
+      {deleted?.length ? (
+        <DeletedBotsList
+          bots={deleted}
+          restoring={restoring}
+          disabled={!connected}
+          onRestore={(bot) => void restore(bot)}
+        />
+      ) : null}
+    </BotsPanel>
   );
 }
 

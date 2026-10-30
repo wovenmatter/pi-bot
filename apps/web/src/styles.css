@@ -1645,6 +1645,21 @@ input[type="file"] {
   border-top: 1px solid var(--line);
   border-radius: 0;
 }
+/* A team member sits under its manager, indented like the sidebar's members. */
+.bot-member > :first-child {
+  padding-left: 12px;
+}
+/* Thin rules between the bots, Admin Bot and the deleted bots. */
+.bots-separator {
+  width: 100%;
+  margin: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.settings-section .settings-section {
+  padding-top: 0;
+  border-top: 0;
+}
 .bot-row-note {
   padding-left: 12px;
   font-size: 12px;

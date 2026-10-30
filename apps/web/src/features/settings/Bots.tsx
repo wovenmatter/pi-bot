@@ -1,6 +1,7 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { Loading } from "../../components/ui.tsx";
 import type { BotSummary, ProfileSummary } from "../../protocol.ts";
+import { groupBots } from "../../shell/bot-groups.ts";
 
 /** What a bot does, separate from its name. */
 export type Role = "Admin" | "Orchestrator" | "Manager" | "Bot";
@@ -24,6 +25,10 @@ export const placementOf = (bot: BotSummary): Placement =>
  * Settings → Bots: one row per bot with its profile ("" = the default profile) and its team.
  * Teams are one level; Admin Bot is never on one. One bot may optionally be the orchestrator: listed
  * first, above every team, never on a team itself (it may lead its own).
+ *
+ * Order: the orchestrator (with its own team nested under it), then each manager with its members
+ * nested under it, then bots on no team; a separator, then Admin Bot; then, when given, another
+ * separator and `children` (the deleted bots).
  */
 export function BotsPanel({
   bots,
@@ -34,6 +39,7 @@ export function BotsPanel({
   onReplaceManager,
   onSetOrchestrator,
   onRename,
+  children,
 }: {
   bots: readonly BotSummary[] | undefined;
   profiles: readonly ProfileSummary[] | undefined;
@@ -45,14 +51,98 @@ export function BotsPanel({
   onSetOrchestrator: (botId: string | null) => void;
   /** Rename a bot (never Admin Bot, whose name is fixed). */
   onRename: (bot: BotSummary, name: string) => void;
+  /** Shown below Admin Bot after a separator (the deleted bots); omit to skip both. */
+  children?: ReactNode;
 }) {
   if (bots === undefined || profiles === undefined) return <Loading />;
+  const all = bots;
+  const choices = profiles;
   const fallback = profiles.find((profile) => profile.default);
   const managers = bots.filter((bot) => bot.kind !== "admin" && bot.manager);
   const candidates = bots.filter((bot) => bot.kind !== "admin");
   const orchestrator = candidates.find((bot) => bot.orchestrator);
-  const rank = (bot: BotSummary) => (bot.kind === "admin" ? 0 : bot.orchestrator ? 1 : 2);
-  const rows = [...bots].sort((a, b) => rank(a) - rank(b));
+  const groups = groupBots(bots);
+  const leads = [
+    ...(groups.orchestrator
+      ? [{ manager: groups.orchestrator.bot, members: groups.orchestrator.members }]
+      : []),
+    ...groups.teams,
+  ];
+  function row(bot: BotSummary, nested = false) {
+    const admin = bot.kind === "admin";
+    const members = all.filter((other) => other.managerId === bot.id);
+    return (
+      <li key={bot.id} className={nested ? "bot-row bot-member" : "bot-row"}>
+        <BotName
+          bot={bot}
+          disabled={disabled}
+          onRename={onRename}
+          note={
+            admin
+              ? "Accounts and config"
+              : bot.orchestrator && !(bot.manager && members.length)
+                ? "Oversees every bot and team"
+                : bot.manager
+                  ? members.length
+                    ? `Team: ${members.map((member) => member.name).join(", ")}`
+                    : "No members yet"
+                  : undefined
+          }
+        />
+        <select
+          aria-label={`Profile for ${bot.name}`}
+          value={bot.defaultProfile ? "" : bot.profileId}
+          disabled={disabled}
+          onChange={(event) => onSetProfile(bot, event.target.value || null)}
+        >
+          <option value="">Default ({fallback?.name ?? "none"})</option>
+          {choices.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {profile.name}
+            </option>
+          ))}
+        </select>
+        {admin ? (
+          <span className="bot-row-note muted">Never on a team</span>
+        ) : (
+          <select
+            aria-label={`Team for ${bot.name}`}
+            value={placementOf(bot)}
+            disabled={disabled}
+            onChange={(event) => onPlace(bot, event.target.value)}
+          >
+            <option value="none">No team</option>
+            <option value="manager">Manager</option>
+            {managers
+              .filter((manager) => manager.id !== bot.id && !bot.orchestrator)
+              .map((manager) => (
+                <option key={manager.id} value={manager.id}>
+                  On {manager.name}'s team
+                </option>
+              ))}
+          </select>
+        )}
+        {!admin && bot.manager && members.length ? (
+          <select
+            className="bot-row-handoff"
+            aria-label={`Hand ${bot.name}'s team to`}
+            value=""
+            disabled={disabled}
+            onChange={(event) => {
+              if (event.target.value) onReplaceManager(bot, event.target.value);
+            }}
+          >
+            <option value="">Hand team to…</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </li>
+    );
+  }
   return (
     <section className="settings-section" aria-labelledby="bots-heading">
       <h3 id="bots-heading">Bots</h3>
@@ -89,83 +179,25 @@ export function BotsPanel({
           <span>Team</span>
         </div>
         <ul className="settings-list">
-          {rows.map((bot) => {
-            const admin = bot.kind === "admin";
-            const members = bots.filter((other) => other.managerId === bot.id);
-            return (
-              <li key={bot.id} className="bot-row">
-                <BotName
-                  bot={bot}
-                  disabled={disabled}
-                  onRename={onRename}
-                  note={
-                    admin
-                      ? "Accounts and config"
-                      : bot.orchestrator && !(bot.manager && members.length)
-                        ? "Oversees every bot and team"
-                        : bot.manager
-                          ? members.length
-                            ? `Team: ${members.map((member) => member.name).join(", ")}`
-                            : "No members yet"
-                          : undefined
-                  }
-                />
-                <select
-                  aria-label={`Profile for ${bot.name}`}
-                  value={bot.defaultProfile ? "" : bot.profileId}
-                  disabled={disabled}
-                  onChange={(event) => onSetProfile(bot, event.target.value || null)}
-                >
-                  <option value="">Default ({fallback?.name ?? "none"})</option>
-                  {profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name}
-                    </option>
-                  ))}
-                </select>
-                {admin ? (
-                  <span className="bot-row-note muted">Never on a team</span>
-                ) : (
-                  <select
-                    aria-label={`Team for ${bot.name}`}
-                    value={placementOf(bot)}
-                    disabled={disabled}
-                    onChange={(event) => onPlace(bot, event.target.value)}
-                  >
-                    <option value="none">No team</option>
-                    <option value="manager">Manager</option>
-                    {managers
-                      .filter((manager) => manager.id !== bot.id && !bot.orchestrator)
-                      .map((manager) => (
-                        <option key={manager.id} value={manager.id}>
-                          On {manager.name}'s team
-                        </option>
-                      ))}
-                  </select>
-                )}
-                {!admin && bot.manager && members.length ? (
-                  <select
-                    className="bot-row-handoff"
-                    aria-label={`Hand ${bot.name}'s team to`}
-                    value=""
-                    disabled={disabled}
-                    onChange={(event) => {
-                      if (event.target.value) onReplaceManager(bot, event.target.value);
-                    }}
-                  >
-                    <option value="">Hand team to…</option>
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-              </li>
-            );
-          })}
+          {leads.flatMap(({ manager, members }) => [
+            row(manager),
+            ...members.map((member) => row(member, true)),
+          ])}
+          {groups.ungrouped.map((bot) => row(bot))}
         </ul>
+        {groups.admin ? (
+          <>
+            <hr className="bots-separator" />
+            <ul className="settings-list">{row(groups.admin)}</ul>
+          </>
+        ) : null}
       </div>
+      {children ? (
+        <>
+          <hr className="bots-separator" />
+          {children}
+        </>
+      ) : null}
     </section>
   );
 }

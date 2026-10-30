@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PiBotClient } from "../src/api.ts";
@@ -68,6 +69,9 @@ describe("bot groups", () => {
     expect(order.every((at, i) => at > 0 && (i === 0 || at > (order[i - 1] ?? 0)))).toBe(true);
     expect(html).not.toContain("Delete Admin Bot");
     expect(html).toContain("Delete Lead");
+    const adminLink = html.slice(html.lastIndexOf("<a", html.indexOf(">Admin Bot<")));
+    expect(adminLink.slice(0, adminLink.indexOf("</a>"))).toContain("lucide-sliders-horizontal");
+    expect(html).not.toContain("lucide-shield");
     expect(html).toContain("rail-member");
   });
 
@@ -146,7 +150,7 @@ describe("orchestrator", () => {
     expect(html.indexOf("Orchestrator<")).toBeLessThan(html.indexOf(">Aide<"));
   });
 
-  it("bots panel sets the orchestrator, lists it first and keeps it off other teams", () => {
+  it("bots panel sets the orchestrator, lists it first with its team and keeps it off other teams", () => {
     const html = renderToStaticMarkup(
       <BotsPanel
         bots={withOrchestrator}
@@ -162,7 +166,7 @@ describe("orchestrator", () => {
     expect(picker).toContain(">None<");
     expect(picker).toContain('value="chief" selected=""');
     expect(picker).not.toContain("Admin Bot");
-    const rows = ["Admin Bot", "Chief", "Loose", "Lead"].map((name) =>
+    const rows = ["Chief", "Aide", "Lead", "Member", "Loose", "Admin Bot"].map((name) =>
       html.indexOf(`<strong>${name}`),
     );
     expect(rows.every((at, i) => at > 0 && (i === 0 || at > (rows[i - 1] ?? 0)))).toBe(true);
@@ -224,6 +228,64 @@ describe("orchestrator", () => {
 });
 
 describe("bots panel", () => {
+  const panel = (list: BotSummary[], children?: ReactNode) =>
+    renderToStaticMarkup(
+      <BotsPanel
+        bots={list}
+        profiles={profiles}
+        onSetProfile={noop}
+        onPlace={noop}
+        onReplaceManager={noop}
+        onSetOrchestrator={noop}
+        onRename={noop}
+      >
+        {children}
+      </BotsPanel>,
+    );
+  const rowOf = (html: string, name: string) => {
+    const at = html.indexOf(`<strong>${name}<`);
+    return html.slice(html.lastIndexOf("<li", at), at);
+  };
+
+  it("lists teams with members nested under their manager, then Admin Bot after a separator", () => {
+    const html = panel(bots);
+    const order = ["Lead", "Member", "Loose", "Admin Bot"].map((name) =>
+      html.indexOf(`<strong>${name}<`),
+    );
+    expect(order.every((at, i) => at > 0 && (i === 0 || at > (order[i - 1] ?? 0)))).toBe(true);
+    expect(rowOf(html, "Member")).toContain('class="bot-row bot-member"');
+    for (const name of ["Lead", "Loose", "Admin Bot"]) {
+      expect(rowOf(html, name)).toContain('class="bot-row"');
+    }
+    const separators = [...html.matchAll(/<hr class="bots-separator"\/>/g)].map((m) => m.index);
+    expect(separators).toHaveLength(1);
+    expect(separators[0]).toBeGreaterThan(html.indexOf("<strong>Loose<"));
+    expect(separators[0]).toBeLessThan(html.indexOf("<strong>Admin Bot<"));
+  });
+
+  it("nests the orchestrator's own team under it", () => {
+    const html = panel([
+      bot("loose"),
+      bot("chief", { orchestrator: true, manager: true }),
+      bots[2] as BotSummary,
+      bot("aide", { managerId: "chief" }),
+    ]);
+    expect(html.indexOf("<strong>Chief<")).toBeLessThan(html.indexOf("<strong>Aide<"));
+    expect(html.indexOf("<strong>Aide<")).toBeLessThan(html.indexOf("<strong>Loose<"));
+    expect(rowOf(html, "Aide")).toContain('class="bot-row bot-member"');
+    expect(rowOf(html, "Chief")).toContain('class="bot-row"');
+  });
+
+  it("puts the deleted bots after Admin Bot behind a second separator", () => {
+    const html = panel(bots, <p>Deleted list</p>);
+    const separators = [...html.matchAll(/<hr class="bots-separator"\/>/g)].map(
+      (m) => m.index ?? 0,
+    );
+    expect(separators).toHaveLength(2);
+    expect(separators[1]).toBeGreaterThan(html.indexOf("<strong>Admin Bot<"));
+    expect(separators[1]).toBeLessThan(html.indexOf("Deleted list"));
+  });
+
   it("maps bots to placements and keeps Admin Bot off teams", () => {
     expect(bots.map(placementOf)).toEqual(["none", "manager", "none", "lead"]);
     const html = renderToStaticMarkup(

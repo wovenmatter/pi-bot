@@ -4,7 +4,7 @@ import {
   MessageSquareReply,
   Plus,
   Settings,
-  ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   Users,
   X,
@@ -55,7 +55,7 @@ export function Sidebar({
 
   function botRow(bot: BotSummary, member = false) {
     const active = !settings && bot.id === botId;
-    const icon = bot.kind === "admin" ? ShieldCheck : bot.manager ? Users : Bot;
+    const icon = bot.kind === "admin" ? SlidersHorizontal : bot.manager ? Users : Bot;
     return (
       <div key={bot.id} className={member ? "rail-row rail-member" : "rail-row"}>
         <a
