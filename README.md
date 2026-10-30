@@ -87,9 +87,13 @@ The `claude-subscription` provider (`packages/server/src/claude/`) runs Claude t
 It follows Woven Matter's `default-agent/src/claude-provider.mjs`, `claude-runtime.mjs` and
 `claude-inventory.mjs`.
 
+Sign in from the web UI (**Sign in with Claude**, see [Claude sign-in](#claude-sign-in-choice-and-reason)),
+or from a terminal:
+
 ```sh
-claude setup-token                                            # prints a long-lived OAuth token
-node packages/server/dist/cli.js set-key claude-subscription  # paste it (stored encrypted)
+node packages/server/dist/cli.js login claude-subscription    # same flow: open the link, paste the code
+# or: run `claude setup-token` anywhere, then
+node packages/server/dist/cli.js set-key claude-subscription  # paste the sk-ant-oat… token (stored encrypted)
 # then use e.g. main = "claude-subscription/claude-sonnet-4-5" in a [profiles.*] table
 ```
 
@@ -169,11 +173,17 @@ The web app's Settings page (`#/settings`, tabs at `#/settings/<section>`) has:
   Credential changes apply immediately (models read the store per request).
   - OpenAI: **ChatGPT subscription** sign-in (OAuth — device code, or open the link in any
     browser and paste back the `localhost:1455` redirect URL it ends on) and an **API key**.
-  - Claude: **subscription token** from `claude setup-token` (`sk-ant-oat…`, used by the Claude
-    Agent SDK path; there is no in-app Claude OAuth) and an **Anthropic API key**.
+  - Order (onboarding and Settings): Claude, OpenAI, Grok (xAI), OpenRouter, OpenCode Go. Each
+    subscription sign-in comes first; its provider's API key sits under a collapsed **Use an API
+    key instead** under that row (open while a key is set, so it can be seen and removed).
+  - Claude: one **Sign in with Claude** row (Claude Code's own `claude setup-token`, driven by the
+    server; see below). Folded under it: the **Anthropic API key**. The separate "long-lived token"
+    row is gone; its paste field is the same row's field (a pasted `sk-ant-oat…` token is accepted).
+  - OpenAI: **ChatGPT subscription** sign-in (OAuth — device code, or open the link in any
+    browser and paste back the `localhost:1455` redirect URL it ends on); **OpenAI API key** folded.
   - Grok / xAI: **SuperGrok or X Premium** sign-in (real device-code OAuth; some tiers are
-    refused by xAI with a 403) or an **API key**. Both share one credential slot.
-  - **OpenRouter** and **OpenCode Go** API keys.
+    refused by xAI with a 403); **xAI API key** folded. Both share one credential slot.
+  - **OpenRouter** and **OpenCode Go**: plain API key fields.
     Variables from the environment show as "From …" and can't be removed here.
   - **Plans and budget** (account notes): plans, tiers, rough monthly comfort spend; guidance for
     Admin Bot, not caps, never secrets.
@@ -208,11 +218,62 @@ nothing has to reach a localhost callback on the workstation. The flows are Wove
 | Provider                         | What you see and do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ChatGPT (`openai-codex`)         | Settings → Accounts → ChatGPT → **Sign in** shows a code and a link to `auth.openai.com/codex/device`. Open it anywhere, enter the code, approve; Pi Bot polls and finishes on its own (15 min limit). Same as Woven (`default-agent/src/sign-in-interaction.mjs` picks `device_code`). If your account has device-code sign-in turned off, use **Browser, then paste the redirect URL**: approve in the browser, and when it lands on a `localhost:1455` page that won't load, paste that whole URL back. |
-| Claude (`claude-oauth`, Pro/Max) | **Sign in** shows a claude.ai link. Open it anywhere, approve, and claude.ai shows a code (`code#state`); paste it back. Pi Bot stores the tokens, refreshes them itself and hands the access token to Claude Code as `CLAUDE_CODE_OAUTH_TOKEN`. Fallbacks: paste a `claude setup-token` token (same slot) or an Anthropic API key.                                                                                                                                                                        |
+| Claude (`claude-oauth`, Pro/Max) | **Sign in with Claude**: the server starts Claude Code's `claude setup-token` and the row shows numbered steps with the claude.com link (Open / Copy). Sign in and approve in any browser; Claude shows a code; paste it into the field on the same row. Claude Code exchanges it and prints a one-year token, which Pi Bot stores encrypted and the row shows Connected. Without a usable `claude` binary or PTY the row shows terminal steps instead and takes the pasted token.                         |
 | xAI (Grok)                       | **Sign in** shows a code and an auth.x.ai link; approve there and Pi Bot finishes. API key fallback in the same slot.                                                                                                                                                                                                                                                                                                                                                                                      |
 
 Refreshes run inside the credential store's per-slot lock, so the one server process has one
-serialized refresher per provider (xAI and Anthropic rotate refresh tokens).
+serialized refresher per provider (xAI rotates refresh tokens). The Claude token has no refresh:
+when it expires after a year the row says so and you sign in again.
+
+### Claude sign-in: choice and reason
+
+**Before:** the Claude row ran Pi Bot's own port of Claude Code's PKCE flow (pi-ai's Anthropic
+OAuth, as in Woven Matter's iOS `InferenceOAuth.swift`): Pi Bot built a `claude.ai/oauth/authorize`
+link with Claude Code's client id, took the pasted `code#state`, exchanged it itself at
+`platform.claude.com/v1/oauth/token`, stored access + refresh tokens and refreshed them. A second
+row took a token pasted from `claude setup-token` run elsewhere.
+
+**Now:** Pi Bot drives Anthropic's own, unmodified Claude Code binary (the one bundled with
+`@anthropic-ai/claude-agent-sdk`, else `claude` on `PATH`) and runs `claude setup-token` in a
+pseudo-terminal (util-linux `script`; setup-token prints nothing without a TTY), with a private
+throwaway `CLAUDE_CONFIG_DIR` and `BROWSER=true` (`packages/server/src/claude/setup-token.ts`):
+
+1. **Sign in with Claude** starts `claude setup-token`; Pi Bot reads the sign-in URL it prints and
+   shows it on the row with numbered steps, **Open sign-in page** and **Copy link**.
+2. You sign in to Claude (Pro, Max, Team or Enterprise) in any browser, through Anthropic's own
+   pages, and approve.
+3. Claude shows a code; paste it into the field on the row. Pi Bot types it into the waiting
+   `claude setup-token` ("Paste code here if prompted"), which does the token exchange itself.
+4. Claude Code prints the one-year `sk-ant-oat…` token. Pi Bot stores it encrypted (credential
+   store, `claude-subscription` slot), the row shows Connected, and Pi Bot passes it to Claude Code
+   as `CLAUDE_CODE_OAUTH_TOKEN` per request. Cancel or a 15-minute timeout kill the process; the
+   temporary config dir is always deleted. A wrong code shows Claude's own error.
+
+If no TTY or binary is available, the row shows the terminal version (run `claude setup-token`
+on any computer, sign in, paste the printed token) with the same paste field.
+
+**Why:** it uses only documented pieces, no scraped cookies and no Anthropic endpoints called by
+Pi Bot. Pi Bot no longer reimplements Claude Code's OAuth client.
+
+- [Authentication](https://code.claude.com/docs/en/authentication): `claude setup-token` runs the
+  same browser flow as `/login` ("Paste code here if prompted" when the browser shows a code),
+  prints a one-year OAuth token without saving it, and that token is meant to be set as
+  `CLAUDE_CODE_OAUTH_TOKEN` "for CI pipelines, scripts, or other environments where interactive
+  browser login isn't available". The token is limited to model requests and needs a Pro, Max,
+  Team or Enterprise plan.
+- [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview) and
+  [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) ("Authentication
+  and credential use") allow "an end user signing in to the unmodified Claude Code binary with
+  their own Claude subscription".
+
+**Caveat:** the same pages say third-party developers may not offer claude.ai login in their
+products or "collect, store, or intermediate Claude.ai credentials or session tokens" without
+Anthropic's approval. Pi Bot is a self-hosted tool you run for yourself, sign-in itself happens
+in Anthropic's flow and Claude Code, but Pi Bot storing the resulting token is still a gray
+area. The stricter option is Woven Matter's `default-agent` approach (`claude auth login`, where
+Claude Code keeps its own credentials and Pi Bot never sees the token); it was not chosen because
+Pi Bot keeps every credential in its own encrypted store. The Anthropic API key (folded under
+the Claude row) is the fully sanctioned alternative.
 
 ### Restart and apply
 
