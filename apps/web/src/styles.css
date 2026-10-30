@@ -1,8 +1,9 @@
 /*
  * Pi Bot web stylesheet: the subset of the WovenMatter Enterprise web stylesheet
- * (platform apps/web/src/styles.css) that Pi Bot uses, filtered by class (see the generator
- * note in the README) and since refined in place for Pi Bot (rail actions and headings, input
- * focus, empty states, conversation header). Its tokens mirror the WovenMatter desktop app:
+ * (platform apps/web/src/styles.css) that Pi Bot uses, copied unchanged and filtered by
+ * class (see the generator note in the README); the one exception is `border: 0` on
+ * .rail-action, which stops buttons drawing the browser's default border. Its tokens mirror
+ * the WovenMatter desktop app:
  * app/App/Views/DashboardColors.swift (DashboardColors, DashboardPalette),
  * DashboardStyle.swift (DashboardTheme: green, cognac, dark) and DashboardDesign.swift
  * (DashboardMetrics). Pi Bot additions follow at the end. CSS pixels map 1:1 to points.
@@ -54,9 +55,8 @@
   --segment-radius: 6px;
   --row-height: 28px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
-  font-family: var(--sans);
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink);
@@ -382,21 +382,7 @@ input:not([type="checkbox"], [type="radio"], [type="file"]):focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
-}
-input:not([type="checkbox"], [type="radio"], [type="file"]),
-textarea,
-select {
-  transition:
-    border-color 0.12s ease-out,
-    box-shadow 0.12s ease-out,
-    background-color 0.12s ease-out;
-}
-input:not([type="checkbox"], [type="radio"], [type="file"], :disabled, :focus):hover,
-textarea:not(:disabled, :focus):hover,
-select:not(:disabled, :focus):hover {
-  background: color-mix(in srgb, var(--soft) 80%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 22%, transparent);
 }
 input[readonly] {
   color: var(--muted);
@@ -538,22 +524,12 @@ input[type="file"] {
 .empty h2 {
   margin: 0;
   color: var(--ink);
-  font-size: 15px;
+  font-size: 14px;
 }
 .empty p {
-  max-width: 420px;
+  max-width: 520px;
   margin: 0 0 12px;
-  font-size: 13px;
-}
-.empty-icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 10px;
-  border-radius: 50%;
-  background: var(--soft);
-  color: var(--accent);
+  font-size: 12.5px;
 }
 /* ---------- Shell and rails ---------- */
 .app-shell {
@@ -623,18 +599,16 @@ input[type="file"] {
   flex: none;
   border-radius: 6px;
 }
-.sidebar .icon-button {
+.sidebar .icon-button,
+.sidebar .rail-action {
   color: var(--ink);
 }
-/* The bot and thread list scrolls; Settings and the theme switch stay pinned at the bottom. */
 .sidebar > nav {
   display: flex;
-  flex: 1;
+  flex: none;
   flex-direction: column;
   gap: 1px;
-  min-height: 0;
-  padding: 0 8px 8px;
-  overflow-y: auto;
+  padding: 0 8px;
 }
 /* DashboardRailRow: 28 high, 12 inset, 13 regular, 13-in-15 glyph, 8 radius. */
 .nav-link {
@@ -710,7 +684,7 @@ input[type="file"] {
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
-/* Separate new-chat and menu actions: 24 × 28, 8 radius, quiet fills, no native border. */
+/* Separate new-chat and menu actions: 24 × 28, 8 radius, quiet fills. */
 .rail-action,
 .icon-button.rail-action {
   display: inline-grid;
@@ -722,21 +696,14 @@ input[type="file"] {
   border: 0;
   border-radius: var(--row-radius);
   background: transparent;
-  box-shadow: none;
-  color: var(--muted);
-  transition:
-    background-color 0.12s ease-out,
-    color 0.12s ease-out,
-    opacity 0.12s ease-out;
+  color: var(--ink);
 }
 .rail-action:hover {
-  background: var(--soft);
-  color: var(--ink);
+  background: var(--whisper);
 }
 .rail-action:active,
 .rail-action[aria-expanded="true"] {
   background: var(--soft);
-  color: var(--ink);
 }
 .working-dot {
   flex: none;
@@ -754,10 +721,9 @@ input[type="file"] {
   height: 26px;
   padding: 0 12px;
   border-radius: var(--row-radius);
-  color: var(--muted);
-  font-size: 11px;
+  color: var(--ink);
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.02em;
   user-select: none;
 }
 .disclosure-heading > span {
@@ -766,6 +732,9 @@ input[type="file"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.disclosure-heading:hover {
+  background: var(--whisper);
 }
 .rail-empty {
   margin: 0;
@@ -779,8 +748,8 @@ input[type="file"] {
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 8px 12px;
+  gap: 1px;
+  padding: 0 8px 12px;
 }
 /* ---------- Pages ---------- */
 .main-content {
@@ -809,29 +778,26 @@ input[type="file"] {
   min-height: 0;
   overflow: hidden;
 }
-/* Banners line up with the message column. */
 .conversation-main > .notice {
   flex: none;
-  width: calc(100% - 64px);
-  max-width: 768px;
-  margin: 12px auto 0;
+  margin: 8px 16px 0;
 }
 .thread-header {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 10px;
-  height: 48px;
-  padding: 0 12px 0 20px;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px 0 16px;
   border-bottom: 1px solid var(--line);
 }
 .thread-header h2 {
-  flex: 0 1 auto;
+  flex: 1;
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -839,8 +805,7 @@ input[type="file"] {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
+  gap: 2px;
 }
 /* DashboardConversation: 768 column, 32 side inset, 24 top. */
 .transcript {
@@ -899,23 +864,8 @@ input[type="file"] {
 .message > small {
   margin-top: 6px;
 }
-/* A failed reply: the error notice, inline under the message (matches the limit banner). */
-.notice.message-error {
-  width: fit-content;
-  max-width: 100%;
-  margin: 10px 0 0;
-  padding: 8px 12px;
-}
-.notice.message-error > span {
-  display: grid;
-  gap: 1px;
-}
-.message-error-detail {
-  color: color-mix(in srgb, var(--danger-ink) 82%, var(--ink));
-  font-size: 12px;
-}
-.message-user .notice.message-error {
-  margin-left: auto;
+.message > small.danger {
+  color: var(--danger-ink);
 }
 .message > div:has(> .text-button) {
   margin-top: 6px;
@@ -934,7 +884,7 @@ input[type="file"] {
 .response-actions small {
   display: inline;
 }
-/* Threads hang off the message they fork from, as replies under their generated titles. */
+/* Threads hang off the message they fork from, as replies (no thread names). */
 .thread-replies {
   display: flex;
   flex-wrap: wrap;
@@ -944,27 +894,14 @@ input[type="file"] {
 .thread-reply-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  min-height: 26px;
-  padding: 0 10px;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 8px;
   border: 1px solid var(--line);
   border-radius: var(--segment-radius);
   color: var(--muted);
   font-size: 12px;
   text-decoration: none;
-  transition:
-    background-color 0.12s ease-out,
-    color 0.12s ease-out;
-}
-.thread-reply-link > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.thread-reply-link > svg {
-  flex: none;
 }
 .thread-reply-link:hover {
   background: var(--whisper);
@@ -1183,11 +1120,8 @@ input[type="file"] {
   line-height: 20px;
   resize: none;
 }
-.composer-area textarea:focus,
-.composer-area textarea:hover {
+.composer-area textarea:focus {
   border: 0;
-  background: transparent;
-  box-shadow: none;
 }
 .composer-area textarea:disabled {
   opacity: 1;
@@ -1362,11 +1296,43 @@ input[type="file"] {
 .nav-link.child {
   padding-left: 24px;
 }
+/* Bot section headings label the list; they are not disclosures, so they don't highlight. */
+.sidebar > nav .disclosure-heading:hover {
+  background: transparent;
+}
+/* The bot and thread list scrolls; Settings and the theme switch stay pinned at the bottom. */
+.sidebar > nav {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 8px;
+  overflow-y: auto;
+}
+.sidebar-footer {
+  padding-top: 8px;
+}
+/* Threads show their generated titles, read-only; untitled ones read muted. */
 .nav-link.untitled > span,
 .thread-header h2.untitled,
 .thread-reply-link.untitled > span {
   color: var(--muted);
-  font-style: italic;
+}
+.thread-reply-link {
+  max-width: 100%;
+}
+.thread-reply-link > svg {
+  flex: none;
+}
+.thread-reply-link > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Banners above a conversation line up with the 768 message column. */
+.conversation-main > .notice {
+  width: calc(100% - 64px);
+  max-width: 768px;
+  margin: 8px auto 0;
 }
 .nav-link.thread-link > svg {
   color: var(--muted);
@@ -1378,14 +1344,6 @@ input[type="file"] {
   display: flex;
   gap: 6px;
   padding: 2px 4px 10px;
-}
-.sidebar-create input:not([type="checkbox"], [type="radio"], [type="file"]) {
-  min-height: 32px;
-  background: var(--surface);
-}
-.sidebar-create .primary {
-  min-height: 32px;
-  padding-inline: 12px;
 }
 .sidebar-create input {
   flex: 1;
@@ -1405,17 +1363,21 @@ input[type="file"] {
   font-size: 12px;
   white-space: nowrap;
 }
-/* The bot's profile, as a quiet chip in the conversation header. */
-.profile-chip {
-  max-width: 180px;
-  padding: 2px 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--whisper);
-  color: var(--muted);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* A failed reply: the error notice (as for the limit banner), inline under the message. */
+.notice.message-error {
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px 0 0;
+}
+.notice.message-error > span {
+  display: grid;
+  gap: 2px;
+}
+.message-error-detail {
+  font-size: 12px;
+}
+.message-user .notice.message-error {
+  margin-left: auto;
 }
 /* Inherited history in a thread reads as context, not as the thread's own messages. */
 .message.inherited {
@@ -1463,10 +1425,11 @@ input[type="file"] {
   max-width: 720px;
   margin-inline: auto;
 }
-.settings-page > h1 {
-  margin: 0 0 18px;
+.settings-page > h2 {
+  margin: 0 0 20px;
   color: var(--ink);
-  font-size: 20px;
+  font-size: 16px;
+  font-weight: 600;
 }
 /* Errors and the pending-restart notice stay in view while a long tab scrolls. */
 .settings-notices {
@@ -1479,22 +1442,28 @@ input[type="file"] {
 .settings-notices:not(:empty) {
   margin: 0 0 20px;
 }
+/* Pinned notices sit on the workspace so content doesn't show through their (notice) tints. */
 .settings-notices > .notice {
   margin: 0;
   background-color: var(--workspace);
-  background-image: linear-gradient(
-    var(--notice-tint, transparent),
-    var(--notice-tint, transparent)
-  );
 }
 .settings-notices > .notice.error {
-  --notice-tint: color-mix(in srgb, var(--danger) 7%, transparent);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--danger) 7%, transparent),
+    color-mix(in srgb, var(--danger) 7%, transparent)
+  );
 }
 .settings-notices > .notice.warning {
-  --notice-tint: color-mix(in srgb, var(--warning) 9%, transparent);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--warning) 9%, transparent),
+    color-mix(in srgb, var(--warning) 9%, transparent)
+  );
 }
 .settings-notices > .notice.success {
-  --notice-tint: color-mix(in srgb, var(--success) 7%, transparent);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--success) 7%, transparent),
+    color-mix(in srgb, var(--success) 7%, transparent)
+  );
 }
 .settings-body > :first-child {
   padding-top: 0;
@@ -1654,7 +1623,6 @@ input[type="file"] {
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.02em;
 }
 .bot-row {
   row-gap: 6px;
@@ -1715,13 +1683,10 @@ input[type="file"] {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--muted) 45%, transparent);
+  background: currentColor;
 }
 .account-status.configured {
   color: var(--success-ink);
-}
-.account-status.configured .status-dot {
-  background: var(--success);
 }
 .account-meta {
   display: flex;
@@ -1795,19 +1760,18 @@ details.account-help > p {
   font-family: var(--mono);
 }
 .settings-inline-form > input::placeholder {
-  font-family: var(--sans);
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
 /* Settings → Profiles */
 .badge {
   display: inline-block;
   margin-left: 8px;
-  padding: 1px 7px;
-  border-radius: 999px;
+  padding: 0 6px;
+  border-radius: var(--segment-radius);
   background: var(--soft);
   color: var(--ink);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 11px;
+  font-weight: 500;
   vertical-align: 1px;
 }
 .profile-row {
@@ -1836,9 +1800,6 @@ details.account-help > p {
 }
 .icon-button.danger {
   color: var(--danger-ink);
-}
-.icon-button.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 /* The editor is a card; each part folds to a one-line summary. */
 .profile-editing {
@@ -1881,15 +1842,14 @@ details.account-help > p {
   padding: 11px 4px;
   border-radius: var(--row-radius);
 }
-.profile-section > summary:hover .profile-section-title {
-  color: var(--accent);
+.profile-section > summary:hover {
+  background: var(--whisper);
 }
 .profile-section-title {
   flex: none;
   width: 92px;
   font-size: 13px;
   font-weight: 600;
-  transition: color 0.12s ease-out;
 }
 .profile-section-summary {
   flex: 1;
@@ -2138,12 +2098,11 @@ details.account-help > p {
   font-size: 14px;
 }
 .brand-mark.onboarding-mark {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   margin-bottom: 6px;
-  border-radius: 13px;
-  font-size: 28px;
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--primary-fill) 22%, transparent);
+  border-radius: var(--control-radius);
+  font-size: 22px;
 }
 .onboarding-steps {
   display: flex;
@@ -2176,16 +2135,12 @@ details.account-help > p {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* The current step uses the primary button's fill and foreground. */
 .onboarding-steps li.current .onboarding-step-marker {
   background: var(--primary-fill);
-  color: #ffffff;
-}
-html[data-theme="dark"] .onboarding-steps li.current .onboarding-step-marker {
-  background: var(--accent);
-  color: var(--workspace);
+  color: var(--primary-foreground);
 }
 .onboarding-steps li.done .onboarding-step-marker {
-  background: color-mix(in srgb, var(--success) 18%, transparent);
   color: var(--success-ink);
 }
 .onboarding-card {
@@ -2212,7 +2167,6 @@ html[data-theme="dark"] .onboarding-steps li.current .onboarding-step-marker {
 .onboarding-card .settings-section > h3 {
   color: var(--muted);
   font-size: 11px;
-  letter-spacing: 0.02em;
 }
 .onboarding-card .account-row {
   padding-inline: 0;

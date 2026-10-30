@@ -1,4 +1,3 @@
-import { Bot } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { type ConnectionState, defaultSocketUrl, errorMessage, PiBotClient } from "./api.ts";
 import { Empty, ErrorNotice } from "./components/ui.tsx";
@@ -184,7 +183,7 @@ export function App() {
               onRunEnd={() => void refreshThreads(bot.id)}
             />
           ) : bots ? (
-            <Empty icon={Bot} title="Create a bot">
+            <Empty title="Create a bot">
               Use the + in the sidebar. Each bot has one main conversation; threads fork off any
               message.
             </Empty>

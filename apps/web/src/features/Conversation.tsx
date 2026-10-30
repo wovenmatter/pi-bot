@@ -1,11 +1,4 @@
-import {
-  ArrowDown,
-  ArrowUp,
-  CornerUpLeft,
-  GitBranch,
-  MessageSquare,
-  MessageSquareReply,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, CornerUpLeft, GitBranch, MessageSquareReply } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
@@ -189,7 +182,7 @@ export function Conversation({
             <span className="thread-subtitle">{fromThread ? "in a thread" : `in ${bot.name}`}</span>
           ) : null}
           <div className="thread-header-actions">
-            <span className="profile-chip" title="Profile">
+            <span className="thread-subtitle" title="Profile">
               {bot.profileName}
             </span>
             {isThread ? (
@@ -219,10 +212,7 @@ export function Conversation({
           {loading && state.entries.length === 0 ? (
             <Loading />
           ) : state.entries.length === 0 && state.pending.length === 0 && !state.running ? (
-            <Empty
-              icon={isThread ? MessageSquareReply : MessageSquare}
-              title={isThread ? "New thread" : `Say hello to ${bot.name}`}
-            >
+            <Empty title={isThread ? "New thread" : `Say hello to ${bot.name}`}>
               {isThread
                 ? "It picks up from the message you chose."
                 : "This is its main conversation. Start a thread from any message."}

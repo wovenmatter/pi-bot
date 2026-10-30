@@ -670,7 +670,7 @@ export function Settings({
   const props: SectionProps = { client, connected, onError, onConfigSaved };
   return (
     <div className="settings-page">
-      <h1>Settings</h1>
+      <h2>Settings</h2>
       <SettingsNav section={section} />
       <div className="settings-notices">
         <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
