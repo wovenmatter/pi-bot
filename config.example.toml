@@ -52,6 +52,7 @@ use_for = "Careful writing and code review"
 # (else its main model), and new durable facts are appended to the bot's memory, which it sees in
 # its prompt. Runs on the schedule and when a bot has been idle idle_minutes after new messages;
 # bots with nothing new are skipped. Without this section: on, nightly 03:00 UTC plus 30 idle minutes.
+# View and edit each bot's memory in Settings → Bots → Memory.
 [extraction]
 enabled = true
 schedule = "0 3 * * *"              # 5-field cron

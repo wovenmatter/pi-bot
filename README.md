@@ -1,8 +1,7 @@
 # Pi Bot
 
-> **In development, not done.** Pi Bot runs, but it is unfinished: some configured features are
-> not implemented yet (see [Not implemented yet](#not-implemented-yet)), and
-> config, storage and protocol may still change.
+> **In development, not done.** Pi Bot runs, but it is unfinished: config, storage and protocol
+> may still change.
 
 Pi Bot is a self-hosted assistant made of several bots that work together, built on
 [Pi Durable](https://www.npmjs.com/package/@earendil-works/pi-durable). One server process runs
@@ -28,6 +27,8 @@ under his direction.
   any message and inherit its context. Long contexts are compacted automatically, natively
   where the provider supports it. Nothing is deleted from the database unless you permanently
   delete a deleted bot.
+- **Memory.** Each bot keeps durable facts about you, extracted overnight and when it goes idle,
+  and sees them on every turn. View, edit, add or delete them in Settings → Bots → Memory.
 - **Per-bot Docker environments.** Optionally, each bot gets its own container with a
   persistent workspace, where its bash/read/write/edit tools run.
 - **Subscription sign-ins and API keys.** Claude, ChatGPT and Grok subscriptions, plus API keys
@@ -104,13 +105,6 @@ pnpm check        # build, typecheck, lint (Biome) and tests (Vitest)
 Tests never call a real provider: they use pi-ai's faux provider, fake provider HTTP endpoints
 and placeholder credentials, so no API keys are needed. The screenshots in `docs/images` come
 from a throwaway instance with a faux "demo" provider and sample bots.
-
-## Not implemented yet
-
-- **macOS Keychain store on a real Mac.** It is implemented over the `security` CLI but only
-  unit-tested with a fake; see [security](docs/security.md#credentials).
-- **Viewing or editing a bot's memory.** Extracted facts reach the bot's prompt, but the UI doesn't
-  show them and bots have no tool to change them.
 
 ## Credits and caveats
 

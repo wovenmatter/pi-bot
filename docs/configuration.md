@@ -96,8 +96,8 @@ native call fails. Covered history stays in SQLite; only the model context gets 
 ## Memory
 
 Each bot has a memory: a list of durable facts and preferences (at most 200, oldest dropped),
-shown to it as a `memory` prompt section. It changes only when facts are added, so the prompt
-stays cacheable. Extraction runs one bot at a time, in the background, on the `[extraction]`
+shown to it as a `memory` prompt section. It changes only when facts are added or edited, so the
+prompt stays cacheable. Extraction runs one bot at a time, in the background, on the `[extraction]`
 schedule (in `timezone`) and once a bot has been idle `idle_minutes` after new messages. It reads
 the user and assistant messages of the main channel and threads since the bot's checkpoint
 (`pibot_memory`, the newest entry id read; at most the newest ~60k characters per run), asks the
@@ -106,6 +106,12 @@ drops ones already known (case and punctuation ignored) and saves facts and chec
 Bots with nothing new are skipped; a failed run leaves the checkpoint and is retried after another
 idle period or on the next schedule. Errors only go to the server log. Set `enabled = false` to
 turn it off.
+
+**Settings → Bots → Memory** shows one bot's facts (pick it from the list) and lets you edit a
+fact in place, delete one or add your own (up to 1000 characters, one line; a fact already in
+memory is refused). Changes apply from the bot's next reply and show up in every open browser.
+Extraction adds its new facts to the memory as it is when it saves, so your edits are kept, and
+facts you deleted come back only if a later conversation brings them up again.
 
 ## Thread titles
 
@@ -119,7 +125,7 @@ channel has no title. A failed request leaves the thread "Untitled thread".
 
 `#/settings` has six tabs: **Accounts** (sign-ins, keys, plans-and-budget notes), **Profiles**
 (profiles, title model, available models), **Bots** (orchestrator, roles, teams, profiles,
-renames, deleted bots), **Search** (Exa, Brave, Firecrawl keys and provider), **GitHub** (SSH key
+renames, each bot's [memory](#memory), deleted bots), **Search** (Exa, Brave, Firecrawl keys and provider), **GitHub** (SSH key
 and git identity) and **Config** (bot-to-bot and extraction fields, the raw `config.toml` with
 validation, and **Restart Pi Bot**).
 

@@ -28,7 +28,7 @@ conversation, change settings and accounts, and run tools. It relies on the netw
   `security` CLI (no native modules): the value is sent as hex on stdin to `security -i`, so it
   is not on any command line; values too long for one `security -i` line (over ~4000 characters
   of hex, e.g. large OAuth tokens) go on argv instead, where other local processes can briefly
-  see them. Each write is read back to confirm it. This store is untested on a real Mac.
+  see them. Each write is read back to confirm it.
 - The first time the Keychain store opens with no `_index` item, credentials already in encrypted
   SQLite are copied in (the SQLite rows stay). Later deletions are not copied back.
 - Secrets are write-only: the UI shows at most the last four characters, no response carries a
