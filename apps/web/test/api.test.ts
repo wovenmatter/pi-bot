@@ -41,4 +41,25 @@ describe("PiBotClient", () => {
     expect(bots).not.toHaveBeenCalled();
     client.close();
   });
+
+  it("passes memory.changed pushes to memory listeners with the bot id", () => {
+    vi.stubGlobal("WebSocket", FakeSocket);
+    const client = new PiBotClient("ws://pi-bot.test/ws");
+    client.connect();
+    const socket = FakeSocket.last;
+    if (!socket) throw new Error("no socket");
+    socket.emit("open");
+    const seen: string[] = [];
+    const threads = vi.fn();
+    const stop = client.onMemoryChanged((botId) => seen.push(botId));
+    client.onThreadsChanged(threads);
+
+    socket.emit("message", { data: JSON.stringify({ type: "memory.changed", botId: "b1" }) });
+    stop();
+    socket.emit("message", { data: JSON.stringify({ type: "memory.changed", botId: "b2" }) });
+
+    expect(seen).toEqual(["b1"]);
+    expect(threads).not.toHaveBeenCalled();
+    client.close();
+  });
 });

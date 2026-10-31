@@ -40,8 +40,8 @@ const MAX_TRANSCRIPT_CHARS = 60_000;
 const MAX_MESSAGE_CHARS = 4_000;
 
 /**
- * The bot's memory as its prompt section. It changes only when an extraction adds facts, so the
- * system prompt stays cacheable between extractions.
+ * The bot's memory as its prompt section. It changes only when an extraction adds facts or the
+ * user edits them, so the system prompt stays cacheable in between.
  */
 export function memorySection(facts: readonly string[]): string | undefined {
   if (facts.length === 0) return undefined;
@@ -102,6 +102,46 @@ export function mergeFacts(
   return { facts: [...existing, ...added].slice(-MAX_FACTS), added: added.length };
 }
 
+/** The longest fact the user can save (extracted facts are shorter). */
+export const MAX_EDITED_FACT_CHARS = 1000;
+
+/** A user's change to a bot's memory (Settings → Bots → Memory). Facts are named by their text. */
+export type MemoryEdit =
+  | { readonly kind: "add"; readonly text: string }
+  | { readonly kind: "update"; readonly fact: string; readonly text: string }
+  | { readonly kind: "delete"; readonly fact: string };
+
+/** A memory edit that can't apply: an empty, too long or duplicate fact, or one that is gone. */
+export class MemoryEditError extends Error {
+  override name = "MemoryEditError";
+}
+
+/**
+ * `facts` with one user edit applied. Text is trimmed onto one line; a fact already in memory
+ * (case and punctuation ignored) is refused, as is adding to a full memory. An updated fact keeps
+ * its place; an added one goes last, like an extracted one.
+ */
+export function editFacts(facts: readonly string[], edit: MemoryEdit): string[] {
+  const at = edit.kind === "add" ? -1 : facts.indexOf(edit.fact);
+  if (edit.kind !== "add" && at < 0) {
+    throw new MemoryEditError("that fact is no longer in this bot's memory; reload and try again");
+  }
+  if (edit.kind === "delete") return facts.filter((_, index) => index !== at);
+  const text = edit.text.trim().replace(/\s+/g, " ");
+  if (!normalize(text)) throw new MemoryEditError("a fact needs some text");
+  if (text.length > MAX_EDITED_FACT_CHARS) {
+    throw new MemoryEditError(`a fact is at most ${MAX_EDITED_FACT_CHARS} characters`);
+  }
+  if (facts.some((fact, index) => index !== at && normalize(fact) === normalize(text))) {
+    throw new MemoryEditError("that fact is already in memory");
+  }
+  if (edit.kind === "update") return facts.map((fact, index) => (index === at ? text : fact));
+  if (facts.length >= MAX_FACTS) {
+    throw new MemoryEditError(`memory is full (${MAX_FACTS} facts); delete one first`);
+  }
+  return [...facts, text];
+}
+
 export type MemoryExtractorOptions = {
   readonly manager: BotManager;
   /** Models for extraction requests (the app's credential-backed models). */
@@ -112,6 +152,8 @@ export type MemoryExtractorOptions = {
   readonly timeZone?: string;
   /** A bot idle this long after new messages is extracted; 0: never on idle. */
   readonly idleMs: number;
+  /** An extraction added facts to this bot's memory. */
+  readonly onChanged?: (botId: string) => void;
   readonly log?: (message: string) => void;
   readonly now?: () => number;
   readonly timeoutMs?: number;
@@ -125,7 +167,8 @@ const replyText = (message: AssistantMessage) =>
  * and any bot idle `idleMs` since its newest unprocessed message. Queued bots run one at a time:
  * new user and assistant messages since the bot's checkpoint go to its background model (else its
  * main model, quietly trying the next on failure), and new facts are appended to its memory with
- * the checkpoint in one write. Nothing touches the bots' conversations, so user turns never wait.
+ * the checkpoint in one transaction, merged into the memory as it is then (so the user's edits
+ * made meanwhile stay). Nothing touches the bots' conversations, so user turns never wait.
  */
 export class MemoryExtractor {
   readonly #options: MemoryExtractorOptions;
@@ -249,8 +292,12 @@ export class MemoryExtractor {
       }
     }
     if (checkpoint === memory.checkpoint) return 0;
+    // Saves merge into the memory as it is then: the user may have edited it meanwhile.
     if (lines.length === 0) {
-      await manager.registry.saveMemory(botId, memory.facts, checkpoint);
+      await manager.registry.updateMemory(botId, (current) => ({
+        facts: current.facts,
+        checkpoint,
+      }));
       return 0;
     }
     lines.sort((a, b) => a.id - b.id);
@@ -262,8 +309,14 @@ export class MemoryExtractor {
       size += line.text.length + 1;
     }
     const reply = await this.#ask(botId, extractionPrompt(memory.facts, kept.join("\n")));
-    const { facts, added } = mergeFacts(memory.facts, parseFacts(reply));
-    await manager.registry.saveMemory(botId, facts, checkpoint);
+    const found = parseFacts(reply);
+    let added = 0;
+    await manager.registry.updateMemory(botId, (current) => {
+      const merged = mergeFacts(current.facts, found);
+      added = merged.added;
+      return { facts: merged.facts, checkpoint };
+    });
+    if (added) this.#options.onChanged?.(botId);
     return added;
   }
 

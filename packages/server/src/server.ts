@@ -10,6 +10,7 @@ import type { BotManager, ModelStatus } from "./bots.ts";
 import { NotFoundError } from "./bots.ts";
 import { isAllowedBindHost } from "./config.ts";
 import { conversationId as toConversationId } from "./ids.ts";
+import { editFacts, type MemoryEdit } from "./memory.ts";
 import { describeProfile, type ProfileStore } from "./profiles.ts";
 import {
   type BotSummary,
@@ -62,6 +63,8 @@ export type PiBotServer = {
   botsChanged(): void;
   /** Tell every client a bot's thread list changed (a thread was titled). */
   threadsChanged(botId: string): void;
+  /** Tell every client a bot's memory changed (an extraction added facts). */
+  memoryChanged(botId: string): void;
   close(): Promise<void>;
 };
 
@@ -384,6 +387,26 @@ class Connection {
         return {
           bot: bot(await manager.setProfile(request.botId, request.profileId ?? undefined)),
         };
+      case "memory.list":
+        await manager.record(request.botId);
+        return { facts: (await manager.registry.memory(request.botId)).facts };
+      case "memory.add":
+      case "memory.update":
+      case "memory.delete": {
+        await manager.record(request.botId);
+        const edit: MemoryEdit =
+          request.type === "memory.add"
+            ? { kind: "add", text: request.text }
+            : request.type === "memory.update"
+              ? { kind: "update", fact: request.fact, text: request.text }
+              : { kind: "delete", fact: request.fact };
+        const saved = await manager.registry.updateMemory(request.botId, (memory) => ({
+          facts: editFacts(memory.facts, edit),
+          checkpoint: memory.checkpoint,
+        }));
+        this.#server.memoryChanged(request.botId);
+        return { facts: saved.facts };
+      }
       case "account.notes": {
         const note = await manager.registry.note(ACCOUNT_NOTES);
         return note ? { notes: note.text, updatedAt: note.updatedAt } : { notes: "" };
@@ -541,6 +564,10 @@ class Server {
     this.settings = settings;
     this.restart = restart;
   }
+
+  memoryChanged(botId: string): void {
+    for (const connection of this.connections) connection.send({ type: "memory.changed", botId });
+  }
 }
 
 export async function startServer(options: PiBotServerOptions): Promise<PiBotServer> {
@@ -609,6 +636,7 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
         connection.send({ type: "threads.changed", botId });
       }
     },
+    memoryChanged: (botId) => state.memoryChanged(botId),
     async close() {
       await Promise.all([...state.connections].map((connection) => connection.dispose()));
       for (const client of wss.clients) client.terminate();

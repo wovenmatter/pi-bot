@@ -20,6 +20,7 @@ export class PiBotClient {
   #states = new Set<(state: ConnectionState) => void>();
   #botsChanged = new Set<() => void>();
   #threadsChanged = new Set<(botId: string) => void>();
+  #memoryChanged = new Set<(botId: string) => void>();
   #state: ConnectionState = "closed";
   #attempt = 0;
   #reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -135,6 +136,12 @@ export class PiBotClient {
     return () => this.#threadsChanged.delete(listener);
   }
 
+  /** A bot's memory changed on the server (an edit or an extraction). */
+  onMemoryChanged(listener: (botId: string) => void): () => void {
+    this.#memoryChanged.add(listener);
+    return () => this.#memoryChanged.delete(listener);
+  }
+
   onState(listener: (state: ConnectionState) => void): () => void {
     this.#states.add(listener);
     return () => this.#states.delete(listener);
@@ -178,6 +185,10 @@ export class PiBotClient {
     }
     if (message.type === "threads.changed") {
       for (const listener of this.#threadsChanged) listener(message.botId);
+      return;
+    }
+    if (message.type === "memory.changed") {
+      for (const listener of this.#memoryChanged) listener(message.botId);
       return;
     }
     if (message.type === "result" || message.type === "error") {

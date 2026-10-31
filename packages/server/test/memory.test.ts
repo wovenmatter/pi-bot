@@ -13,7 +13,11 @@ import { BotManager } from "../src/bots.ts";
 import { parseConfig } from "../src/config.ts";
 import { isCronExpression, parseCron } from "../src/cron.ts";
 import {
+  editFacts,
+  MAX_EDITED_FACT_CHARS,
   MAX_FACTS,
+  type MemoryEdit,
+  MemoryEditError,
   MemoryExtractor,
   memorySection,
   mergeFacts,
@@ -100,6 +104,42 @@ describe("facts", () => {
     expect(merged.facts).toHaveLength(MAX_FACTS);
     expect(merged.facts.at(-1)).toBe("newest");
     expect(merged.facts[0]).toBe("fact 1");
+  });
+
+  it("applies user edits: add, update in place, delete", () => {
+    const facts = ["Likes tea", "Lives in Lisbon"];
+    expect(editFacts(facts, { kind: "add", text: "  Has a\n cat  " })).toEqual([
+      "Likes tea",
+      "Lives in Lisbon",
+      "Has a cat",
+    ]);
+    expect(
+      editFacts(facts, { kind: "update", fact: "Likes tea", text: "Likes green tea" }),
+    ).toEqual(["Likes green tea", "Lives in Lisbon"]);
+    // Changing only case or punctuation of the same fact is fine.
+    expect(editFacts(facts, { kind: "update", fact: "Likes tea", text: "likes tea." })).toEqual([
+      "likes tea.",
+      "Lives in Lisbon",
+    ]);
+    expect(editFacts(facts, { kind: "delete", fact: "Likes tea" })).toEqual(["Lives in Lisbon"]);
+    expect(facts).toEqual(["Likes tea", "Lives in Lisbon"]);
+  });
+
+  it("refuses empty, too long, duplicate and unknown facts, and adding to a full memory", () => {
+    const facts = ["Likes tea", "Lives in Lisbon"];
+    const refused = (edit: MemoryEdit, message: RegExp) =>
+      expect(() => editFacts(facts, edit)).toThrow(message);
+    refused({ kind: "add", text: "   " }, /needs some text/);
+    refused({ kind: "add", text: "..." }, /needs some text/);
+    refused({ kind: "add", text: "x".repeat(MAX_EDITED_FACT_CHARS + 1) }, /at most/);
+    refused({ kind: "add", text: "likes TEA!" }, /already in memory/);
+    refused({ kind: "update", fact: "Likes tea", text: "Lives in Lisbon" }, /already in memory/);
+    refused({ kind: "update", fact: "Gone", text: "New" }, /no longer in this bot's memory/);
+    refused({ kind: "delete", fact: "Gone" }, /no longer in this bot's memory/);
+    expect(() => editFacts(facts, { kind: "add", text: "x" })).not.toThrow(MemoryEditError);
+    const full = Array.from({ length: MAX_FACTS }, (_, n) => `fact ${n}`);
+    expect(() => editFacts(full, { kind: "add", text: "one more" })).toThrow(/memory is full/);
+    expect(editFacts(full, { kind: "update", fact: "fact 0", text: "first" })[0]).toBe("first");
   });
 
   it("renders memory as a stable prompt section", () => {
@@ -246,6 +286,74 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
       "The user has a cat called Miso",
     ]);
     expect((await manager.registry.memory(bot.id)).checkpoint).toBeGreaterThan(checkpoint);
+  });
+
+  it("puts the user's edits in the prompt the way extracted facts are", async () => {
+    await open(true);
+    const bot = await manager.create("Ada");
+    await say(bot.id, "hello");
+    expect(systems.at(-1)).not.toContain("What you remember");
+    await manager.registry.updateMemory(bot.id, (memory) => ({
+      facts: editFacts(memory.facts, { kind: "add", text: "The user is called Trey" }),
+      checkpoint: memory.checkpoint,
+    }));
+    await say(bot.id, "hello again");
+    expect(systems.at(-1)).toContain("What you remember");
+    expect(systems.at(-1)).toContain("- The user is called Trey");
+    await manager.registry.updateMemory(bot.id, (memory) => ({
+      facts: editFacts(memory.facts, {
+        kind: "update",
+        fact: "The user is called Trey",
+        text: "The user goes by T",
+      }),
+      checkpoint: memory.checkpoint,
+    }));
+    await say(bot.id, "and again");
+    // A changed section is appended as a new system entry; the latest one has the edit only.
+    const last = systems.at(-1) ?? "";
+    const latest = last.slice(last.lastIndexOf('"memory":'));
+    expect(latest).toContain("- The user goes by T");
+    expect(latest).not.toContain("called Trey");
+  });
+
+  it("merges into the memory as it is when saving: edits made during an extraction stay", async () => {
+    await open(true);
+    const bot = await manager.create("Ada");
+    await say(bot.id, "I drink tea in Lisbon");
+    await manager.registry.updateMemory(bot.id, () => ({
+      facts: ["The user likes jazz", "The user has a dog"],
+      checkpoint: 0,
+    }));
+    // The user edits memory while the extraction model is answering.
+    faux.setResponses([
+      async (...args) => {
+        await manager.registry.updateMemory(bot.id, (memory) => ({
+          facts: editFacts(
+            editFacts(memory.facts, { kind: "delete", fact: "The user has a dog" }),
+            { kind: "add", text: "The user prefers tea" },
+          ),
+          checkpoint: memory.checkpoint,
+        }));
+        return respond(...args);
+      },
+    ]);
+    const changed: string[] = [];
+    extractor = new MemoryExtractor({
+      manager,
+      models,
+      idleMs: 0,
+      onChanged: (botId) => changed.push(botId),
+    });
+    await expect(extractor.extract(bot.id)).resolves.toBe(1);
+    const memory = await manager.registry.memory(bot.id);
+    // The deleted fact stays gone, the added one isn't doubled, the new one is appended.
+    expect(memory.facts).toEqual([
+      "The user likes jazz",
+      "The user prefers tea",
+      "The user lives in Lisbon",
+    ]);
+    expect(memory.checkpoint).toBeGreaterThan(0);
+    expect(changed).toEqual([bot.id]);
   });
 
   it("falls back quietly to the main model; a total failure keeps the checkpoint", async () => {

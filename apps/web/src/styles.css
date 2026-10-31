@@ -1661,15 +1661,28 @@ input[type="file"] {
 .bot-row-handoff {
   grid-column: 3;
 }
-.bot-rename {
+.bot-rename,
+.memory-form {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
-.bot-rename input {
+.bot-rename input,
+.memory-form input {
   flex: 1;
   min-width: 0;
+}
+/* Settings → Bots → Memory: one fact per row, wrapping. */
+.settings-row > .memory-form {
+  flex: 1;
+}
+.memory-fact {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 .settings-section .muted code,
 .account-status code {

@@ -351,6 +351,81 @@ describe("websocket server", () => {
     watcher.close();
   });
 
+  it("lists, adds, edits and deletes a bot's memory and pushes memory.changed", async () => {
+    type Facts = { facts: string[] };
+    const client = await Client.open(wsUrl);
+    const { bot } = await client.request<{ bot: { id: string } }>("bots.create", { name: "Ada" });
+    const other = (await client.request<{ bot: { id: string } }>("bots.create", { name: "Bo" }))
+      .bot;
+    const botId = bot.id;
+    expect(await client.request<Facts>("memory.list", { botId })).toEqual({ facts: [] });
+
+    const watcher = await Client.open(wsUrl);
+    await watcher.waitFor((message) => message.type === "hello");
+    const pushes = () =>
+      watcher.messages.filter((message) => message.type === "memory.changed").length;
+    expect(await client.request<Facts>("memory.add", { botId, text: " Likes  tea " })).toEqual({
+      facts: ["Likes tea"],
+    });
+    await watcher.waitFor(
+      (message) => message.type === "memory.changed" && message.botId === botId,
+    );
+    await client.request("memory.add", { botId, text: "Lives in Lisbon" });
+    expect(
+      await client.request<Facts>("memory.update", {
+        botId,
+        fact: "Likes tea",
+        text: "Likes green tea",
+      }),
+    ).toEqual({ facts: ["Likes green tea", "Lives in Lisbon"] });
+    expect(
+      await client.request<Facts>("memory.delete", { botId, fact: "Lives in Lisbon" }),
+    ).toEqual({ facts: ["Likes green tea"] });
+    expect(await client.request<Facts>("memory.list", { botId })).toEqual({
+      facts: ["Likes green tea"],
+    });
+    // Each bot has its own memory; the stored checkpoint is untouched by edits.
+    expect(await client.request<Facts>("memory.list", { botId: other.id })).toEqual({ facts: [] });
+    expect((await app.manager.registry.memory(botId)).checkpoint).toBe(0);
+    await watcher.waitFor(() => pushes() === 4);
+
+    // Refused changes leave memory as it was and push nothing.
+    await expect(client.request("memory.add", { botId, text: "" })).rejects.toThrow(
+      /invalid request/,
+    );
+    await expect(client.request("memory.add", { botId, text: "   " })).rejects.toThrow(
+      /needs some text/,
+    );
+    await expect(client.request("memory.add", { botId, text: "x".repeat(1001) })).rejects.toThrow(
+      /invalid request/,
+    );
+    await expect(client.request("memory.add", { botId, text: "likes GREEN tea." })).rejects.toThrow(
+      /already in memory/,
+    );
+    await expect(
+      client.request("memory.update", { botId, fact: "Gone", text: "New" }),
+    ).rejects.toThrow(/no longer in this bot's memory/);
+    await expect(client.request("memory.delete", { botId, fact: "Gone" })).rejects.toThrow(
+      /no longer in this bot's memory/,
+    );
+    await expect(client.request("memory.add", { botId, text: "x", extra: true })).rejects.toThrow(
+      /invalid request/,
+    );
+    const unknown = "00000000-0000-4000-8000-000000000000";
+    await expect(client.request("memory.list", { botId: unknown })).rejects.toThrow(/no bot/);
+    await expect(client.request("memory.add", { botId: unknown, text: "x" })).rejects.toThrow(
+      /no bot/,
+    );
+    await client.request("bots.delete", { botId: other.id });
+    await expect(client.request("memory.list", { botId: other.id })).rejects.toThrow(/no bot/);
+    expect(await client.request<Facts>("memory.list", { botId })).toEqual({
+      facts: ["Likes green tea"],
+    });
+    expect(pushes()).toBe(4);
+    client.close();
+    watcher.close();
+  });
+
   it("rejects invalid requests and unknown bots", async () => {
     const client = await Client.open(wsUrl);
     await expect(client.request("nope")).rejects.toThrow(/invalid request/);

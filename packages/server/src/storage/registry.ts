@@ -136,6 +136,25 @@ export async function prefixedObjects(
   );
 }
 
+/** Stored facts are one per line. */
+const splitFacts = (text: string) => text.split("\n").filter((fact) => fact.trim());
+
+async function writeMemory(
+  db: SqliteExecutor,
+  botId: string,
+  facts: readonly string[],
+  checkpoint: number,
+  at: string,
+): Promise<void> {
+  await db.run(
+    `INSERT INTO ${MEMORY_TABLE} (bot_id, facts, checkpoint, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(bot_id) DO UPDATE SET facts = excluded.facts, checkpoint = excluded.checkpoint, updated_at = excluded.updated_at`,
+    botId,
+    facts.join("\n"),
+    checkpoint,
+    at,
+  );
+}
+
 /** The bots registry plus thread metadata, in the shared database. */
 export class BotRegistry {
   readonly #db: SqliteDatabase;
@@ -321,7 +340,7 @@ export class BotRegistry {
     );
     if (!row) return { facts: [], checkpoint: 0 };
     return {
-      facts: row.facts.split("\n").filter((fact) => fact.trim()),
+      facts: splitFacts(row.facts),
       checkpoint: row.checkpoint,
       updatedAt: row.updated_at,
     };
@@ -333,13 +352,31 @@ export class BotRegistry {
     checkpoint: number,
     at = new Date().toISOString(),
   ): Promise<void> {
-    await this.#db.run(
-      `INSERT INTO ${MEMORY_TABLE} (bot_id, facts, checkpoint, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(bot_id) DO UPDATE SET facts = excluded.facts, checkpoint = excluded.checkpoint, updated_at = excluded.updated_at`,
-      botId,
-      facts.join("\n"),
-      checkpoint,
-      at,
-    );
+    await writeMemory(this.#db, botId, facts, checkpoint, at);
+  }
+
+  /**
+   * Read, change and save a bot's memory in one transaction, so extraction and the user's edits
+   * never overwrite each other. `update` returns the new facts and checkpoint (or throws to leave
+   * it unchanged); the saved memory is returned.
+   */
+  async updateMemory(
+    botId: string,
+    update: (memory: BotMemory) => { facts: readonly string[]; checkpoint: number },
+  ): Promise<BotMemory> {
+    return this.#db.transaction(async (tx) => {
+      const row = await tx.get<{ facts: string; checkpoint: number; updated_at: string }>(
+        `SELECT facts, checkpoint, updated_at FROM ${MEMORY_TABLE} WHERE bot_id = ?`,
+        botId,
+      );
+      const current: BotMemory = row
+        ? { facts: splitFacts(row.facts), checkpoint: row.checkpoint, updatedAt: row.updated_at }
+        : { facts: [], checkpoint: 0 };
+      const next = update(current);
+      const at = new Date().toISOString();
+      await writeMemory(tx, botId, next.facts, next.checkpoint, at);
+      return { facts: [...next.facts], checkpoint: next.checkpoint, updatedAt: at };
+    });
   }
 
   /** Stored usage limits; `entry` is whatever was saved (`ModelAvailability.load` checks it). */

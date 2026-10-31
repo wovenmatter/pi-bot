@@ -195,6 +195,8 @@ export type ServerMessage =
   | { type: "bots.changed" }
   /** A bot's thread list changed (a title was generated): refetch `threads.list`. */
   | { type: "threads.changed"; botId: string }
+  /** A bot's memory changed (a user edit or an extraction): refetch `memory.list`. */
+  | { type: "memory.changed"; botId: string }
   | EventMessage
   | LoginMessage;
 
@@ -238,6 +240,14 @@ export type Requests = {
     body: { botId: string; profileId: string | null };
     result: { bot: BotSummary };
   };
+  /** A bot's memory, oldest fact first. Facts are named by their current text. */
+  "memory.list": { body: { botId: string }; result: { facts: string[] } };
+  "memory.add": { body: { botId: string; text: string }; result: { facts: string[] } };
+  "memory.update": {
+    body: { botId: string; fact: string; text: string };
+    result: { facts: string[] };
+  };
+  "memory.delete": { body: { botId: string; fact: string }; result: { facts: string[] } };
   "account.notes": { body: Record<never, never>; result: { notes: string; updatedAt?: string } };
   "account.setNotes": { body: { notes: string }; result: { saved: true } };
   "conversation.open": {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_EDITED_FACT_CHARS } from "./memory.ts";
 import type { LoginEvent } from "./settings/service.ts";
 import type { DisplayEntry } from "./transcript.ts";
 
@@ -8,6 +9,7 @@ const accountId = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 const modelRefText = z.string().min(3).max(200);
 const configText = z.string().max(256 * 1024);
 const requestId = z.union([z.string().max(64), z.number().int()]);
+const factText = z.string().min(1).max(MAX_EDITED_FACT_CHARS);
 
 /** Client → server requests. Every request carries an `id` echoed in its result or error. */
 export const requestSchema = z.discriminatedUnion("type", [
@@ -105,6 +107,18 @@ export const requestSchema = z.discriminatedUnion("type", [
     botId: z.string(),
     profileId: z.string().max(40).nullable(),
   }),
+  // A bot's memory (Settings → Bots → Memory), user-only. Facts are named by their current text;
+  // each change pushes `memory.changed`. Results are the bot's facts after the change.
+  z.strictObject({ id: requestId, type: z.literal("memory.list"), botId }),
+  z.strictObject({ id: requestId, type: z.literal("memory.add"), botId, text: factText }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("memory.update"),
+    botId,
+    fact: factText,
+    text: factText,
+  }),
+  z.strictObject({ id: requestId, type: z.literal("memory.delete"), botId, fact: factText }),
   z.strictObject({ id: requestId, type: z.literal("account.notes") }),
   z.strictObject({
     id: requestId,
@@ -330,5 +344,7 @@ export type ServerMessage =
   | { type: "bots.changed" }
   /** A bot's thread list changed (a title was generated): clients refetch `threads.list`. */
   | { type: "threads.changed"; botId: string }
+  /** A bot's memory changed (a user edit or an extraction): clients refetch `memory.list`. */
+  | { type: "memory.changed"; botId: string }
   /** Progress of a sign-in started by this connection (`login.start`). */
   | { type: "login"; loginId: string; event: LoginEvent };

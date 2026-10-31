@@ -23,6 +23,7 @@ import {
 } from "./settings/Config.tsx";
 import { GitHubSettings } from "./settings/GitHub.tsx";
 import type { LoginState } from "./settings/Login.tsx";
+import { deleteFactConfirmText, MemoryPanel } from "./settings/Memory.tsx";
 import { TitleModelSettings } from "./settings/Models.tsx";
 import { ProfilesPanel } from "./settings/Profiles.tsx";
 import { SearchSettings } from "./settings/Search.tsx";
@@ -545,6 +546,7 @@ function BotsSection({
       setRestoring(undefined);
     }
   }
+  const memory = useBotMemory(client, connected, live, onError);
   async function purge(target: DeletedBotSummary) {
     onError(undefined);
     setPurging(target.id);
@@ -583,18 +585,73 @@ function BotsSection({
         void act(() => client.request("bots.rename", { botId: bot.id, name }))
       }
     >
+      <MemoryPanel {...memory} bots={live ?? []} disabled={!connected} />
       {deleted?.length ? (
-        <DeletedBotsList
-          bots={deleted}
-          restoring={restoring}
-          purging={purging}
-          disabled={!connected}
-          onRestore={(bot) => void restore(bot)}
-          onPurge={(bot) => void purge(bot)}
-        />
+        <>
+          <hr className="bots-separator" />
+          <DeletedBotsList
+            bots={deleted}
+            restoring={restoring}
+            purging={purging}
+            disabled={!connected}
+            onRestore={(bot) => void restore(bot)}
+            onPurge={(bot) => void purge(bot)}
+          />
+        </>
       ) : null}
     </BotsPanel>
   );
+}
+
+/**
+ * Settings → Bots → Memory: the selected bot (the first one until the user picks) and its facts,
+ * refetched whenever the server says that bot's memory changed.
+ */
+function useBotMemory(
+  client: PiBotClient,
+  connected: boolean,
+  bots: readonly BotSummary[] | undefined,
+  onError: (message: string | undefined) => void,
+) {
+  const [picked, setPicked] = useState<string>();
+  const [facts, setFacts] = useState<{ botId: string; facts: string[] }>();
+  const botId = bots?.some((bot) => bot.id === picked) ? picked : bots?.[0]?.id;
+  useEffect(() => {
+    if (!connected || !botId) return;
+    const refresh = () =>
+      client
+        .request("memory.list", { botId })
+        .then((result) => setFacts({ botId, facts: result.facts }))
+        .catch((e: unknown) => onError(errorMessage(e)));
+    void refresh();
+    return client.onMemoryChanged((changed) => {
+      if (changed === botId) void refresh();
+    });
+  }, [client, connected, botId, onError]);
+
+  async function change(work: (botId: string) => Promise<{ facts: string[] }>) {
+    if (!botId) return false;
+    onError(undefined);
+    try {
+      setFacts({ botId, facts: (await work(botId)).facts });
+      return true;
+    } catch (e) {
+      onError(errorMessage(e));
+      return false;
+    }
+  }
+  return {
+    botId,
+    facts: facts && facts.botId === botId ? facts.facts : undefined,
+    onSelect: setPicked,
+    onAdd: (text: string) => change((id) => client.request("memory.add", { botId: id, text })),
+    onUpdate: (fact: string, text: string) =>
+      change((id) => client.request("memory.update", { botId: id, fact, text })),
+    onDelete: (fact: string) => {
+      if (!window.confirm(deleteFactConfirmText(fact))) return;
+      void change((id) => client.request("memory.delete", { botId: id, fact }));
+    },
+  };
 }
 
 function ConfigSection({ client, connected, onError, onConfigSaved }: SectionProps) {

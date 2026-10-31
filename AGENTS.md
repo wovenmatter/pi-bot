@@ -83,7 +83,11 @@ the working agreement for every human or agent who changes this repository.
 - Memory (`memory.ts`): `MemoryExtractor` appends durable facts to `pibot_memory` (facts plus an
   entry-id checkpoint per bot) on `[extraction]`'s schedule and after `idle_minutes`, one bot at a
   time, off the turn path, on `BotManager.backgroundModels`. Bots see it as the `memory` section,
-  which changes only when facts are added.
+  which changes only when facts are added or edited. The user views and edits it in Settings →
+  Bots → Memory (WebSocket `memory.list/add/update/delete`, facts named by their text, rules in
+  `editFacts`, pushes `memory.changed`); every write is a `BotRegistry.updateMemory` transaction,
+  and extraction merges into the memory as it is at save time, so edits are never clobbered.
+  Bots get no memory tool.
 - Account notes (`pibot_notes`, Settings → Accounts → Plans and budget) are guidance for Admin
   Bot (plans, keys, comfort spend), never caps and never secrets. Profile tools are Admin Bot only and follow confirm-unless-asked.
 - Tests use faux providers; never real keys.

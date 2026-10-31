@@ -224,6 +224,7 @@ export async function startPiBot(
           schedule: extraction.schedule,
           timeZone: extraction.timezone,
           idleMs: extraction.idle_minutes * 60_000,
+          onChanged: (botId) => server?.memoryChanged(botId),
           log,
         })
       : undefined;
