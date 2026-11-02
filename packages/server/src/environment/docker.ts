@@ -84,7 +84,13 @@ export const CONTAINER_USER = "bot";
 export const WORKSPACE = "/workspace";
 const BOT_LABEL = "pi-bot.bot";
 const AGENT_COMMAND = ["node", "/opt/pibot-env/agent.mjs"];
-const IMAGE_FILES = ["Dockerfile", ".dockerignore", "package.json", "agent.mjs"];
+const IMAGE_FILES = [
+  "Dockerfile",
+  ".dockerignore",
+  "package.json",
+  "package-lock.json",
+  "agent.mjs",
+];
 /** packages/server/docker, from src/environment or dist/environment alike. */
 export const DEFAULT_CONTEXT_DIR = fileURLToPath(new URL("../../docker/", import.meta.url));
 

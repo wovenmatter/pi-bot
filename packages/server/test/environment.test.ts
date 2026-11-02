@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT, withCancel } from "@earendil-works/chord/context";
@@ -282,6 +282,30 @@ describe("DockerEnvironmentAdapter", () => {
       execs.some((call) => call.args.includes("user.email") && call.args.includes("t@example.com")),
     ).toBe(true);
     for (const call of execs) expect(call.args.slice(0, 4)).toEqual(["exec", "-i", "-u", "bot"]);
+  });
+
+  it("uses a new image when only the dependency lockfile changes", async () => {
+    const dir = await tempDir();
+    try {
+      const contextDir = join(dir.path, "docker");
+      await cp(fileURLToPath(new URL("../docker", import.meta.url)), contextDir, {
+        recursive: true,
+        filter: (source) => !source.includes("node_modules"),
+      });
+      const fake = fakeDocker();
+      const first = await new DockerEnvironmentAdapter({ docker: fake.docker, contextDir }).image();
+      const lockPath = join(contextDir, "package-lock.json");
+      const lock = JSON.parse(await readFile(lockPath, "utf8"));
+      lock.packages[""].version = "0.0.0-test";
+      await writeFile(lockPath, JSON.stringify(lock));
+      const second = await new DockerEnvironmentAdapter({
+        docker: fake.docker,
+        contextDir,
+      }).image();
+      expect(second).not.toBe(first);
+    } finally {
+      await dir.cleanup();
+    }
   });
 
   it("builds the image when it is missing", async () => {

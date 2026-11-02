@@ -14,10 +14,13 @@ built-in tools, and Pi Bot executes its tool calls in the container.
 
 ## Image
 
-`packages/server/docker`: Ubuntu 24.04 with git, openssh-client, Node 24, Python 3, build tools,
+`packages/server/docker`: Ubuntu 26.04 with git, openssh-client, Node 26, Python 3, build tools,
 ripgrep, jq, Playwright with Chromium, and tini. It is built on first use and tagged
 `pi-bot-env:<hash of the image files>` plus `:latest`; a changed Dockerfile gives a new tag for new
 containers, while existing containers keep their image.
+
+The environment dependencies are locked in `package-lock.json` and installed with `npm ci`.
+The lockfile is part of the image hash, so dependency-only updates also produce a new image.
 
 ## Container
 

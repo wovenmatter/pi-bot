@@ -40,7 +40,7 @@ under his direction.
 
 ## Quick start
 
-Requires Node ≥ 22.19 and pnpm 12 (Docker only if you want per-bot environments).
+Requires Node ≥ 22.19 and pnpm 12.16.1 (Docker only if you want per-bot environments).
 
 ```sh
 pnpm install
