@@ -38,3 +38,27 @@ exactly. System fonts resolve to SF on macOS and to the platform font elsewhere.
 pinned icon version can differ in path geometry from the desktop asset catalog. Pi Bot-only
 screens use the shared controls and colors but keep their existing composition. Touch targets
 remain 44 pixels on coarse pointers. Browser focus indicators and keyboard semantics remain.
+
+
+## Chat and settings follow-up
+
+The active desktop response renderer is `ConversationResponse.swift` /
+`ConversationResponseAttributedText`, not just the older SwiftUI `ConversationMarkdown`.
+The follow-up matches its 680-point response width, 15-point body with 5-point extra line
+spacing, native bold emphasis, unpadded inline code, 13-point code with 3-point extra line
+spacing, single primary .05 code surface, and collapsed table grid (13-point text, 9-point
+cell padding, foreground .09 borders). Streaming response text uses foreground .76.
+User-message line spacing follows `ConversationUserBubble` (15-point text plus 4 points).
+Pi Bot's existing code copy control, message labels, thread controls and composer layout stay.
+
+Settings now uses `SettingsPage`'s 22-point semibold title and `SettingsMenuPicker`'s
+36-point quiet trigger, 12.5-point medium type, 10-point chevron, clear/soft-hover/soft-pressed
+fills. Native HTML select semantics and keyboard focus are retained; the operating system's
+option popup is not a custom reproduction of SwiftUI's popover. The profile editor uses the
+workspace surface from `SettingsCard`, keeping Pi Bot's existing border and section arrangement.
+
+Validation uses a separate loopback-only server with a faux model, extraction disabled, a
+fresh temporary SQLite database/config/key, and a nonfunctional placeholder credential solely
+to exercise onboarding status. No real provider is registered in that instance. It serves the
+same worktree build as the code being checked; its config and data are never deployed to the
+normal preview service.
