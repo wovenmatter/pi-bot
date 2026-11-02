@@ -509,6 +509,7 @@ export class BotRegistry {
       const tables = objects.filter((object) => object.type === "table").map((t) => t.name);
       for (const table of tables) await tx.exec(`DROP TABLE IF EXISTS ${quoted(table)}`);
       await tx.run(`DELETE FROM ${THREADS_TABLE} WHERE bot_id = ?`, id);
+      await tx.run(`DELETE FROM ${MEMORY_TABLE} WHERE bot_id = ?`, id);
       await tx.run(`UPDATE ${BOTS_TABLE} SET manager_id = NULL WHERE manager_id = ?`, id);
       await tx.run(`DELETE FROM ${BOTS_TABLE} WHERE id = ?`, id);
       return tables;

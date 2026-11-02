@@ -32,6 +32,45 @@ describe("websocket server", () => {
     await dir.cleanup();
   });
 
+  it("replaces overlapping watches without duplicating streamed text", async () => {
+    const client = await Client.open(wsUrl);
+    try {
+      const { bot } = await client.request<{ bot: { id: string } }>("bots.create", {
+        name: "Concurrent",
+      });
+      const opened = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          client.request<ConversationSnapshot>("conversation.open", { botId: bot.id }),
+        ),
+      );
+      const id = opened[0]?.conversationId;
+      if (id === undefined) throw new Error("no conversation");
+      const latest = await client.request<ConversationSnapshot>("conversation.open", {
+        botId: bot.id,
+      });
+      expect(
+        await client.request("conversation.close", {
+          botId: bot.id,
+          conversationId: id,
+          subscriptionId: opened[0]?.subscriptionId,
+        }),
+      ).toEqual({ closed: false });
+      expect(latest.subscriptionId).toBeDefined();
+      await client.request("message.send", { botId: bot.id, text: "one reply" });
+      await client.waitFor(isFinalEntry(id, "echo: one reply (n1)"));
+      const text = client
+        .events(id)
+        .flatMap((event) =>
+          event.kind === "assistant_start" || event.kind === "delta" ? [event.text] : [],
+        )
+        .join("");
+      expect(text.length).toBeGreaterThan(0);
+      expect("echo: one reply (n1)".startsWith(text)).toBe(true);
+    } finally {
+      client.close();
+    }
+  });
+
   it("streams replies, reloads history, and forks threads", async () => {
     const client = await Client.open(wsUrl);
     await client.waitFor((message) => message.type === "hello");

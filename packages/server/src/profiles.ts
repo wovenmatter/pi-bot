@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import {
+  type PiBotConfig,
   type PoolModel,
   PROFILE_ID,
   type Profile,
@@ -9,9 +8,18 @@ import {
   parseConfig,
   parseModelRef,
 } from "./config.ts";
+import { updateConfigFile } from "./settings/config-file.ts";
 import { setTomlValues } from "./settings/toml-edit.ts";
 
 export class ProfileError extends Error {}
+
+/**
+ * A live profile change that would overwrite an edit saved straight to config.toml (raw editor or
+ * `config.update`) that only applies after a restart.
+ */
+export class ProfileConflictError extends ProfileError {
+  override name = "ProfileConflictError";
+}
 
 /** The most main-model fallbacks a profile may list. */
 export const MAX_FALLBACKS = 5;
@@ -27,9 +35,12 @@ export type ProfileInput = {
   readonly pool?: readonly { model: string; useFor?: string; background?: boolean }[];
 };
 
+/** What `ProfileStore` persists: the new set, and the set it replaces (only the change is written). */
+export type ProfileWrite = ProfileSet & { readonly previous?: ProfileSet };
+
 export type ProfileStoreOptions = {
   /** Writes the profiles to config.toml; omitted (tests, no config file): memory only. */
-  readonly persist?: (set: ProfileSet) => Promise<void>;
+  readonly persist?: (set: ProfileWrite) => Promise<void>;
   /** Throws for a model this server does not know (Settings' model check). */
   readonly checkModel?: (ref: string) => void;
 };
@@ -176,7 +187,7 @@ export class ProfileStore {
     const run = this.#queue.then(async () => {
       const previous = this.#set;
       const { next, result } = compute(previous);
-      await this.#options.persist?.(next);
+      await this.#options.persist?.({ ...next, previous });
       this.#set = next;
       for (const listener of this.#listeners) await listener(previous);
       return result;
@@ -247,30 +258,130 @@ export function writeProfilesToml(text: string, set: ProfileSet): string {
   return `${next.replace(/\s*$/, "")}\n\n${renderProfiles(set)}`;
 }
 
-/** Persist profiles into the config file at `path` (validated, atomic, mode kept). */
-export async function persistProfiles(path: string, set: ProfileSet): Promise<void> {
-  let text = "";
-  try {
-    text = await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+/** A profile's content, for comparing what the file holds with what runs. */
+function canonical(profile: Profile | undefined): string | undefined {
+  if (!profile) return undefined;
+  return JSON.stringify({
+    name: profile.name,
+    main: profile.main,
+    fallbacks: profile.fallbacks ?? [],
+    guidance: profile.guidance ?? "",
+    pool: profile.pool.map((entry) => ({
+      model: entry.model,
+      useFor: entry.useFor,
+      background: entry.background === true,
+    })),
+  });
+}
+
+const sameProfile = (a: Profile | undefined, b: Profile | undefined) =>
+  canonical(a) === canonical(b);
+
+/** Whether a table header belongs to profile `id` (`[profiles.<id>]` or one of its sub-tables). */
+const ownedBy = (name: string, id: string) =>
+  name === `profiles.${id}` || name.startsWith(`profiles.${id}.`);
+
+/**
+ * Write only what changed from `previous` to `next` into `text`, whose profiles are `file`: each
+ * changed profile's tables are replaced where they are (removed ones dropped, new ones appended) and
+ * `default_profile` is set if the default changed. Everything else, other profiles included, stays
+ * as the file has it, so edits saved to the file that wait for a restart survive a live change to
+ * another profile. Throws `ProfileConflictError` when a changed profile (or the default) has such a
+ * pending edit: the live change was made against what runs, not against what the file now says.
+ */
+export function patchProfilesToml(
+  text: string,
+  file: ProfileSet,
+  previous: ProfileSet,
+  next: ProfileSet,
+): string {
+  const before = new Map(previous.profiles.map((profile) => [profile.id, profile]));
+  const after = new Map(next.profiles.map((profile) => [profile.id, profile]));
+  const inFile = new Map(file.profiles.map((profile) => [profile.id, profile]));
+  const changed: string[] = [];
+  for (const id of new Set([...before.keys(), ...after.keys()])) {
+    if (sameProfile(before.get(id), after.get(id))) continue;
+    // Removing a profile the file already dropped is fine; anything else must match what runs.
+    const pending = after.has(id)
+      ? !sameProfile(inFile.get(id), before.get(id))
+      : inFile.has(id) && !sameProfile(inFile.get(id), before.get(id));
+    if (pending) {
+      throw new ProfileConflictError(
+        `profile "${id}" has edits saved in config.toml that apply after a restart; restart Pi Bot first, or make this change in the file`,
+      );
+    }
+    changed.push(id);
   }
-  const next = writeProfilesToml(text, set);
+  const defaultChanged = next.defaultId !== previous.defaultId;
+  if (defaultChanged && file.defaultId !== previous.defaultId) {
+    throw new ProfileConflictError(
+      "the default profile was changed in config.toml and applies after a restart; restart Pi Bot first, or make this change in the file",
+    );
+  }
+  if (changed.length === 0 && !defaultChanged) return text;
+
+  const render = (id: string) => {
+    const profile = after.get(id);
+    return profile ? renderProfiles({ defaultId: next.defaultId, profiles: [profile] }) : "";
+  };
+  const kept: string[] = [];
+  const placed = new Set<string>();
+  let skipping = false;
+  /** Comments at the end of a replaced table introduce the next one: they stay with it. */
+  let trailing: string[] = [];
+  for (const line of text.split("\n")) {
+    const name = headerName(line);
+    if (name !== undefined) {
+      const owner = changed.find((id) => ownedBy(name, id));
+      if (skipping && owner === undefined) kept.push(...trailing);
+      trailing = [];
+      skipping = owner !== undefined;
+      if (owner !== undefined && !placed.has(owner)) {
+        placed.add(owner);
+        const block = render(owner);
+        if (block) kept.push(block);
+      }
+    }
+    if (!skipping) kept.push(line);
+    else if (name === undefined) trailing = /^\s*#/.test(line) ? [...trailing, line] : [];
+  }
+  let out = kept.join("\n").replace(/\n{3,}/g, "\n\n");
+  const added = changed.filter((id) => !placed.has(id) && after.has(id)).map(render);
+  if (added.length) out = `${out.replace(/\s*$/, "")}\n\n${added.join("\n")}`;
+  if (defaultChanged) {
+    out = setTomlValues(out, [{ path: ["models", "default_profile"], value: next.defaultId }]);
+  }
+  return out.endsWith("\n") ? out : `${out}\n`;
+}
+
+function parseOrThrow(text: string, path: string): PiBotConfig {
   try {
-    parseConfig(next, dirname(path), path);
+    return parseConfig(text, dirname(path), path);
   } catch (error) {
     throw new ProfileError((error as Error).message);
   }
-  let mode = 0o600;
-  try {
-    mode = (await stat(path)).mode & 0o777;
-  } catch {
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  }
-  const temp = join(dirname(path), `.config.toml.${process.pid}.${randomUUID()}.tmp`);
-  await writeFile(temp, next, { mode });
-  await chmod(temp, mode);
-  await rename(temp, path);
+}
+
+/**
+ * Persist profiles into the config file at `path` (validated, atomic, mode kept), serialized with
+ * every other config.toml write (`updateConfigFile`). With `set.previous` only the change is written
+ * (`patchProfilesToml`); without it, or while the file has no `[profiles]` yet (legacy roles), every
+ * profile table is rewritten (`writeProfilesToml`).
+ */
+export async function persistProfiles(path: string, set: ProfileWrite): Promise<void> {
+  const next: ProfileSet = { defaultId: set.defaultId, profiles: set.profiles };
+  await updateConfigFile(path, ({ text }) => {
+    let written: string | undefined;
+    if (set.previous && text.trim()) {
+      const current = parseOrThrow(text, path);
+      if (Object.keys(current.profiles).length > 0) {
+        written = patchProfilesToml(text, current.modelProfiles, set.previous, next);
+      }
+    }
+    written ??= writeProfilesToml(text, next);
+    parseOrThrow(written, path);
+    return written;
+  });
 }
 
 /** A profile as tools and clients see it. */

@@ -46,12 +46,13 @@ export class PiBotClient {
     const socket = new WebSocket(this.#url);
     this.#socket = socket;
     socket.addEventListener("open", () => {
+      if (this.#socket !== socket) return;
       this.#attempt = 0;
       this.#restarting = false;
       this.#setState("open");
     });
     socket.addEventListener("message", (event) => {
-      if (typeof event.data === "string") this.#receive(event.data);
+      if (this.#socket === socket && typeof event.data === "string") this.#receive(event.data);
     });
     socket.addEventListener("close", () => {
       if (this.#socket !== socket) return;
@@ -79,6 +80,10 @@ export class PiBotClient {
     const socket = this.#socket;
     this.#socket = undefined;
     socket?.close();
+    for (const pending of this.#pending.values()) pending.reject(new Error("Connection closed"));
+    this.#pending.clear();
+    this.#logins.clear();
+    this.#loginBacklog.clear();
     this.#setState("closed");
   }
 
@@ -90,10 +95,15 @@ export class PiBotClient {
     if (!socket || this.#state !== "open") return Promise.reject(new Error("Not connected"));
     const id = this.#nextId++;
     return new Promise<Requests[T]["result"]>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#pending.delete(id);
-        reject(new Error(`${type} timed out`));
-      }, REQUEST_TIMEOUT_MS);
+      const timer = setTimeout(
+        () => {
+          this.#pending.delete(id);
+          reject(new Error(`${type} timed out`));
+        },
+        ["bots.restore", "bots.purge", "bots.delete", "conversation.abort"].includes(type)
+          ? 600_000
+          : REQUEST_TIMEOUT_MS,
+      );
       this.#pending.set(id, {
         resolve: (data) => {
           clearTimeout(timer);

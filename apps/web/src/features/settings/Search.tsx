@@ -57,7 +57,7 @@ export function SearchSettings({
                     {provider.detail ?? (provider.configured ? "Configured" : "Not set")}
                   </small>
                 </div>
-                {provider.configured && !provider.ambient ? (
+                {(provider.configured || provider.unreadable) && !provider.ambient ? (
                   <button
                     type="button"
                     className="text-button danger"

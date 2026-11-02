@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ConnectionState, defaultSocketUrl, errorMessage, PiBotClient } from "./api.ts";
 import { Empty, ErrorNotice } from "./components/ui.tsx";
 import { Conversation } from "./features/Conversation.tsx";
@@ -33,6 +33,8 @@ export function App() {
   const [onboarding, setOnboarding] = useState<OnboardingStatus>();
   const [theme, setTheme] = useTheme();
   const route = useRoute();
+  const selectedBot = useRef(route.botId);
+  selectedBot.current = route.botId;
   const bot = bots?.find((item) => item.id === route.botId);
   const onboardingNeeded = onboarding?.needed === true && !route.settings;
 
@@ -61,6 +63,22 @@ export function App() {
     return client.onBotsChanged(() => void load());
   }, [client, connection]);
 
+  useEffect(() => {
+    if (connection !== "open" || route.settings) return;
+    let cancelled = false;
+    void client
+      .request("onboarding.status", {})
+      .then((status) => {
+        if (!cancelled) setOnboarding(status);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(errorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, connection, route.settings]);
+
   // Default to Admin Bot; drop routes to bots that no longer exist.
   useEffect(() => {
     if (!bots || route.settings) return;
@@ -73,7 +91,9 @@ export function App() {
     (botId: string) =>
       client
         .request("threads.list", { botId })
-        .then(({ threads }) => setThreads(threads))
+        .then(({ threads }) => {
+          if (selectedBot.current === botId) setThreads(threads);
+        })
         .catch((e: unknown) => setError(errorMessage(e))),
     [client],
   );
@@ -105,7 +125,7 @@ export function App() {
     setError(undefined);
     try {
       const { bot: created } = await client.request("bots.create", { name });
-      setBots((current) => [...(current ?? []), created]);
+      setBots((current) => [...(current ?? []).filter((bot) => bot.id !== created.id), created]);
       navigate({ botId: created.id });
     } catch (e) {
       setError(errorMessage(e));
@@ -189,7 +209,6 @@ export function App() {
               threads={threads}
               onMainConversation={setMainConversationId}
               onForked={onForked}
-              onRunEnd={() => void refreshThreads(bot.id)}
             />
           ) : bots ? (
             <Empty title="Create a bot">

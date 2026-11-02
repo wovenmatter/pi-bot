@@ -127,6 +127,7 @@ export function ConfigEditor({
   disabled,
   onChange,
   onValidate,
+  onReload,
   onSave,
 }: {
   path?: string;
@@ -135,6 +136,7 @@ export function ConfigEditor({
   disabled?: boolean;
   onChange: (text: string) => void;
   onValidate: () => void;
+  onReload?: () => void;
   onSave: () => void;
 }) {
   if (text === undefined) return <Loading />;
@@ -174,6 +176,16 @@ export function ConfigEditor({
           </p>
         ) : null}
         <div className="settings-actions">
+          {onReload ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={disabled || !path}
+              onClick={onReload}
+            >
+              Reload file
+            </button>
+          ) : null}
           <button type="button" className="primary" disabled={disabled || !path} onClick={onSave}>
             Save file
           </button>

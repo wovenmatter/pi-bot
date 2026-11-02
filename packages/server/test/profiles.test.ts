@@ -8,7 +8,19 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createBotHarnessOptions } from "../src/agent.ts";
 import { BotManager } from "../src/bots.ts";
 import { parseConfig } from "../src/config.ts";
-import { ProfileError, ProfileStore, persistProfiles, writeProfilesToml } from "../src/profiles.ts";
+import {
+  ProfileConflictError,
+  ProfileError,
+  ProfileStore,
+  persistProfiles,
+  writeProfilesToml,
+} from "../src/profiles.ts";
+import {
+  ConfigConflictError,
+  readConfigFile,
+  updateConfigFile,
+} from "../src/settings/config-file.ts";
+import { setTomlValues } from "../src/settings/toml-edit.ts";
 import { openSharedDatabase } from "../src/storage/database.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -131,6 +143,145 @@ describe("ProfileStore", () => {
   });
 });
 
+describe("profile writes next to other config.toml writes", () => {
+  const base = `# mine
+[models]
+default_profile = "default"
+
+[profiles.default]
+name = "Default"
+main = "faux/faux-1"
+
+[profiles.default.pool."faux/faux-2"]
+use_for = "Background"
+background = true
+
+# fast profile
+[profiles.fast]
+name = "Fast"
+main = "faux/faux-2"
+
+[extraction]
+schedule = "0 3 * * *"
+`;
+  let dir: Awaited<ReturnType<typeof tempDir>>;
+  let path: string;
+  beforeEach(async () => {
+    dir = await tempDir();
+    path = join(dir.path, "config.toml");
+    await writeFile(path, base, { mode: 0o640 });
+  });
+  afterEach(async () => {
+    await dir.cleanup();
+  });
+  /** A store running what the file said at startup, persisting like the app does. */
+  const live = () =>
+    new ProfileStore(parseConfig(base).modelProfiles, {
+      persist: (set) => persistProfiles(path, set),
+    });
+  /** An edit saved straight to the file (raw editor), pending a restart. */
+  const editFile = (from: string, to: string) =>
+    updateConfigFile(path, ({ text }) => {
+      expect(text).toContain(from);
+      return text.replace(from, to);
+    });
+
+  it("writes only the changed profile, in place, keeping other pending file edits", async () => {
+    const profiles = live();
+    await editFile('name = "Fast"', 'name = "Fast (edited)"');
+    await profiles.save({ id: "default", name: "Default", main: "faux/faux-3" });
+    let text = await readFile(path, "utf8");
+    expect(text).toContain('name = "Fast (edited)"');
+    expect(text).toContain("# mine");
+    expect(text).toContain("# fast profile");
+    // The default profile stays first; its pool table went with it.
+    expect(text.indexOf("[profiles.default]")).toBeLessThan(text.indexOf("[profiles.fast]"));
+    expect(text).not.toContain('faux/faux-2"]');
+    expect(parseConfig(text).modelProfiles.profiles.map((p) => [p.id, p.main, p.name])).toEqual([
+      ["default", "faux/faux-3", "Default"],
+      ["fast", "faux/faux-2", "Fast (edited)"],
+    ]);
+    expect((await stat(path)).mode & 0o777).toBe(0o640);
+
+    await profiles.save({ id: "slow", name: "Slow", main: "faux/faux-1" }, { create: true });
+    text = await readFile(path, "utf8");
+    expect(text).toContain('name = "Fast (edited)"');
+    expect(parseConfig(text).modelProfiles.profiles.map((p) => p.id)).toEqual([
+      "default",
+      "fast",
+      "slow",
+    ]);
+  });
+
+  it("refuses a live change to a profile with a pending file edit, writing nothing", async () => {
+    const profiles = live();
+    await editFile('main = "faux/faux-2"', 'main = "faux/faux-9"');
+    const pending = await readFile(path, "utf8");
+    await expect(
+      profiles.save({ id: "fast", name: "Fast", main: "faux/faux-3" }),
+    ).rejects.toBeInstanceOf(ProfileConflictError);
+    await expect(profiles.remove("fast")).rejects.toThrow(/restart/);
+    expect(await readFile(path, "utf8")).toBe(pending);
+    // The store did not change either.
+    expect(profiles.get("fast")?.main).toBe("faux/faux-2");
+
+    // A profile created in the file meanwhile can't be created live under the same id.
+    await editFile(
+      "[extraction]",
+      '[profiles.new]\nname = "New"\nmain = "faux/faux-1"\n\n[extraction]',
+    );
+    await expect(
+      profiles.save({ id: "new", name: "Mine", main: "faux/faux-2" }, { create: true }),
+    ).rejects.toBeInstanceOf(ProfileConflictError);
+  });
+
+  it("removes a profile the file already dropped, and guards a pending default", async () => {
+    const profiles = live();
+    await editFile('# fast profile\n[profiles.fast]\nname = "Fast"\nmain = "faux/faux-2"\n', "");
+    await profiles.remove("fast");
+    expect(
+      parseConfig(await readFile(path, "utf8")).modelProfiles.profiles.map((p) => p.id),
+    ).toEqual(["default"]);
+
+    await profiles.save({ id: "fast", name: "Fast", main: "faux/faux-2" }, { create: true });
+    await editFile('default_profile = "default"', 'default_profile = "fast"');
+    await expect(profiles.setDefault("fast")).rejects.toThrow(/default profile was changed/);
+  });
+
+  it("serializes with other writers, so neither change is lost", async () => {
+    const profiles = live();
+    await Promise.all([
+      profiles.save({ id: "fast", name: "Fast", main: "faux/faux-3" }),
+      updateConfigFile(path, ({ text }) =>
+        setTomlValues(text, [{ path: ["extraction", "timezone"], value: "Europe/Paris" }]),
+      ),
+      profiles.save({ id: "other", name: "Other", main: "faux/faux-1" }, { create: true }),
+    ]);
+    const config = parseConfig(await readFile(path, "utf8"));
+    expect(config.extraction.timezone).toBe("Europe/Paris");
+    expect(config.modelProfiles.profiles.map((p) => [p.id, p.main])).toEqual([
+      ["default", "faux/faux-1"],
+      ["fast", "faux/faux-3"],
+      ["other", "faux/faux-1"],
+    ]);
+  });
+
+  it("refuses a write based on a revision the file no longer has", async () => {
+    const first = await readConfigFile(path);
+    await live().save({ id: "fast", name: "Fast", main: "faux/faux-3" });
+    await expect(
+      updateConfigFile(path, () => `${first.text}# stale\n`, { expectedRevision: first.revision }),
+    ).rejects.toBeInstanceOf(ConfigConflictError);
+    expect(await readFile(path, "utf8")).toContain('main = "faux/faux-3"');
+    const now = await readConfigFile(path);
+    const saved = await updateConfigFile(path, ({ text }) => `${text}# fresh\n`, {
+      expectedRevision: now.revision,
+    });
+    expect(saved.revision).not.toBe(now.revision);
+    expect(await readFile(path, "utf8")).toMatch(/# fresh\n$/);
+  });
+});
+
 describe("bot profiles", () => {
   let dir: Awaited<ReturnType<typeof tempDir>>;
   beforeEach(async () => {
@@ -186,7 +337,22 @@ describe("bot profiles", () => {
       expect(await mainModel(t.manager, other.id)).toEqual({ provider: "faux", modelId: "faux-2" });
       await profiles.save({ id: "default", name: "Default", main: "faux/faux-1" });
 
+      const deleted = await t.manager.create("Deleted worker");
+      await t.manager.setProfile(deleted.id, "fast");
+      await t.manager.delete(deleted.id);
       await profiles.remove("fast");
+      expect(
+        (await t.manager.listDeleted()).find((item) => item.id === deleted.id)?.profile,
+      ).toBeUndefined();
+      await profiles.save(
+        { id: "fast", name: "Replacement", main: "faux/faux-2" },
+        { create: true },
+      );
+      await t.manager.restore(deleted.id);
+      expect(await mainModel(t.manager, deleted.id)).toEqual({
+        provider: "faux",
+        modelId: "faux-1",
+      });
       expect(t.manager.assignedProfile(bot.id)).toBeUndefined();
       expect((await t.manager.registry.get(bot.id))?.profile).toBeUndefined();
       expect(await mainModel(t.manager, bot.id)).toEqual({ provider: "faux", modelId: "faux-1" });

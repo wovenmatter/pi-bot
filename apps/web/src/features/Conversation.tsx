@@ -67,6 +67,7 @@ export function Conversation({
     if (!connected) return;
     let cancelled = false;
     let opened: number | undefined;
+    let subscriptionId: string | number | undefined;
     setLoading(true);
     setError(undefined);
     setState(emptyConversation);
@@ -82,8 +83,18 @@ export function Conversation({
         ...(conversationId === undefined ? {} : { conversationId }),
       })
       .then((snapshot) => {
-        if (cancelled) return;
         opened = snapshot.conversationId;
+        subscriptionId = snapshot.subscriptionId;
+        if (cancelled) {
+          void client
+            .request("conversation.close", {
+              botId: bot.id,
+              conversationId: opened,
+              subscriptionId,
+            })
+            .catch(() => undefined);
+          return;
+        }
         setViewed(snapshot.conversationId);
         setMainId(snapshot.mainConversationId);
         onMainConversation(snapshot.mainConversationId);
@@ -107,7 +118,7 @@ export function Conversation({
       stop();
       if (opened !== undefined && client.state === "open") {
         void client
-          .request("conversation.close", { botId: bot.id, conversationId: opened })
+          .request("conversation.close", { botId: bot.id, conversationId: opened, subscriptionId })
           .catch(() => undefined);
       }
     };
@@ -123,7 +134,7 @@ export function Conversation({
   async function send(event?: FormEvent) {
     event?.preventDefault();
     const text = draft.trim();
-    if (!text || sending || viewed === undefined) return;
+    if (!text || sending || !ready || viewed === undefined) return;
     setSending(true);
     setError(undefined);
     const key = ++pendingKey.current;
@@ -132,7 +143,7 @@ export function Conversation({
     setFollowing(true);
     try {
       await client.request("message.send", { botId: bot.id, conversationId: viewed, text });
-      setDraft("");
+      setDraft((current) => (current.trim() === text ? "" : current));
     } catch (e) {
       setState((current) => ({
         ...current,
@@ -182,7 +193,8 @@ export function Conversation({
   const repliesTo = (entry: DisplayEntry) =>
     threads.filter(
       (item) =>
-        item.parentConversationId === entry.conversationId &&
+        (item.parentConversationId === viewed ||
+          item.parentConversationId === entry.conversationId) &&
         item.forkedAt === entry.id &&
         item.conversationId !== viewed,
     );
@@ -192,7 +204,11 @@ export function Conversation({
       if (entry.conversationId !== viewed) lastInherited = index;
     });
   }
-  const ready = connected && viewed !== undefined;
+  const ready =
+    connected &&
+    !loading &&
+    viewed !== undefined &&
+    (conversationId === undefined ? viewed === mainId : viewed === conversationId);
 
   return (
     <div className="conversation-layout">
@@ -260,7 +276,7 @@ export function Conversation({
                 </article>
               ))}
               {state.streaming !== null || state.running ? (
-                <article className="message message-assistant" aria-live="polite">
+                <article className="message message-assistant" aria-busy="true">
                   <div className="message-meta">
                     <strong>{bot.name}</strong>
                   </div>
@@ -320,7 +336,7 @@ export function Conversation({
               />
             </div>
           </form>
-          <div className="composer-status" role="status">
+          <div className="composer-status" role="status" aria-live="polite">
             {state.running ? `${bot.name} is replying…` : null}
           </div>
         </div>

@@ -78,7 +78,7 @@ export function AccountRow({
           </small>
         </div>
         <div className="account-row-actions">
-          {account.configured && !account.ambient ? (
+          {(account.configured || account.unreadable) && !account.ambient ? (
             <button
               type="button"
               className="text-button danger"

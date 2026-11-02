@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startPiBot } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
 import { PiBotProcess, restartExitCode } from "../src/process.ts";
@@ -39,6 +40,77 @@ describe("Restart and apply", () => {
     const app = await proc.start();
     return { proc, url: `${app.server.url.replace("http", "ws")}/ws` };
   };
+
+  it("cleans up the environment after a failed listener start", async () => {
+    const first = await startPiBot(await loadConfig(configPath), {
+      models: echoModels().models,
+      port: 0,
+      log: () => {},
+    });
+    const close = vi.fn();
+    try {
+      await expect(
+        startPiBot(await loadConfig(configPath), {
+          models: echoModels().models,
+          port: first.server.port,
+          log: () => {},
+          env: {
+            kind: "test",
+            harnessEnv: () => {
+              throw new Error("unused environment");
+            },
+            dispose: async () => {},
+            close,
+          },
+        }),
+      ).rejects.toThrow();
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      await first.close();
+    }
+  });
+
+  it("resumes a non-admin bot through the real app platform", async () => {
+    const config = await loadConfig(configPath);
+    const first = await startPiBot(config, {
+      models: echoModels(2).models,
+      port: 0,
+      log: () => {},
+    });
+    const record = await first.manager.create("Resuming worker");
+    const worker = await first.manager.get(record.id);
+    await worker.send("continue after restart");
+    await expect
+      .poll(async () =>
+        (await worker.harness.inspect(BACKGROUND_CONTEXT)).tasks.some(
+          (task) => task.state.kind === "running",
+        ),
+      )
+      .toBe(true);
+    await first.close();
+    const errors: string[] = [];
+    const second = await startPiBot(config, {
+      models: echoModels().models,
+      port: 0,
+      log: (text) => errors.push(text),
+    });
+    try {
+      const reopened = await second.manager.get(record.id);
+      const main = await reopened.main();
+      await expect
+        .poll(async () =>
+          (await main.entries({}, 50, undefined, BACKGROUND_CONTEXT)).items.some((entry) =>
+            entry.model?.some(
+              (message) => message.role === "assistant" && message.stopReason === "stop",
+            ),
+          ),
+        )
+        .toBe(true);
+      expect(errors.join("\n")).not.toContain("bots are still starting");
+    } finally {
+      await second.close();
+    }
+  });
 
   it("parses the supervisor exit status", () => {
     expect(restartExitCode(undefined)).toBeUndefined();

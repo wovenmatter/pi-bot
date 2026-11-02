@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import type { AuthPrompt, CredentialStore, Models } from "@earendil-works/pi-ai";
 import { ConfigError, type PiBotConfig, parseConfig, parseModelRef } from "../config.ts";
 import { TITLE_REASONING } from "../titles.ts";
 import { ACCOUNTS, type AccountSpec, findAccount, SEARCH_PROVIDERS } from "./catalog.ts";
+import {
+  ConfigConflictError,
+  MISSING_REVISION,
+  readConfigFile,
+  updateConfigFile,
+} from "./config-file.ts";
 import {
   generateEd25519Key,
   parseOpenSshPrivateKey,
@@ -23,6 +28,7 @@ export type GitHubStatus = {
 
 export type AccountStatus = Omit<AccountSpec, "prefix"> & {
   readonly configured: boolean;
+  readonly unreadable?: boolean;
   /** Masked summary: never more than the last four characters of a key. */
   readonly detail?: string;
   /** True when the credential comes from the environment rather than the store. */
@@ -233,7 +239,18 @@ export class SettingsService {
       const wantType = spec.method === "oauth" ? "oauth" : "api_key";
       const type = stored.get(spec.provider);
       if (type === wantType || (type !== undefined && spec.anyCredential)) {
-        const credential = await this.#credentials.read(spec.provider);
+        let credential: Awaited<ReturnType<CredentialStore["read"]>>;
+        try {
+          credential = await this.#credentials.read(spec.provider);
+        } catch {
+          return {
+            ...base,
+            configured: false,
+            unreadable: true,
+            detail: "Stored credential could not be read. Remove it and add it again.",
+          };
+        }
+        if (!credential) return { ...base, configured: false };
         const detail =
           credential?.type === "oauth"
             ? expiryText(credential.expires, credential.refresh !== "")
@@ -314,7 +331,15 @@ export class SettingsService {
   async remove(accountId: string): Promise<void> {
     const spec = findAccount(accountId);
     if (!spec) throw new SettingsError(`unknown account "${accountId}"`);
-    const current = await this.#credentials.read(spec.provider);
+    let current: Awaited<ReturnType<CredentialStore["read"]>>;
+    try {
+      current = await this.#credentials.read(spec.provider);
+    } catch {
+      // A corrupt slot cannot be inspected, but explicit removal must remain possible.
+      await this.#credentials.delete(spec.provider);
+      this.#onCredentialsChanged?.(spec.provider);
+      return;
+    }
     const wantType = spec.method === "oauth" ? "oauth" : "api_key";
     // xAI's sign-in and key share a slot: only remove what this entry owns.
     if (current && (current.type === wantType || spec.anyCredential)) {
@@ -478,11 +503,8 @@ export class SettingsService {
     let config = this.#config;
     if (config.source) {
       try {
-        config = parseConfig(
-          await readFile(config.source, "utf8"),
-          dirname(config.source),
-          config.source,
-        );
+        const file = await readConfigFile(config.source);
+        if (file.exists) config = parseConfig(file.text, dirname(config.source), config.source);
       } catch {
         config = this.#config;
       }
@@ -515,6 +537,11 @@ export class SettingsService {
     path?: string;
     text: string;
     exists: boolean;
+    /**
+     * The file's content revision. Pass it back as `baseRevision` when saving edited text, so a
+     * save over changes made meanwhile (a live profile save, Admin Bot, another tab) is refused.
+     */
+    revision: string;
     restartRequired: boolean;
     /** Values the structured forms edit: from the file when it parses, else the running config. */
     effective: Pick<PiBotConfig, "bot_to_bot" | "extraction" | "search" | "git">;
@@ -527,22 +554,25 @@ export class SettingsService {
       search: config.search,
       git: config.git,
     });
-    if (!path)
-      return { text: "", exists: false, restartRequired, effective: effective(this.#config) };
-    let text: string;
-    try {
-      text = await readFile(path, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      return { path, text: "", exists: false, restartRequired, effective: effective(this.#config) };
+    if (!path) {
+      return {
+        text: "",
+        exists: false,
+        revision: MISSING_REVISION,
+        restartRequired,
+        effective: effective(this.#config),
+      };
     }
+    const { text, exists, revision } = await readConfigFile(path);
     let parsed = this.#config;
-    try {
-      parsed = parseConfig(text, dirname(path), path);
-    } catch {
-      parsed = this.#config;
+    if (exists) {
+      try {
+        parsed = parseConfig(text, dirname(path), path);
+      } catch {
+        parsed = this.#config;
+      }
     }
-    return { path, text, exists: true, restartRequired, effective: effective(parsed) };
+    return { path, text, exists, revision, restartRequired, effective: effective(parsed) };
   }
 
   /** Validate config text with the same parser the server starts with. */
@@ -557,25 +587,44 @@ export class SettingsService {
     }
   }
 
-  async saveConfig(text: string): Promise<void> {
-    const path = this.#config.source;
-    if (!path) throw new SettingsError("Pi Bot was started without a config file; nothing to edit");
+  /**
+   * Replace config.toml with `text` (the raw editor). With `baseRevision` (from `readConfig`) the
+   * save is refused when the file changed since it was read, instead of silently undoing that
+   * change. Profile edits saved here apply on restart; until then live profile changes to the same
+   * profiles are refused (`ProfileConflictError`) and other profiles are written around them.
+   */
+  async saveConfig(text: string, options: { readonly baseRevision?: string } = {}): Promise<void> {
+    const path = this.#requireConfigPath();
     const result = this.validateConfig(text);
     if (!result.ok) throw new SettingsError(result.error);
-    let mode = 0o600;
-    try {
-      mode = (await stat(path)).mode & 0o777;
-    } catch {
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    }
-    const temp = join(dirname(path), `.config.toml.${process.pid}.${randomUUID()}.tmp`);
-    await writeFile(temp, text, { mode });
-    await chmod(temp, mode);
-    await rename(temp, path);
+    await this.#write(
+      path,
+      () => text,
+      options.baseRevision === undefined ? {} : { expectedRevision: options.baseRevision },
+    );
     this.#configChanged = true;
   }
 
-  /** Apply scalar edits to config.toml (comments kept where possible), validate, save. */
+  #requireConfigPath(): string {
+    const path = this.#config.source;
+    if (!path) throw new SettingsError("Pi Bot was started without a config file; nothing to edit");
+    return path;
+  }
+
+  /** Every config.toml write: serialized with live profile saves, conflicts as SettingsError. */
+  async #write(
+    path: string,
+    change: (text: string) => string,
+    options: { readonly expectedRevision?: string } = {},
+  ): Promise<void> {
+    try {
+      await updateConfigFile(path, ({ text }) => change(text), options);
+    } catch (error) {
+      if (error instanceof ConfigConflictError) throw new SettingsError(error.message);
+      throw error;
+    }
+  }
+
   /** GitHub SSH key (public half only) and git identity. */
   async github(): Promise<GitHubStatus> {
     const { effective } = await this.readConfig();
@@ -662,15 +711,24 @@ export class SettingsService {
     this.#onGitChanged?.();
   }
 
+  /**
+   * Apply scalar edits to config.toml as it is at write time (comments kept where possible),
+   * validate and save, in one serialized step: concurrent writers never lose each other's changes.
+   */
   async updateConfig(edits: readonly TomlEdit[]): Promise<void> {
     if (edits.length === 0) return;
-    const { text } = await this.readConfig();
-    let next: string;
-    try {
-      next = setTomlValues(text, edits);
-    } catch (error) {
-      throw new SettingsError(`config.toml: ${(error as Error).message}`);
-    }
-    await this.saveConfig(next);
+    const path = this.#requireConfigPath();
+    await this.#write(path, (text) => {
+      let next: string;
+      try {
+        next = setTomlValues(text, edits);
+      } catch (error) {
+        throw new SettingsError(`config.toml: ${(error as Error).message}`);
+      }
+      const result = this.validateConfig(next);
+      if (!result.ok) throw new SettingsError(result.error);
+      return next;
+    });
+    this.#configChanged = true;
   }
 }

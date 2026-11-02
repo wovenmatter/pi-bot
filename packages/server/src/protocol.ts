@@ -136,6 +136,7 @@ export const requestSchema = z.discriminatedUnion("type", [
     type: z.literal("conversation.close"),
     botId,
     conversationId,
+    subscriptionId: requestId.optional(),
   }),
   // Stop the conversation's reply (the main channel when `conversationId` is omitted) and drop
   // its queued follow-ups. The partial reply stays, marked `stopped`.
@@ -199,7 +200,12 @@ export const requestSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({ id: requestId, type: z.literal("config.get") }),
   z.strictObject({ id: requestId, type: z.literal("config.validate"), text: configText }),
-  z.strictObject({ id: requestId, type: z.literal("config.save"), text: configText }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("config.save"),
+    text: configText,
+    baseRevision: z.string().optional(),
+  }),
   z.strictObject({
     id: requestId,
     type: z.literal("config.update"),
@@ -317,6 +323,7 @@ export type ThreadSummary = {
 };
 
 export type ConversationSnapshot = {
+  subscriptionId?: string | number;
   botId: string;
   conversationId: number;
   mainConversationId: number;

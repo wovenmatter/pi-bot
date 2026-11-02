@@ -6,11 +6,11 @@ import type { AuthResult, CredentialStore, Provider } from "@earendil-works/pi-a
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { parse as parseToml } from "smol-toml";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type PiBotApp, startPiBot } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
 import type { ServerMessage } from "../src/protocol.ts";
-import type { AccountStatus, LoginEvent } from "../src/settings/service.ts";
+import { type AccountStatus, type LoginEvent, SettingsService } from "../src/settings/service.ts";
 import type { SshPublicKey } from "../src/settings/ssh-key.ts";
 import { setTomlValues } from "../src/settings/toml-edit.ts";
 import { echoModels, tempDir } from "./helpers.ts";
@@ -221,6 +221,23 @@ describe("settings over the websocket", () => {
     });
 
     await client.request("credentials.remove", { accountId: "openai" });
+    expect(await credentials.read("openai")).toBeUndefined();
+  });
+
+  it("isolates an unreadable credential and allows explicit removal", async () => {
+    await credentials.modify("openai", async () => ({ type: "api_key", key: OPENAI_KEY }));
+    const read = credentials.read.bind(credentials);
+    const spy = vi.spyOn(credentials, "read").mockImplementation(async (provider) => {
+      if (provider === "openai") throw new Error("Unable to decrypt");
+      return read(provider);
+    });
+    try {
+      expect(await account("openai")).toMatchObject({ configured: false, unreadable: true });
+      expect(await account("openrouter")).toMatchObject({ configured: true, ambient: true });
+      await client.request("credentials.remove", { accountId: "openai" });
+    } finally {
+      spy.mockRestore();
+    }
     expect(await credentials.read("openai")).toBeUndefined();
   });
 
@@ -627,6 +644,47 @@ describe("settings over the websocket", () => {
     });
   });
 
+  it("keeps raw profile edits pending a restart and never loses a concurrent write", async () => {
+    const first = await client.request<{ text: string; revision: string }>("config.get");
+    expect(first.revision).toMatch(/^[0-9a-f]{32}$/);
+    const raw = first.text.replace('name = "Default"', 'name = "Default (raw)"');
+    expect(raw).not.toBe(first.text);
+    await client.request("config.save", { text: raw });
+    expect(await client.request("config.get")).not.toMatchObject({ revision: first.revision });
+
+    await client.request("credentials.set", { accountId: "openai", key: OPENAI_KEY });
+    // A live save of the profile edited in the file would undo that edit: refused.
+    await expect(
+      client.request("profiles.save", {
+        profile: { id: "default", name: "Default", main: "openai/openai-model", pool: [] },
+      }),
+    ).rejects.toThrow(/restart/);
+    expect(await readFile(configPath, "utf8")).toBe(raw);
+
+    // Another profile is saved live around it, while other settings are written concurrently.
+    await Promise.all([
+      client.request("profiles.save", {
+        create: true,
+        profile: { id: "cheap", name: "Cheap", main: "openai/openai-model", pool: [] },
+      }),
+      client.request("config.update", {
+        edits: [{ path: ["bot_to_bot", "max_rounds_per_request"], value: 7 }],
+      }),
+      client.request("models.setRoles", { titlesReasoning: "low" }),
+    ]);
+    const text = await readFile(configPath, "utf8");
+    expect(text).toContain("# my settings");
+    expect(text).toContain('name = "Default (raw)"');
+    const config = parseToml(text) as {
+      profiles: Record<string, { name: string }>;
+      bot_to_bot: { max_rounds_per_request: number };
+      models: { titles: { reasoning: string } };
+    };
+    expect(Object.keys(config.profiles)).toEqual(["default", "cheap"]);
+    expect(config.bot_to_bot.max_rounds_per_request).toBe(7);
+    expect(config.models.titles.reasoning).toBe("low");
+  });
+
   it("stores a GitHub SSH key write-only and the git identity in config.toml", async () => {
     expect(await client.request("github.get")).toEqual({ identity: {} });
 
@@ -702,5 +760,69 @@ describe("settings over the websocket", () => {
     await expect(
       client.request("github.setIdentity", { name: "Pi Bot", email: "not-an-email" }),
     ).rejects.toThrow();
+  });
+});
+
+describe("SettingsService config writes", () => {
+  let dir: Awaited<ReturnType<typeof tempDir>>;
+  let path: string;
+  let settings: SettingsService;
+  beforeEach(async () => {
+    dir = await tempDir();
+    path = join(dir.path, "config.toml");
+    await writeFile(
+      path,
+      '# keep\n[models]\ndefault_profile = "default"\n\n[profiles.default]\nname = "Default"\nmain = "faux/faux-1"\n',
+      { mode: 0o640 },
+    );
+    // Config writes touch neither credentials nor models.
+    settings = new SettingsService({
+      credentials: {} as CredentialStore,
+      models: createModels(),
+      config: await loadConfig(path),
+    });
+  });
+  afterEach(async () => {
+    await dir.cleanup();
+  });
+
+  it("refuses a raw save based on a stale revision, and accepts a current one", async () => {
+    const opened = await settings.readConfig();
+    expect(opened).toMatchObject({ exists: true, restartRequired: false });
+    // Something else writes meanwhile (a live profile save, Admin Bot, another tab).
+    await settings.updateConfig([{ path: ["extraction", "timezone"], value: "Europe/Paris" }]);
+    await expect(
+      settings.saveConfig(`${opened.text}# stale editor\n`, { baseRevision: opened.revision }),
+    ).rejects.toThrow(/changed since it was loaded/);
+    expect(await readFile(path, "utf8")).toContain('timezone = "Europe/Paris"');
+
+    const current = await settings.readConfig();
+    await settings.saveConfig(`${current.text}# fresh\n`, { baseRevision: current.revision });
+    const saved = await readFile(path, "utf8");
+    expect(saved).toContain('timezone = "Europe/Paris"');
+    expect(saved).toMatch(/# fresh\n$/);
+    expect((await stat(path)).mode & 0o777).toBe(0o640);
+    expect((await settings.readConfig()).restartRequired).toBe(true);
+  });
+
+  it("applies concurrent scalar edits to the file as it is at write time", async () => {
+    await Promise.all([
+      settings.updateConfig([{ path: ["extraction", "timezone"], value: "Europe/Paris" }]),
+      settings.updateConfig([{ path: ["bot_to_bot", "max_rounds_per_request"], value: 3 }]),
+      settings.setGitIdentity({ name: "Pi Bot", email: "bot@example.com" }),
+    ]);
+    const saved = parseToml(await readFile(path, "utf8")) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(saved.extraction?.timezone).toBe("Europe/Paris");
+    expect(saved.bot_to_bot?.max_rounds_per_request).toBe(3);
+    expect(saved.git).toEqual({ user_name: "Pi Bot", user_email: "bot@example.com" });
+    // An invalid edit writes nothing.
+    const before = await readFile(path, "utf8");
+    await expect(
+      settings.updateConfig([{ path: ["extraction", "timezone"], value: "Mars/Base" }]),
+    ).rejects.toThrow(/time zone/);
+    expect(await readFile(path, "utf8")).toBe(before);
   });
 });

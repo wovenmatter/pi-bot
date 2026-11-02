@@ -2294,3 +2294,41 @@ details.account-api-key > .settings-list {
   margin-top: -6px;
   line-height: 1.4;
 }
+
+/* Keep every pane usable on narrow screens without changing the desktop rails. */
+@media (max-width: 640px) {
+  .shell-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(160px, 30dvh) minmax(0, 1fr);
+  }
+  .sidebar-top {
+    min-height: 40px;
+  }
+  .sidebar-footer {
+    padding-top: 4px;
+  }
+  .main-content {
+    padding: 16px 12px;
+  }
+  .settings-tabs {
+    flex-wrap: wrap;
+  }
+  .settings-tabs > a {
+    flex: 1 0 30%;
+  }
+  .thread-header {
+    padding-inline: 12px;
+  }
+  .transcript {
+    padding-inline: 12px;
+  }
+  .composer-area {
+    padding-inline: 12px;
+  }
+  .restart-notice {
+    flex-wrap: wrap;
+  }
+  .restart-notice > button {
+    margin: 4px 0 0;
+  }
+}

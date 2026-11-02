@@ -6,6 +6,7 @@ import { BotRuleError, NotFoundError } from "../src/bots.ts";
 import { parseConfig } from "../src/config.ts";
 import {
   BOTS_TABLE,
+  MEMORY_TABLE,
   NOTES_TABLE,
   prefixedObjects,
   THREADS_TABLE,
@@ -49,6 +50,14 @@ describe("purging deleted bots", () => {
       const beta = await t.manager.get(b.id);
       await (await beta.send("hi")).submission.wait(ctx);
       await t.manager.registry.setNote("account", "plans");
+      await t.manager.registry.updateMemory(a.id, () => ({
+        facts: ["Alpha memory"],
+        checkpoint: 1,
+      }));
+      await t.manager.registry.updateMemory(b.id, () => ({
+        facts: ["Beta memory"],
+        checkpoint: 2,
+      }));
       const betaObjects = await prefixedObjects(t.db, b.prefix);
       const betaThreads = await t.manager.registry.listThreads(b.id);
 
@@ -66,6 +75,8 @@ describe("purging deleted bots", () => {
         environment: { removed: true },
       });
       expect(purged).toEqual([a.id]);
+      expect(await t.db.all(`SELECT * FROM ${MEMORY_TABLE} WHERE bot_id = ?`, a.id)).toEqual([]);
+      expect((await t.manager.registry.memory(b.id)).facts).toEqual(["Beta memory"]);
 
       // Every table under its prefix, its thread rows and its registry row are gone.
       expect(await prefixedObjects(t.db, a.prefix)).toEqual([]);

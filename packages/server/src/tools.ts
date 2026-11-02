@@ -141,7 +141,7 @@ function commonTools(botId: string, platform: BotPlatform) {
           const sender = await manager.record(botId);
           const target = await manager.get(args.botId);
           // A request is the chain of bot-to-bot messages after one user message.
-          const round = (await manager.get(botId)).round(api.conversationId) + 1;
+          const round = (await (await manager.get(botId)).round(api.conversationId)) + 1;
           const maxRounds = platform.maxRoundsPerRequest ?? 5;
           if (round > maxRounds) {
             throw new Error(

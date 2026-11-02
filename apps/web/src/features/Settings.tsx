@@ -1,5 +1,5 @@
 import { RotateCcw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
 import { ErrorNotice, Loading } from "../components/ui.tsx";
@@ -156,6 +156,8 @@ export function AccountsSection({
   onChanged?: () => void;
   intro?: boolean;
 }) {
+  const changed = useRef(onChanged);
+  changed.current = onChanged;
   const [accounts, setAccounts] = useState<AccountStatus[]>();
   const [login, setLogin] = useState<LoginState>();
   const refresh = useCallback(
@@ -164,15 +166,29 @@ export function AccountsSection({
         .request("settings.accounts", {})
         .then((result) => {
           setAccounts(result.accounts);
-          onChanged?.();
+          changed.current?.();
         })
         .catch((e: unknown) => onError(errorMessage(e))),
-    [client, onError, onChanged],
+    [client, onError],
   );
   useEffect(() => {
     if (connected) void refresh();
   }, [connected, refresh]);
 
+  useEffect(() => {
+    if (connected) return;
+    setLogin((current) =>
+      current && !current.events.some((event) => event.kind === "done" || event.kind === "error")
+        ? {
+            ...current,
+            events: [
+              ...current.events,
+              { kind: "error", message: "Connection lost. Start sign-in again." },
+            ],
+          }
+        : current,
+    );
+  }, [connected]);
   const loginId = login?.loginId;
   useEffect(() => {
     if (!loginId) return;
@@ -657,6 +673,8 @@ function useBotMemory(
 function ConfigSection({ client, connected, onError, onConfigSaved }: SectionProps) {
   const [config, setConfig] = useState<Requests["config.get"]["result"]>();
   const [text, setText] = useState<string>();
+  const edited = useRef(false);
+  const baseRevision = useRef<string | undefined>(undefined);
   const [validation, setValidation] = useState<ValidationState>();
   const refresh = useCallback(
     () =>
@@ -664,8 +682,11 @@ function ConfigSection({ client, connected, onError, onConfigSaved }: SectionPro
         .request("config.get", {})
         .then((result) => {
           setConfig(result);
-          setText(result.text);
-          setValidation(undefined);
+          if (!edited.current) {
+            setText(result.text);
+            baseRevision.current = result.revision;
+            setValidation(undefined);
+          }
         })
         .catch((e: unknown) => onError(errorMessage(e))),
     [client, onError],
@@ -701,8 +722,13 @@ function ConfigSection({ client, connected, onError, onConfigSaved }: SectionPro
         validation={validation}
         disabled={!connected}
         onChange={(next) => {
+          edited.current = true;
           setText(next);
           setValidation(undefined);
+        }}
+        onReload={() => {
+          edited.current = false;
+          void refresh();
         }}
         onValidate={() => {
           client
@@ -715,7 +741,11 @@ function ConfigSection({ client, connected, onError, onConfigSaved }: SectionPro
             const result = await client.request("config.validate", { text: text ?? "" });
             setValidation(result);
             if (!result.ok) return;
-            await client.request("config.save", { text: text ?? "" });
+            await client.request("config.save", {
+              text: text ?? "",
+              baseRevision: baseRevision.current,
+            });
+            edited.current = false;
             onConfigSaved();
             await refresh();
           })().catch((e: unknown) => onError(errorMessage(e)));

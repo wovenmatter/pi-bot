@@ -121,6 +121,33 @@ describe("environment agent bridge", () => {
     expect(changes).toHaveLength(count);
   });
 
+  it("contains child spawn failures and can start a replacement", async () => {
+    connection.close();
+    let attempts = 0;
+    connection = new AgentConnection(async () =>
+      ++attempts === 1
+        ? spawn("/pi-bot-test-does-not-exist", [], { stdio: ["pipe", "pipe", "pipe"] })
+        : localAgent(),
+    );
+    env = new RemoteExecutionEnv("test", dir.path, connection);
+    await expect(env.exists(".", ctx)).rejects.toThrow();
+    expect(must(await env.exists(".", ctx))).toBe(true);
+  });
+
+  it("contains pipe errors and retires the failed agent", async () => {
+    connection.close();
+    let child: ReturnType<typeof localAgent> | undefined;
+    connection = new AgentConnection(async () => {
+      child = localAgent();
+      return child;
+    });
+    env = new RemoteExecutionEnv("test", dir.path, connection);
+    expect(must(await env.exists(".", ctx))).toBe(true);
+    child?.stdin.emit("error", new Error("test EPIPE"));
+    expect(connection.started).toBe(false);
+    expect(must(await env.exists(".", ctx))).toBe(true);
+  });
+
   it("does not inherit the server's environment", async () => {
     process.env.PIBOT_TEST_SECRET = "should-not-leak";
     try {

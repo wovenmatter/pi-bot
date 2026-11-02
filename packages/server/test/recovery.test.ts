@@ -33,6 +33,28 @@ async function until(check: () => Promise<boolean>, timeoutMs = 5000): Promise<v
 }
 
 describe("crash recovery", () => {
+  it("preserves active bot-message rounds across queued inputs and restart", async () => {
+    const dir = await tempDir();
+    const path = join(dir.path, "rounds.sqlite");
+    const first = await openTestManager(path, { tokensPerSecond: 2 });
+    let second: Awaited<ReturnType<typeof openTestManager>> | undefined;
+    try {
+      const record = await first.manager.create("Round guard");
+      const bot = await first.manager.get(record.id);
+      const sent = await bot.send("active round", undefined, 4);
+      await until(async () => (await sent.submission.status(ctx)).status === "placed");
+      await bot.send("queued user reset", undefined, 0);
+      expect(await bot.round(sent.conversation.id)).toBe(4);
+      await first.close();
+      second = await openTestManager(path, { tokensPerSecond: 2 });
+      const reopened = await second.manager.get(record.id);
+      expect(await reopened.round(sent.conversation.id)).toBe(4);
+    } finally {
+      await (second ?? first).close();
+      await dir.cleanup();
+    }
+  });
+
   it("resumes an interrupted run on startup without a new submit", async () => {
     const dir = await tempDir();
     try {

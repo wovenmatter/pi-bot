@@ -21,6 +21,27 @@ class FakeSocket {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PiBotClient", () => {
+  it("rejects pending requests immediately on close and ignores stale sockets", async () => {
+    vi.stubGlobal("WebSocket", FakeSocket);
+    const client = new PiBotClient("ws://pi-bot.test/ws");
+    client.connect();
+    const old = FakeSocket.last;
+    if (!old) throw new Error("no socket");
+    old.emit("open");
+    const pending = client.request("bots.list", {});
+    const rejected = expect(pending).rejects.toThrow("Connection closed");
+    client.close();
+    await rejected;
+    client.connect();
+    old.emit("open");
+    expect(client.state).toBe("connecting");
+    const listener = vi.fn();
+    client.onBotsChanged(listener);
+    old.emit("message", { data: JSON.stringify({ type: "bots.changed" }) });
+    expect(listener).not.toHaveBeenCalled();
+    client.close();
+  });
+
   it("passes threads.changed pushes to thread listeners with the bot id", () => {
     vi.stubGlobal("WebSocket", FakeSocket);
     const client = new PiBotClient("ws://pi-bot.test/ws");

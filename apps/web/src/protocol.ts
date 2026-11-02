@@ -95,6 +95,7 @@ export type ThreadSummary = {
 };
 
 export type ConversationSnapshot = {
+  subscriptionId?: string | number;
   botId: string;
   conversationId: number;
   mainConversationId: number;
@@ -137,6 +138,7 @@ export type AccountStatus = {
   /** Connected by any credential in the slot. */
   anyCredential?: boolean;
   configured: boolean;
+  unreadable?: boolean;
   detail?: string;
   ambient?: boolean;
 };
@@ -255,7 +257,7 @@ export type Requests = {
     result: ConversationSnapshot;
   };
   "conversation.close": {
-    body: { botId: string; conversationId: number };
+    body: { botId: string; conversationId: number; subscriptionId?: string | number };
     result: { closed: boolean };
   };
   /** Stop the running reply and drop queued follow-ups; resolves once the conversation is idle. */
@@ -304,6 +306,7 @@ export type Requests = {
       path?: string;
       text: string;
       exists: boolean;
+      revision: string;
       restartRequired: boolean;
       effective?: EffectiveConfig;
     };
@@ -312,7 +315,10 @@ export type Requests = {
     body: { text: string };
     result: { ok: true } | { ok: false; error: string };
   };
-  "config.save": { body: { text: string }; result: { saved: true; restartRequired: true } };
+  "config.save": {
+    body: { text: string; baseRevision?: string };
+    result: { saved: true; restartRequired: true };
+  };
   "config.update": {
     body: { edits: ConfigEdit[] };
     result: { saved: true; restartRequired: true };

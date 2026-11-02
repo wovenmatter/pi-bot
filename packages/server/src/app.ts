@@ -77,6 +77,8 @@ export async function startPiBot(
   let settings: SettingsService | undefined;
   let server: PiBotServer | undefined;
   let manager: BotManager | undefined;
+  let memory: MemoryExtractor | undefined;
+  let availability: ModelAvailability | undefined;
   const platform: BotPlatform = {
     manager: () => {
       if (!manager) throw new Error("bots are still starting");
@@ -134,7 +136,7 @@ export async function startPiBot(
     // Marked usage limits outlive a restart: restore the live ones before any bot opens.
     const registry = new BotRegistry(db);
     await registry.migrate();
-    const availability = new ModelAvailability({
+    availability = new ModelAvailability({
       store: registry,
       onError: (error) => log(`usage limits: could not save: ${String(error)}`),
     });
@@ -152,8 +154,9 @@ export async function startPiBot(
       onModelStatus: () => server?.botsChanged(),
       profiles,
       log,
-      harnessOptions: (bot, self) =>
-        createBotHarnessOptions({
+      harnessOptions: (bot, self) => {
+        manager ??= self;
+        return createBotHarnessOptions({
           bot,
           models,
           profile: () => profiles.resolve(self.assignedProfile(bot.id)),
@@ -170,7 +173,8 @@ export async function startPiBot(
             self.reportLimit(bot.id, conversationId, model, limit),
           fallbackNote: (conversationId) => self.fallbackNote(bot.id, conversationId),
           memory: async () => memorySection((await self.registry.memory(bot.id)).facts),
-        }),
+        });
+      },
       onBotClosed: (bot, reason) => {
         if (reason !== "closed") log(`bot ${bot.id} harness ${reason}`);
       },
@@ -217,7 +221,7 @@ export async function startPiBot(
     });
     manager = opened;
     const extraction = config.extraction;
-    const memory = extraction.enabled
+    memory = extraction.enabled
       ? new MemoryExtractor({
           manager: opened,
           models,
@@ -228,13 +232,12 @@ export async function startPiBot(
           log,
         })
       : undefined;
-    memory?.start();
     settings = new SettingsService({
       credentials: credentials.store,
       models: options.settingsModels?.(credentials.store) ?? models,
       config,
       // New credentials for a provider account end its marked limits; bots go back to main.
-      onCredentialsChanged: (provider) => availability.clear(provider),
+      onCredentialsChanged: (provider) => availability?.clear(provider),
       ...(env?.gitChanged
         ? {
             onGitChanged: () =>
@@ -242,16 +245,6 @@ export async function startPiBot(
           }
         : {}),
     });
-    const reconciled = env?.reconcile
-      ? reconcileWithRetry(
-          env,
-          async () => ({
-            active: (await opened.list()).map((bot) => bot.id),
-            deleted: (await opened.listDeleted()).map((bot) => bot.id),
-          }),
-          log,
-        )
-      : Promise.resolve();
     const webDir = options.webDir ?? config.paths.webDir;
     server = await startServer({
       manager: opened,
@@ -262,6 +255,17 @@ export async function startPiBot(
       ...(options.restart ? { restart: options.restart } : {}),
       log,
     });
+    memory?.start();
+    const reconciled = env?.reconcile
+      ? reconcileWithRetry(
+          env,
+          async () => ({
+            active: (await opened.list()).map((bot) => bot.id),
+            deleted: (await opened.listDeleted()).map((bot) => bot.id),
+          }),
+          log,
+        )
+      : Promise.resolve();
     return {
       db,
       credentials,
@@ -275,13 +279,19 @@ export async function startPiBot(
         await server?.close();
         await memory?.close();
         await opened.close();
-        availability.close();
-        await availability.flushed();
+        availability?.close();
+        await availability?.flushed();
         env?.close?.();
         await db.close();
       },
     };
   } catch (error) {
+    await server?.close().catch(() => {});
+    await memory?.close().catch(() => {});
+    await manager?.close().catch(() => {});
+    availability?.close();
+    await availability?.flushed().catch(() => {});
+    env?.close?.();
     await db.close().catch(() => {});
     throw error;
   }

@@ -218,6 +218,7 @@ class Connection {
   readonly #socket: WebSocket;
   readonly #server: Server;
   readonly #subscriptions = new Map<string, ConversationWatch>();
+  readonly #subscriptionIds = new Map<string, string | number>();
 
   constructor(socket: WebSocket, server: Server) {
     this.#socket = socket;
@@ -234,6 +235,7 @@ class Connection {
   async dispose(): Promise<void> {
     const streams = [...this.#subscriptions.values()];
     this.#subscriptions.clear();
+    this.#subscriptionIds.clear();
     this.#server.connections.delete(this);
     this.#server.settings?.dropOwner(this);
     await Promise.all(streams.map((stream) => stream.stop().catch(() => {})));
@@ -243,6 +245,7 @@ class Connection {
     for (const [key, stream] of this.#subscriptions) {
       if (!key.startsWith(`${botId}:`)) continue;
       this.#subscriptions.delete(key);
+      this.#subscriptionIds.delete(key);
       await stream.stop().catch(() => {});
     }
   }
@@ -260,8 +263,10 @@ class Connection {
       if (!parsed.success) {
         throw new Error(`invalid request: ${parsed.error.issues[0]?.message ?? "malformed"}`);
       }
-      const result = await this.#handle(parsed.data);
+      const afterReply: (() => void)[] = [];
+      const result = await this.#handle(parsed.data, afterReply);
       this.send({ type: "result", id: parsed.data.id, data: result });
+      for (const start of afterReply) start();
     } catch (error) {
       const message =
         error instanceof NotFoundError || error instanceof Error ? error.message : String(error);
@@ -275,7 +280,7 @@ class Connection {
     return settings;
   }
 
-  async #handle(request: Request): Promise<unknown> {
+  async #handle(request: Request, afterReply: (() => void)[]): Promise<unknown> {
     const manager = this.#server.manager;
     const bot = (record: BotRecord) =>
       botSummary(record, manager.profiles, manager.modelStatus(record.id));
@@ -304,6 +309,8 @@ class Connection {
           ),
         };
       case "bots.delete": {
+        if ((await manager.record(request.botId)).kind === "admin")
+          throw new Error("the Admin Bot cannot be deleted");
         for (const connection of this.#server.connections) {
           await connection.unsubscribeBot(request.botId);
         }
@@ -450,7 +457,7 @@ class Connection {
       case "config.validate":
         return this.#settings().validateConfig(request.text);
       case "config.save":
-        await this.#settings().saveConfig(request.text);
+        await this.#settings().saveConfig(request.text, { baseRevision: request.baseRevision });
         return { saved: true, restartRequired: true };
       case "config.update":
         await this.#settings().updateConfig(request.edits);
@@ -501,28 +508,54 @@ class Connection {
       }
       case "conversation.close": {
         const key = `${request.botId}:${request.conversationId}`;
+        if (
+          request.subscriptionId !== undefined &&
+          this.#subscriptionIds.get(key) !== request.subscriptionId
+        )
+          return { closed: false };
         const stream = this.#subscriptions.get(key);
         this.#subscriptions.delete(key);
+        this.#subscriptionIds.delete(key);
         await stream?.stop();
         return { closed: stream !== undefined };
       }
       case "conversation.open":
-        return this.#open(request.botId, request.conversationId);
+        return this.#open(request.botId, request.conversationId, afterReply, request.id);
     }
   }
 
-  async #open(botId: string, requested?: number): Promise<ConversationSnapshot> {
+  async #open(
+    botId: string,
+    requested: number | undefined,
+    afterReply: (() => void)[],
+    subscriptionId: string | number,
+  ): Promise<ConversationSnapshot> {
     const target = await this.#server.manager.get(botId);
     const main = await target.main();
     const conversation = await target.conversation(requested);
     const key = `${botId}:${conversation.id}`;
-    await this.#subscriptions.get(key)?.stop();
 
     // Watch first, then read history: events after the snapshot are never missed, and the
     // client de-duplicates entries by id.
     const stream = await conversation.watch(ctx, { min: HISTORY_LIMIT, max: HISTORY_LIMIT * 2 });
+    if (this.#socket.readyState !== WebSocket.OPEN) {
+      await stream.stop();
+      throw new Error("connection closed");
+    }
+    const prior = this.#subscriptions.get(key);
     this.#subscriptions.set(key, stream);
-    const page = await conversation.entries({}, HISTORY_LIMIT, undefined, ctx);
+    this.#subscriptionIds.set(key, subscriptionId);
+    await prior?.stop();
+    const page = await conversation
+      .entries({}, HISTORY_LIMIT, undefined, ctx)
+      .catch(async (error) => {
+        await stream.stop();
+        if (this.#subscriptions.get(key) === stream) {
+          this.#subscriptions.delete(key);
+          this.#subscriptionIds.delete(key);
+        }
+        throw error;
+      });
     const entries = page.items
       .map(displayEntry)
       .filter((entry): entry is DisplayEntry => entry !== undefined)
@@ -530,45 +563,54 @@ class Connection {
 
     const conversationId = conversation.id;
     let previous = stream.value;
-    stream.start(async (call) => {
-      if (call.kind === "failed") {
-        this.send({
-          type: "event",
-          botId,
-          conversationId,
-          event: { kind: "error", message: "Conversation updates temporarily unavailable" },
-        });
-        return;
-      }
-      let current = call.value;
-      const last = previous.entries.at(-1)?.id;
-      // Recover entries skipped when a slow listener falls behind the window.
-      if (current.before !== undefined && (last === undefined || current.before > last)) {
-        const recovered = [];
-        let cursor: import("@earendil-works/pi-durable").Cursor | undefined;
-        do {
-          const page = await conversation.entries(
-            {
-              ...(last === undefined ? {} : { minEntryId: last }),
-              maxEntryId: current.before,
-              order: "ascending",
-            },
-            HISTORY_LIMIT,
-            cursor,
-            ctx,
-          );
-          recovered.push(...page.items);
-          cursor = page.next;
-        } while (cursor !== undefined);
-        current = { ...current, entries: [...recovered, ...current.entries] };
-      }
-      for (const event of streamEvents(previous, current)) {
-        this.send({ type: "event", botId, conversationId, event });
-      }
-      previous = call.value;
+    afterReply.push(() => {
+      if (this.#subscriptions.get(key) !== stream) return;
+      stream.start(async (call) => {
+        if (this.#subscriptions.get(key) !== stream) return;
+        if (call.kind === "failed") {
+          this.send({
+            type: "event",
+            botId,
+            conversationId,
+            event: { kind: "error", message: "Conversation updates temporarily unavailable" },
+          });
+          return;
+        }
+        let current = call.value;
+        const last = previous.entries.at(-1)?.id;
+        // Recover entries skipped when a slow listener falls behind the window.
+        if (current.before !== undefined && (last === undefined || current.before > last)) {
+          const recovered = [];
+          let cursor: import("@earendil-works/pi-durable").Cursor | undefined;
+          do {
+            const page = await conversation.entries(
+              {
+                ...(last === undefined ? {} : { minEntryId: last }),
+                maxEntryId: current.before,
+                order: "ascending",
+              },
+              HISTORY_LIMIT,
+              cursor,
+              ctx,
+            );
+            recovered.push(...page.items);
+            cursor = page.next;
+          } while (cursor !== undefined);
+          current = { ...current, entries: [...recovered, ...current.entries] };
+        }
+        for (const event of streamEvents(previous, current)) {
+          this.send({ type: "event", botId, conversationId, event });
+        }
+        previous = call.value;
+      });
     });
-    void stream.closed.then(() => {
-      if (this.#subscriptions.get(key) === stream) this.#subscriptions.delete(key);
+    void stream.closed.then((end) => {
+      if (this.#subscriptions.get(key) !== stream) return;
+      this.#subscriptions.delete(key);
+      this.#subscriptionIds.delete(key);
+      // Reconnect reloads both the snapshot and its subscription after a failed watch.
+      if (end.kind !== "stopped" && this.#socket.readyState === WebSocket.OPEN)
+        this.#socket.close(1012, "Conversation subscription ended");
     });
 
     const streaming = assistantText(
@@ -577,6 +619,7 @@ class Connection {
     return {
       botId,
       conversationId,
+      subscriptionId,
       mainConversationId: main.id,
       entries,
       running: (stream.value.docs["pi.live"] as LiveState | undefined)?.run !== undefined,

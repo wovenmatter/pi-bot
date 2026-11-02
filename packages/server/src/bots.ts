@@ -65,7 +65,6 @@ export class Bot {
   readonly #registry: BotRegistry;
   readonly #titles: ThreadTitles | undefined;
   readonly #note: () => string | undefined;
-  readonly #rounds = new Map<number, number>();
 
   constructor(
     record: BotRecord,
@@ -124,13 +123,27 @@ export class Bot {
     return conversation;
   }
 
-  /**
-   * The bot-to-bot round of the input a conversation last received: 0 after a user message, n
-   * after the nth `message_bot` hop of the chain that followed it (`[bot_to_bot]
-   * max_rounds_per_request`). In memory; a reopened bot starts at 0.
-   */
-  round(conversationId: number): number {
-    return this.#rounds.get(conversationId) ?? 0;
+  /** Round metadata belongs to the placed input, not a later queued follow-up. */
+  async round(conversationId: number): Promise<number> {
+    const conversation = await this.conversation(conversationId);
+    let cursor: import("@earendil-works/pi-durable").Cursor | undefined;
+    do {
+      const page = await conversation.entries({ order: "descending" }, 100, cursor, ctx);
+      for (const entry of page.items) {
+        if (!entry.model?.some((message) => message.role === "user")) continue;
+        const data = entry.data;
+        const round =
+          data && typeof data === "object" && !Array.isArray(data) ? data.round : undefined;
+        return entry.kind === "pibot.input" &&
+          typeof round === "number" &&
+          Number.isInteger(round) &&
+          round >= 0
+          ? round
+          : 0;
+      }
+      cursor = page.next;
+    } while (cursor !== undefined);
+    return 0;
   }
 
   /**
@@ -141,10 +154,14 @@ export class Bot {
    */
   async send(text: string, conversationId?: number, round = 0) {
     const conversation = await this.conversation(conversationId);
-    this.#rounds.set(conversation.id, round);
     const note = this.#note();
     const submission = await conversation.submit(
-      { type: "input", content: note ? `${note}\n\n${text}` : text, whenBusy: "followUp" },
+      {
+        type: "input",
+        content: note ? `${note}\n\n${text}` : text,
+        whenBusy: "followUp",
+        entry: { kind: "pibot.input", data: { round } },
+      },
       ctx,
     );
     const main = await this.main();
@@ -671,9 +688,12 @@ export class BotManager {
     for (const [id, profileId] of this.#assigned) {
       if (profileId !== undefined && !profiles.get(profileId)) this.#assigned.set(id, undefined);
     }
-    for (const record of await this.registry.list()) {
+    for (const record of [
+      ...(await this.registry.list()),
+      ...(await this.registry.listDeleted()),
+    ]) {
       if (record.profile && !profiles.get(record.profile)) {
-        await this.registry.setProfile(record.id, undefined);
+        await this.registry.clearProfile(record.profile);
       }
     }
     for (const pending of [...this.#bots.values()]) {
@@ -897,7 +917,9 @@ export class BotManager {
       const bot = await open.catch(() => undefined);
       if (bot) await bot.harness.close(ctx);
     }
-    await this.#options.onBotDeleted?.(record);
+    await this.#options.onBotDeleted?.(record).catch((error: unknown) => {
+      this.#options.log?.(`bot ${id}: deleted; environment stop failed: ${String(error)}`);
+    });
     return true;
   }
 

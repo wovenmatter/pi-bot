@@ -17,6 +17,7 @@ export type AgentProcess = {
   readonly stdout: NodeJS.ReadableStream;
   readonly stderr?: NodeJS.ReadableStream | null;
   once(event: "exit", listener: (code: number | null) => void): unknown;
+  once(event: "error", listener: (error: Error) => void): unknown;
   kill(): unknown;
 };
 
@@ -128,9 +129,19 @@ export class AgentConnection {
   }
 
   #attach(child: AgentProcess, generation: number): AgentProcess {
+    const failed = (error: Error) => {
+      if (generation !== this.#generation) return;
+      this.#retire(error);
+      child.kill();
+    };
+    child.once("error", failed);
+    child.stdin.on("error", failed);
+    child.stdout.on("error", failed);
+    child.stderr?.on("error", failed);
     let buffer = "";
     child.stdout.setEncoding?.("utf8");
     child.stdout.on("data", (chunk: Buffer | string) => {
+      if (generation !== this.#generation) return;
       buffer += chunk.toString();
       let newline = buffer.indexOf("\n");
       while (newline >= 0) {
