@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 
-/** Stroke weights tuned to the desktop app's SF Symbol weights. */
-const WEIGHTS = { regular: 1.75, control: 2, send: 2.25 } as const;
+/** DashboardLucideGlyph vector stroke widths (regular, control, send). */
+const WEIGHTS = { regular: 1.5, control: 1.75, send: 2.5 } as const;
 
 export function Icon({
   icon: Glyph,

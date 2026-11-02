@@ -1,12 +1,6 @@
-/*
- * Pi Bot web stylesheet: the subset of the WovenMatter Enterprise web stylesheet
- * (platform apps/web/src/styles.css) that Pi Bot uses, copied unchanged and filtered by
- * class (see the generator note in the README); the one exception is `border: 0` on
- * .rail-action, which stops buttons drawing the browser's default border. Its tokens mirror
- * the WovenMatter desktop app:
- * app/App/Views/DashboardColors.swift (DashboardColors, DashboardPalette),
- * DashboardStyle.swift (DashboardTheme: green, cognac, dark) and DashboardDesign.swift
- * (DashboardMetrics). Pi Bot additions follow at the end. CSS pixels map 1:1 to points.
+/* Woven Matter desktop is the style source of truth. See docs/desktop-style-parity.md
+ * for the source revision, component mapping, and native/web rendering boundaries.
+ * CSS pixels map to macOS logical points at 100% browser zoom.
  */
 :root {
   color-scheme: light;
@@ -56,7 +50,7 @@
   --row-height: 28px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink);
@@ -267,7 +261,8 @@ summary::-webkit-details-marker {
   background: color-mix(in srgb, var(--primary-fill) 78%, transparent);
 }
 html[data-theme="dark"] .primary,
-html[data-theme="dark"] .send-button {
+html[data-theme="dark"] .send-button,
+html[data-theme="dark"] .stop-button {
   box-shadow: inset 0 0 0 1px var(--ring);
 }
 .secondary {
@@ -612,6 +607,7 @@ input[type="file"] {
 }
 /* DashboardRailRow: 28 high, 12 inset, 13 regular, 13-in-15 glyph, 8 radius. */
 .nav-link {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -632,6 +628,8 @@ input[type="file"] {
 }
 .nav-link > svg {
   flex: none;
+  width: 13px;
+  height: 13px;
   margin: 1px;
 }
 .nav-link > span {
@@ -650,6 +648,7 @@ input[type="file"] {
   font-weight: 500;
 }
 .rail-group {
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -719,6 +718,7 @@ input[type="file"] {
 }
 /* DashboardDisclosureHeading: title, spacer, trailing 12-point chevron. */
 .disclosure-heading {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1099,7 +1099,9 @@ input[type="file"] {
   margin: 0 auto;
   padding: 10px 12px;
   border-radius: var(--composer-radius);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(24px) saturate(1.15);
+  -webkit-backdrop-filter: blur(24px) saturate(1.15);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent),
     0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent);
@@ -1121,7 +1123,7 @@ input[type="file"] {
   border-radius: 0;
   background: transparent;
   font-size: 15px;
-  line-height: 20px;
+  line-height: 22px;
   resize: none;
 }
 .composer-area textarea:focus {
@@ -1179,12 +1181,7 @@ input[type="file"] {
   background: var(--primary-fill);
   color: var(--primary-foreground);
 }
-.send-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--primary-fill) 90%, transparent);
-}
-.send-button:active:not(:disabled) {
-  background: color-mix(in srgb, var(--primary-fill) 78%, transparent);
-}
+
 .stop-button {
   background: var(--primary-fill);
   color: var(--primary-foreground);
@@ -1192,9 +1189,7 @@ input[type="file"] {
 .stop-button svg {
   fill: currentColor;
 }
-.stop-button:hover:not(:disabled) {
-  background: var(--strong);
-}
+
 .send-button:disabled,
 .stop-button:disabled {
   opacity: 0.4;
@@ -1232,7 +1227,10 @@ input[type="file"] {
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  :is(.icon-button, .rail-action, .send-button, .stop-button):active:not(:disabled) {
+  :is(.primary, .secondary, .text-button):active:not(:disabled) {
+    transform: scale(0.985);
+  }
+  :is(.icon-button, .rail-action):active:not(:disabled) {
     transform: scale(0.94);
   }
   .tabs > :active:not(:disabled) {
@@ -1807,7 +1805,7 @@ details.account-api-key > .settings-list {
   font-family: var(--mono);
 }
 .settings-inline-form > input::placeholder {
-  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 /* Settings → Profiles */
 .badge {
@@ -2232,4 +2230,29 @@ details.account-api-key > .settings-list {
 }
 .onboarding > .notice {
   margin-bottom: 16px;
+}
+
+/* Shared desktop control states. Selected segments retain their surface under the tint. */
+:is(.primary, .secondary, .text-button, .icon-button, .rail-action):disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tabs > .active:hover:not(:disabled) {
+  background:
+    linear-gradient(var(--whisper), var(--whisper)),
+    color-mix(in srgb, var(--surface) 96%, transparent);
+}
+.tabs > .active:active:not(:disabled) {
+  background:
+    linear-gradient(var(--soft), var(--soft)), color-mix(in srgb, var(--surface) 96%, transparent);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar {
+    background: var(--rail-reduced);
+  }
+  .composer-area > form {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
