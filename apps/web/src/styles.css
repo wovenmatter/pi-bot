@@ -581,14 +581,8 @@ input[type="file"] {
     inset 0 0 0 2px var(--rail-inner),
     0 0 0 0.5px var(--rail-edge);
   color: var(--ink);
-  transition: box-shadow 0.22s ease-out;
 }
-.sidebar:hover {
-  box-shadow:
-    inset 0 0 0 1px var(--rail-hover-rim),
-    inset 0 0 0 2px var(--rail-hover-inner),
-    0 0 0 0.5px var(--rail-edge);
-}
+
 /* Rail header: 68 high, 16 inset, 13 semibold title. */
 .sidebar-top {
   display: flex;

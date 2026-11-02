@@ -8,7 +8,7 @@ At 100% browser zoom one CSS pixel corresponds to one macOS logical point.
 | Surface          | Desktop source                                                                         | Web contract                                                                                                                                                                                     |
 | ---------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | All three themes | `DashboardColors.swift`, `DashboardStyle.swift` / `DashboardPalette`                   | Exact workspace, rail, surface, text, semantic colors and alpha values; primary fill stays #004225                                                                                               |
-| Shell            | `DashboardMetrics`, `DashboardRailBackground`                                          | 256 rail, 8 inset, 12 minimum surface radius; layered rim and inner light; 220 ms rail hover; opaque reduced-transparency fill                                                                   |
+| Shell            | `DashboardMetrics`, `DashboardRailBackground`                                          | 256 rail, 8 inset, 12 minimum surface radius; layered rim and inner light; no container hover; opaque reduced-transparency fill                                                                  |
 | Sidebar rows     | `DashboardSharedViews.swift` / `DashboardRailRow`                                      | 28 height, 12 horizontal padding, 8 gap/radius, 13 regular/medium text; 13 glyph centered in 15 slot; soft hover, strong selection, .78 pressed opacity; rows must not shrink in scrolling lists |
 | Section headings | `DashboardDisclosureHeading`                                                           | 26 height, 12 inset, 10 semibold; Pi Bot static headings have no disclosure behavior                                                                                                             |
 | Typography       | `DashboardControlMetrics`, `DashboardRailRow`                                          | Native system font; 13 body/rows/input, 12.5 medium buttons, 12 medium segments, 10 semibold rail headings                                                                                       |
@@ -62,3 +62,7 @@ fresh temporary SQLite database/config/key, and a nonfunctional placeholder cred
 to exercise onboarding status. No real provider is registered in that instance. It serves the
 same worktree build as the code being checked; its config and data are never deployed to the
 normal preview service.
+
+
+The sidebar container stays visually fixed on hover, per the desktop parity correction.
+Only its interactive children receive hover treatments; the rail rim does not change.
