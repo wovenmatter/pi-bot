@@ -105,6 +105,22 @@ describe("environment agent bridge", () => {
     expect(spawned).toBe(1);
   });
 
+  it("keeps watch callbacks alive until idempotent stop", async () => {
+    must(await env.writeFile("watched.txt", "before", ctx));
+    const changes: unknown[] = [];
+    const watcher = must(
+      await env.watch([{ path: "watched.txt" }], (change) => changes.push(change), ctx),
+    );
+    must(await env.writeFile("watched.txt", "after", ctx));
+    await expect.poll(() => changes.length).toBeGreaterThan(0);
+    await watcher.stop(ctx);
+    await watcher.stop(ctx);
+    const count = changes.length;
+    must(await env.writeFile("watched.txt", "stopped", ctx));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(changes).toHaveLength(count);
+  });
+
   it("does not inherit the server's environment", async () => {
     process.env.PIBOT_TEST_SECRET = "should-not-leak";
     try {

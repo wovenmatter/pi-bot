@@ -48,6 +48,7 @@ export function sharedDatabaseView(db: SqliteDatabase): SqliteDatabase {
   return {
     exec: (sql) => db.exec(sql),
     run: (sql, ...params) => db.run(sql, ...params),
+    runCounted: (sql, ...params) => db.runCounted(sql, ...params),
     get: (sql, ...params) => db.get(sql, ...params),
     all: (sql, ...params) => db.all(sql, ...params),
     transaction: (callback) => db.transaction(callback),

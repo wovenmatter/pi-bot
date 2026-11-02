@@ -53,3 +53,20 @@ OpenSSH key) are written into every container: the private key at `~/.ssh/id_pib
 (0600), an `~/.ssh/config` entry, GitHub's pinned host keys, and `git config --global`
 `user.name`/`user.email`. This happens when the container starts and again whenever they change in
 Settings. Every bot can therefore use that key; give it only the access you want bots to have.
+
+## Runtime refresh — November 2, 2026
+
+Pi Durable, pi-ai, and Chord are pinned to 1.5.0 in the server and container lockfiles.
+The six exact Pi 1.5.0 package-age exceptions and Chord's ws 8.22.1 peer allowance
+were explicitly approved for this update; no blanket exception is enabled.
+
+Pi 1.5 removed event streams. The WebSocket bridge now watches conversation revisions,
+diffs partial replies, recovers skipped transcript windows, and maps live state to the
+existing client protocol. SQLite views forward counted writes, lifecycle callbacks use
+the new report/end shapes, and remote file watchers implement idempotent stop.
+
+Validation: full build/typecheck/lint/tests; no outdated workspace dependencies,
+peer issues, or audit findings; disposable 1.4.1 SQLite history reopened and continued
+on 1.5.0; container file/shell operations and Chromium 156.0.8078.4; isolated faux-model
+browser chat, reload, settings, and sidebar hover checks. Real provider authentication
+was not exercised.

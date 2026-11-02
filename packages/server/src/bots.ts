@@ -840,7 +840,7 @@ export class BotManager {
       void current?.then((bot) => {
         if (bot.harness === harness) this.#bots.delete(id);
       });
-      this.#options.onBotClosed?.(record, end.reason);
+      this.#options.onBotClosed?.(record, end.kind);
     });
     this.#options.onRecovered?.(record, report);
     return bot;

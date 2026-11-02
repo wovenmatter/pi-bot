@@ -291,6 +291,11 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
         ? configure(tx, conversation.id, defaultAgent(parseModelRef(profile().main)))
         : undefined,
     ...(options.env ? { env: options.env.harnessEnv(options.bot.id) } : {}),
-    ...(options.onReport ? { onReport: options.onReport } : {}),
+    ...(options.onReport
+      ? {
+          onReport: (report: import("@earendil-works/pi-durable").Report) =>
+            options.onReport?.(report.error, report),
+        }
+      : {}),
   };
 }

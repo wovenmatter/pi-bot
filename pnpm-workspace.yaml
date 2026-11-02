@@ -6,3 +6,17 @@ packages:
 allowBuilds:
   "@google/genai": false
   protobufjs: false
+
+# Explicitly approved Pi 1.5.0 update; no blanket package-age exception.
+minimumReleaseAgeExclude:
+  - "@earendil-works/chord@1.5.0"
+  - "@earendil-works/pi-ai@1.5.0"
+  - "@earendil-works/pi-codemode@1.5.0"
+  - "@earendil-works/pi-durable@1.5.0"
+  - "@earendil-works/pi-schema@1.5.0"
+  - "@earendil-works/pi-telemetry@1.5.0"
+
+# Explicitly approved: validate Chord 1.5.0 against current ws instead of its older exact peer.
+peerDependencyRules:
+  allowedVersions:
+    "@earendil-works/chord@1.5.0>ws": "8.22.1"

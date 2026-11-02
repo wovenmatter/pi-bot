@@ -258,6 +258,7 @@ export class AgentConnection {
   /** A proxy for a reader or watcher living in the agent. */
   handle(remote: RemoteHandle): TextLineReader & BinaryReader & DirReader & FileWatcher {
     const id = remote.$handle;
+    let stopped: Promise<void> | undefined;
     const forward =
       (method: string) =>
       (...args: unknown[]) => {
@@ -271,6 +272,12 @@ export class AgentConnection {
       read: forward("read"),
       scanLines: forward("scanLines"),
       next: forward("next"),
+      stop: (context: Context) => {
+        stopped ??= this.call("", id, "stop", [], context)
+          .then(() => {})
+          .finally(() => this.releaseHandle(id));
+        return stopped;
+      },
       close: async (context: Context) => {
         try {
           await this.call("", id, "close", [], context);

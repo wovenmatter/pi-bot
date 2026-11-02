@@ -57,7 +57,7 @@ function encode(value) {
   if (value instanceof Error) return { $error: { kind: "error", message: value.message } };
   if (Array.isArray(value)) return value.map(encode);
   if (isContext(value)) return { $ctx: 1 };
-  if (typeof value.close === "function") {
+  if (typeof value.close === "function" || typeof value.stop === "function") {
     const id = nextHandle++;
     handles.set(id, value);
     return { $handle: id, ...(typeof value.mode === "string" ? { mode: value.mode } : {}) };
@@ -98,7 +98,7 @@ async function call(message) {
       ? message.args.map((arg) => (arg === null ? undefined : decode(arg)))
       : [];
     const value = await fn.apply(target, [...args, context]);
-    if (message.handle && method === "close") handles.delete(message.handle);
+    if (message.handle && (method === "close" || method === "stop")) handles.delete(message.handle);
     send({ id: message.id, value: encode(value) });
   } catch (error) {
     send({ id: message.id, thrown: error instanceof Error ? error.message : String(error) });

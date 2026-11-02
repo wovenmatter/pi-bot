@@ -4,12 +4,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { type AgentEventStream, watchEvents } from "@earendil-works/pi-durable";
+import type { ConversationView, ConversationWatch, LiveState } from "@earendil-works/pi-durable";
 import { type RawData, WebSocket, WebSocketServer } from "ws";
 import type { BotManager, ModelStatus } from "./bots.ts";
 import { NotFoundError } from "./bots.ts";
 import { isAllowedBindHost } from "./config.ts";
-import { conversationId as toConversationId } from "./ids.ts";
 import { editFacts, type MemoryEdit } from "./memory.ts";
 import { describeProfile, type ProfileStore } from "./profiles.ts";
 import {
@@ -173,50 +172,52 @@ async function serveStatic(webDir: string, url: URL, response: ServerResponse): 
   return true;
 }
 
-/** Translate harness events for one conversation into client stream events. */
-export function streamEvents(events: readonly { type: string }[]): StreamEvent[] {
+/** Translate conversation revisions into the existing client protocol. */
+export function streamEvents(
+  previous: Pick<ConversationView, "entries" | "docs">,
+  current: Pick<ConversationView, "entries" | "docs">,
+): StreamEvent[] {
+  const before = previous.docs["pi.live"] as LiveState | undefined;
+  const live = current.docs["pi.live"] as LiveState | undefined;
   const out: StreamEvent[] = [];
-  for (const raw of events) {
-    const event = raw as Parameters<Parameters<AgentEventStream["start"]>[0]>[0][number];
-    switch (event.type) {
-      case "run_start":
-        out.push({ kind: "run", state: "start" });
-        break;
-      case "run_end":
-        out.push({ kind: "run", state: "end" });
-        break;
-      case "message_start":
-        // Fast generations can arrive with their content already in place.
-        if (event.message.role === "assistant") {
-          out.push({ kind: "assistant_start", text: assistantText(event.message) });
-        }
-        break;
-      case "message_update":
-        for (const change of event.changes) {
-          if (change.type === "text_delta") out.push({ kind: "delta", text: change.delta });
-        }
-        break;
-      case "message_end":
-      case "entry_appended": {
-        const entry = displayEntry(event.entry);
-        if (entry) out.push({ kind: "entry", entry });
-        break;
-      }
-      case "auto_retry_start":
-        out.push({ kind: "error", message: `retrying: ${event.errorMessage}` });
-        break;
-      case "task_failed":
-        out.push({ kind: "error", message: event.message });
-        break;
-    }
+  if (live?.run && !before?.run) out.push({ kind: "run", state: "start" });
+  const oldEntries = new Map(previous.entries.map((entry) => [entry.id, entry]));
+  for (const entry of current.entries) {
+    if (JSON.stringify(oldEntries.get(entry.id)) === JSON.stringify(entry)) continue;
+    const display = displayEntry(entry);
+    if (display) out.push({ kind: "entry", entry: display });
   }
+  const finishedAssistant = out.some(
+    (event) => event.kind === "entry" && event.entry.role === "assistant",
+  );
+  const sameGeneration =
+    !finishedAssistant &&
+    live?.run?.taskId === before?.run?.taskId &&
+    live?.generation?.attempt === before?.generation?.attempt;
+  const text = assistantText(live?.generation?.message);
+  const oldText = assistantText(before?.generation?.message);
+  if (live?.generation && (text !== oldText || !before?.generation || !sameGeneration)) {
+    if (before?.generation && sameGeneration && text.startsWith(oldText)) {
+      out.push({ kind: "delta", text: text.slice(oldText.length) });
+    } else out.push({ kind: "assistant_start", text });
+  }
+  if (
+    live?.generation?.retry &&
+    JSON.stringify(live.generation.retry) !== JSON.stringify(before?.generation?.retry)
+  ) {
+    out.push({ kind: "error", message: `retrying: ${live.generation.retry.error}` });
+  }
+  if (live?.runFailure && JSON.stringify(live.runFailure) !== JSON.stringify(before?.runFailure)) {
+    out.push({ kind: "error", message: live.runFailure.detail ?? live.runFailure.reason });
+  }
+  if (!live?.run) out.push({ kind: "run", state: "end" });
   return out;
 }
 
 class Connection {
   readonly #socket: WebSocket;
   readonly #server: Server;
-  readonly #subscriptions = new Map<string, AgentEventStream>();
+  readonly #subscriptions = new Map<string, ConversationWatch>();
 
   constructor(socket: WebSocket, server: Server) {
     this.#socket = socket;
@@ -519,7 +520,7 @@ class Connection {
 
     // Watch first, then read history: events after the snapshot are never missed, and the
     // client de-duplicates entries by id.
-    const stream = await watchEvents(target.harness, toConversationId(conversation.id), ctx);
+    const stream = await conversation.watch(ctx, { min: HISTORY_LIMIT, max: HISTORY_LIMIT * 2 });
     this.#subscriptions.set(key, stream);
     const page = await conversation.entries({}, HISTORY_LIMIT, undefined, ctx);
     const entries = page.items
@@ -528,22 +529,57 @@ class Connection {
       .reverse();
 
     const conversationId = conversation.id;
-    stream.start(async (events) => {
-      for (const event of streamEvents(events)) {
+    let previous = stream.value;
+    stream.start(async (call) => {
+      if (call.kind === "failed") {
+        this.send({
+          type: "event",
+          botId,
+          conversationId,
+          event: { kind: "error", message: "Conversation updates temporarily unavailable" },
+        });
+        return;
+      }
+      let current = call.value;
+      const last = previous.entries.at(-1)?.id;
+      // Recover entries skipped when a slow listener falls behind the window.
+      if (current.before !== undefined && (last === undefined || current.before > last)) {
+        const recovered = [];
+        let cursor: import("@earendil-works/pi-durable").Cursor | undefined;
+        do {
+          const page = await conversation.entries(
+            {
+              ...(last === undefined ? {} : { minEntryId: last }),
+              maxEntryId: current.before,
+              order: "ascending",
+            },
+            HISTORY_LIMIT,
+            cursor,
+            ctx,
+          );
+          recovered.push(...page.items);
+          cursor = page.next;
+        } while (cursor !== undefined);
+        current = { ...current, entries: [...recovered, ...current.entries] };
+      }
+      for (const event of streamEvents(previous, current)) {
         this.send({ type: "event", botId, conversationId, event });
       }
+      previous = call.value;
     });
     void stream.closed.then(() => {
       if (this.#subscriptions.get(key) === stream) this.#subscriptions.delete(key);
     });
 
-    const streaming = assistantText(stream.snapshot.generation?.message);
+    const streaming = assistantText(
+      (stream.value.docs["pi.live"] as LiveState | undefined)?.generation?.message,
+    );
     return {
       botId,
       conversationId,
       mainConversationId: main.id,
       entries,
-      running: stream.snapshot.run !== undefined,
+      running: (stream.value.docs["pi.live"] as LiveState | undefined)?.run !== undefined,
       ...(streaming ? { streaming } : {}),
     };
   }

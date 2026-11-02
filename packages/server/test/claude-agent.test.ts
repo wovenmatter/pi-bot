@@ -2,14 +2,8 @@ import { spawn } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  type Api,
-  type Context,
-  type Message,
-  type Model,
-  type MutableModels,
-  Type,
-} from "@earendil-works/pi-ai";
+import type { Api, Context, Message, Model, MutableModels } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CLAUDE_SUBSCRIPTION_PROVIDER } from "../src/claude/provider.ts";
 import { ClaudeAgentRuntime, claudeCredentialEnv } from "../src/claude/runtime.ts";

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { SqliteExecutor } from "@earendil-works/pi-durable/storage/sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openSharedDatabase } from "../src/storage/database.ts";
+import { openSharedDatabase, sharedDatabaseView } from "../src/storage/database.ts";
 import {
   BOTS_TABLE,
   BotRegistry,
@@ -25,6 +25,20 @@ describe("shared storage", () => {
   });
   afterEach(async () => {
     await dir.cleanup();
+  });
+
+  it("forwards affected row counts without closing the shared connection", async () => {
+    const db = await openSharedDatabase(":memory:");
+    try {
+      const view = sharedDatabaseView(db);
+      await view.exec("CREATE TABLE counted (id INTEGER PRIMARY KEY)");
+      expect(await view.runCounted("INSERT INTO counted VALUES (?)", 1)).toBe(1);
+      expect(await view.runCounted("DELETE FROM counted WHERE id = ?", 2)).toBe(0);
+      await view.close();
+      expect(await db.get("SELECT COUNT(*) AS total FROM counted")).toEqual({ total: 1 });
+    } finally {
+      await db.close();
+    }
   });
 
   it("derives Woven-style per-bot prefixes", () => {
