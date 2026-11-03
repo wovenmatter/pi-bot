@@ -2416,3 +2416,12 @@ details.account-api-key > .settings-list {
     margin: 4px 0 0;
   }
 }
+
+.build-revision {
+  display: block;
+  padding: 0 10px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+  user-select: text;
+}

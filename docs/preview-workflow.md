@@ -32,7 +32,7 @@ do not replace their routes. Never enable Funnel or public binding.
    Work can happen on the Mac or workstation; the deployed runtime lives on the workstation.
    Do not edit the runtime checkout as a feature worktree.
 3. Implement and review the change. Run `pnpm install --frozen-lockfile` as needed and
-   `pnpm check` in the task worktree. For UI changes, check the rendered behavior and relevant
+   `pnpm check` in the Linux workstation task worktree. For UI changes, check the rendered behavior and relevant
    desktop/mobile layouts using a disposable instance with faux providers and separate data.
    Do not use the live user's accounts or conversations as automated test fixtures.
 4. Serialize integration with other agents. Immediately before merging, recheck `main` and
@@ -71,8 +71,16 @@ without exposing secrets. Rebuild a known-good revision only when compatible wit
 schema; a code rollback does not undo migrations. Do not restore a database over newer user
 activity without explicit direction.
 
-The recent workflow used workstation worktrees, full checks on the branch and main, disposable
-browser fixtures, backups before migrations, and the same service restart and preview URL.
-These instructions make that practice discoverable to every agent rather than leaving it only
-in chat history. A version endpoint and a serialized deploy script could improve verification,
-but neither is required for this workflow and neither is implemented by this document.
+## Build revision and deferred work
+
+The sidebar shows `Build <short git revision>` for the web assets loaded by the browser.
+Vite captures this at build time; uncommitted source is marked `-dirty`, and builds without
+Git metadata show `unknown`. Commit before the final build so the deployed label identifies
+the actual commit. Refresh an older browser tab to load the latest revision. This identifies
+the frontend bundle, not an independently queried backend revision.
+
+This is a rapid development preview, not production testing. Deploy validated changes promptly;
+do not introduce deployment locks or a production release process. Deployment locks are deferred
+until production testing. Linux is the current runtime and validation target; macOS support and
+Mac-specific test issues are deferred until explicitly requested. Continue ordinary coordination
+to avoid overwriting concurrent work, without adding a locking mechanism.

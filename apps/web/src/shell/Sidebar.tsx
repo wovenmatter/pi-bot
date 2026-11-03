@@ -225,6 +225,9 @@ export function Sidebar({
         </div>
       ) : null}
       <div className="sidebar-footer">
+        <small className="build-revision" title="Revision of the loaded web build">
+          Build {typeof __BUILD_REVISION__ === "string" ? __BUILD_REVISION__ : "unknown"}
+        </small>
         <a
           href={routeHref({ settings: true })}
           className={`nav-link${settings ? " active" : ""}`}

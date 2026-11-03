@@ -11,6 +11,8 @@ For normal implementation requests, complete the tested change and update that s
 without requiring Trey to repeat the deployment request. This remains the default until Trey
 changes it. Investigation-only and documentation-only tasks do not require a service restart.
 
+- This is rapid Linux development: deploy validated changes promptly. Deployment locks and
+  macOS support/testing are deferred until explicitly requested; validate on the workstation.
 - Host: `workstation-home-1` (Mac SSH alias `workstation`, user `trey`).
 - Runtime checkout: `/home/trey/Projects/pi-bot`, branch `main`.
 - Service: `systemctl --user … pi-bot`.
