@@ -2028,10 +2028,6 @@ details.account-api-key > .settings-list {
   .profile-editor {
     padding: 12px;
   }
-  .profile-section-title {
-    width: auto;
-    max-width: calc(100% - 28px);
-  }
   /* Pool rows stack: the model picker gets the full width, notes and remove share the next line. */
   .profile-pool-row {
     grid-template-columns: minmax(0, 1fr) auto;
