@@ -24,6 +24,7 @@ import {
   hasFallbackNote,
   type Limit,
   type LimitCarrier,
+  type LimitEntry,
   observeLimits,
 } from "./limits.ts";
 import type { BeforeCompactHook } from "./memory.ts";
@@ -69,12 +70,14 @@ export type BotAgentOptions = {
   /** pi-ai models resolving credentials from the shared credential store. */
   readonly models: Models | (() => Models);
   /**
-   * The bot's model profile, read live: its main model drives the main channel and threads, its
-   * pool backs `run_subagent`. Never hardcoded.
+   * The bot's model profile, read live: its main model drives the main channel and threads;
+   * `run_subagent` runs on the conversation's own current model or a pool model. Never hardcoded.
    */
   readonly profile: Profile | (() => Profile);
   /** Server-side log of model choices (subagent runs). */
   readonly onSubagent?: SubagentLog;
+  /** A model's marked usage limit (`ModelAvailability.limit`), shown in the subagent model list. */
+  readonly modelLimit?: (ref: string) => LimitEntry | undefined;
   /** Bot tools (list/create/message bots, teams, Admin Bot's settings); omitted: none. */
   readonly platform?: BotPlatform;
   /** `web_search` and `fetch_url` (the app always passes it); omitted: no web tools. */
@@ -167,7 +170,7 @@ Before you change config (config.toml edits, model profiles, restarts), say exac
 Sign-ins and keys are entered by the user in Settings (Accounts, Search, GitHub): point them there. Never ask the user to paste a secret into the chat and never reveal one.
 You are never on a team, never manage one and are never the orchestrator. Your name is always Admin Bot; you can rename any other bot when the user asks (rename_bot). Deleting and restoring bots is done by the user in the web UI.
 In your first conversation, briefly explain what Pi Bot can do: bots, each with one long-lived main channel and threads forked off any message; tools in each bot's own Linux container when enabled; optional one-level teams, where a manager bot assigns work to its members; an optional orchestrator that leads and oversees every bot and team; and bots messaging each other. Then set up models with the user (below), and ask which bots or teams they want and create them.
-Models work through profiles. A profile has a main model, which runs a bot's main channel and every thread, and a pool of models the main model can hand self-contained work to (run_subagent), each with a short note on what it is good for, plus optional guidance. Background work uses the pool model flagged background, else the main model. A profile can also list up to 5 ordered fallback main models: when the main model hits a usage limit or its key runs out of credits, the bot switches to the first available fallback and back once the main model resets; with no fallbacks it pauses until then. Every bot runs one profile; new bots get the default profile, and editing a profile changes every bot on it from its next reply.
+Models work through profiles. A profile has a main model, which runs a bot's main channel and every thread. The main model can always hand self-contained work to subagents running on itself (run_subagent); the profile's model pool adds more models for subagents, each with optional notes, and its model preferences are the user's own words about the models (e.g. "Opus writes nicer code", "Sol is thorough", "double-check Astra's claims"), which the main model weighs together with the task, each model's capabilities and its API list prices; they are guidance, not routing rules. Separately, a profile can set a memory extraction model, which reviews new conversation messages and saves useful facts into the bot's memory on the extraction schedule and when the bot goes idle (if extraction is enabled); unset, the bot's active main model does it. It never affects chat or subagents. A profile can also list up to 5 ordered fallback main models: when the main model hits a usage limit or its key runs out of credits, the bot switches to the first available fallback and back once the main model resets; with no fallbacks it pauses until then. Every bot runs one profile; new bots get the default profile, and editing a profile changes every bot on it from its next reply.
 Setting up models: ask which subscriptions and tiers the user has (e.g. ChatGPT, Claude or xAI plans), which API keys (e.g. OpenRouter), and roughly what they are comfortable spending each month. These are guidance for your choices, not hard caps. Save the answers with write_account_notes and read them back (read_account_notes) before later model decisions; the user sees and edits them as Plans and budget in Settings → Accounts. Then either propose a complete setup (profiles with main and pool models, which bot runs which) or go step by step, whichever the user prefers, and apply it with the profile tools. Only use models that settings_status lists; if a needed sign-in or key is missing, send the user to Settings → Accounts first. The thread-title model is under Settings → Profiles → Thread titles.`;
 
 /** The preamble, read live so team changes apply from the next request. */
@@ -259,8 +262,18 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     ],
   });
   const tools = options.platform ? botTools(options.bot, options.platform) : undefined;
+  const web = options.web ? webTools(options.web) : undefined;
+  // What a subagent keeps: coding tools (with a container) and web tools; nothing bot-specific.
+  const childTools = [...(options.env ? [CodingTools] : []), ...(web ? [web] : [])].flatMap(
+    (installed) => (installed.tools ?? []).map((tool) => tool.name),
+  );
   const subagent = subagentExtension({
+    childTools,
     profile,
+    models: typeof source === "function" ? source : () => source,
+    ...(options.modelLimit ? { limit: options.modelLimit } : {}),
+    botMessaging: tools !== undefined,
+    // Subagents never get the bot's tools (bot-to-bot messaging, Admin Bot's) or its preamble.
     removeFromChild: [identity, ...(tools ? [tools] : [])],
     ...(options.onSubagent ? { log: options.onSubagent } : {}),
   });
@@ -270,7 +283,7 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     ...(options.env ? [CodingTools] : []),
     ...(tools ? [tools] : []),
     // Subagents keep the web tools: research is typical delegated work.
-    ...(options.web ? [webTools(options.web)] : []),
+    ...(web ? [web] : []),
     subagent,
   ];
   const registry = createCompactionRegistry();

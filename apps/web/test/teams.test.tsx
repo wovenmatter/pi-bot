@@ -9,6 +9,11 @@ import {
   MainModelPicker,
   ProfileEditor,
   ProfilesPanel,
+  priceText,
+  priceTierTexts,
+  toDraft,
+  toInput,
+  usd,
 } from "../src/features/settings/Profiles.tsx";
 import type { BotSummary, ProfileSummary, ProviderModels } from "../src/protocol.ts";
 import { groupBots } from "../src/shell/bot-groups.ts";
@@ -329,11 +334,39 @@ describe("bots panel", () => {
   });
 });
 
+const SOURCE = "pi-ai 1.5.0 bundled openai catalog, generated 2026-11-02";
 const providers: ProviderModels[] = [
   {
     id: "openai",
     name: "OpenAI",
-    models: [{ id: "gpt-x", name: "GPT X", reasoning: false, contextWindow: 1 }],
+    access: { kind: "api_key", label: "OpenAI API key" },
+    models: [
+      {
+        id: "gpt-x",
+        name: "GPT X",
+        reasoning: true,
+        contextWindow: 272_000,
+        maxTokens: 128_000,
+        input: ["text", "image"],
+        pricing: {
+          status: "listed",
+          rates: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+          tiers: [
+            { inputTokensAbove: 272_000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5 },
+          ],
+          source: SOURCE,
+        },
+        limit: { kind: "weekly", label: "weekly limit", account: "OpenAI API key" },
+      },
+      {
+        id: "gpt-free",
+        name: "GPT Free",
+        reasoning: false,
+        contextWindow: 1,
+        pricing: { status: "zero", source: SOURCE },
+      },
+      { id: "gpt-old", name: "GPT Old", reasoning: false, contextWindow: 1 },
+    ],
   },
 ];
 const profiles: ProfileSummary[] = [
@@ -341,11 +374,23 @@ const profiles: ProfileSummary[] = [
     id: "default",
     name: "Default",
     main: "openai/gpt-x",
-    pool: [{ model: "openai/gpt-x", useFor: "Lookups", background: true }],
+    pool: [{ model: "openai/gpt-free", useFor: "Lookups" }],
     default: true,
   },
-  { id: "fast", name: "Fast", main: "gone/model", guidance: "Be quick.", pool: [] },
+  {
+    id: "fast",
+    name: "Fast",
+    main: "gone/model",
+    memoryModel: "openai/gpt-free",
+    guidance: "Be quick.",
+    pool: [],
+  },
 ];
+
+const POOL_COPY =
+  "Additional models available for subagents. The main model can always spawn subagents using itself, even when this list is empty.";
+const PREFERENCES_COPY =
+  "Describe your preferences and experiences with these models. The main model uses this guidance when choosing models for subagents.";
 
 describe("profiles", () => {
   it("main model picker needs a signed-in provider and an available model", () => {
@@ -359,7 +404,7 @@ describe("profiles", () => {
     expect(html).toContain('value="openai/gpt-x" selected=""');
   });
 
-  it("lists profiles with their pool, default and bots", () => {
+  it("lists profiles with their model pool, memory model, default and bots", () => {
     const html = renderToStaticMarkup(
       <ProfilesPanel
         profiles={profiles}
@@ -371,14 +416,18 @@ describe("profiles", () => {
       />,
     );
     expect(html).toContain('Default<span class="badge">Default</span>');
-    expect(html).toContain("openai/gpt-x (background)");
+    expect(html).toContain("Model pool: main model + openai/gpt-free");
+    expect(html).toContain("Model pool: main model only");
+    expect(html).toContain("Memory extraction: active main model");
+    expect(html).toContain("Memory extraction: openai/gpt-free");
+    expect(html).not.toMatch(/background/i);
     expect(html).toContain("Used by Admin Bot");
     expect(html).toContain("Delete profile Fast");
     expect(html).not.toContain("Delete profile Default");
     expect(html).toContain("New profile");
   });
 
-  it("edits a profile's main model, pool notes and guidance", () => {
+  it("edits main model, memory extraction, model pool and model preferences", () => {
     const html = renderToStaticMarkup(
       <ProfileEditor
         profile={profiles[1]}
@@ -393,15 +442,135 @@ describe("profiles", () => {
     expect(html).not.toContain("Can&#x27;t be changed");
     // Folding sections, each with a one-line summary; only the main model starts open.
     const sections = [...html.matchAll(/<details class="profile-section"( open="")?>/g)];
-    expect(sections.map((match) => match[1] !== undefined)).toEqual([true, false, false, false]);
-    for (const summary of ["gone/model", "None, the bot pauses", "Be quick."]) {
+    expect(sections.map((match) => match[1] !== undefined)).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    const titles = [...html.matchAll(/<span class="profile-section-title">([^<]+)<\/span>/g)].map(
+      (match) => match[1],
+    );
+    expect(titles).toEqual([
+      "Main model",
+      "Fallbacks",
+      "Memory extraction",
+      "Model pool",
+      "Model preferences",
+    ]);
+    for (const summary of [
+      "gone/model",
+      "None, the bot pauses",
+      "openai/gpt-free",
+      "Main model only",
+      "Be quick.",
+    ]) {
       expect(html).toContain(`<span class="profile-section-summary">${summary}</span>`);
     }
+    expect(html).toContain(POOL_COPY);
+    expect(html).toContain(PREFERENCES_COPY);
+    expect(html).toContain(
+      "Reviews new conversation messages and saves useful facts into the bot&#x27;s memory, on the extraction schedule and when the bot goes idle, if memory extraction is enabled. Doesn&#x27;t affect chat or subagents.",
+    );
+    // The memory model choice offers the active main model explicitly.
+    expect(html).toContain('<option value="">Use active main model</option>');
+    expect(html).toContain('value="openai/gpt-free" selected=""');
+    expect(html.toLowerCase()).not.toContain("model helpers");
+    expect(html).not.toMatch(/background/i);
+    expect(html).not.toContain("Guidance");
+
     const fresh = renderToStaticMarkup(
       <ProfileEditor providers={providers} onSave={async () => {}} onCancel={noop} />,
     );
     expect(fresh).toContain("Can&#x27;t be changed");
     expect(fresh).toContain("Create profile");
+    // A new profile extracts memory on the active main model unless told otherwise.
+    expect(fresh).toContain('<span class="profile-section-summary">Use active main model</span>');
+  });
+
+  it("shows raw API prices and catalog facts for the main model and pool models", () => {
+    const html = renderToStaticMarkup(
+      <ProfileEditor
+        profile={{
+          ...profiles[0],
+          pool: [
+            { model: "openai/gpt-free", useFor: "Lookups" },
+            { model: "openai/gpt-old", useFor: "" },
+            { model: "gone/model", useFor: "" },
+          ],
+        }}
+        providers={providers}
+        onSave={async () => {}}
+        onCancel={noop}
+      />,
+    );
+    expect(html).toContain("Main model <code>openai/gpt-x</code>");
+    expect(html).toContain(
+      "$2 in · $10 out · $0.2 cache read · $2.5 cache write per 1M tokens (other rates above set input sizes) · 272k context · 128k max output · text, image · reasoning · OpenAI API key · weekly limit, reset unknown",
+    );
+    // Every tier's own rates, in an expandable list.
+    expect(html).toContain(
+      '<details class="profile-price-tiers"><summary>Price tiers by input size</summary>',
+    );
+    expect(html).toContain(
+      "Above 272k input tokens: $4 in · $15 out · $0.4 cache read · $5 cache write per 1M tokens",
+    );
+    expect(html).not.toContain("higher");
+    expect(html).toContain("API price listed as $0 (free or unpriced)");
+    expect(html).toContain("API price unknown");
+    expect(html).toContain("Not signed in: no catalog details");
+    expect(html).toContain(`Source: ${SOURCE}.`);
+    expect(html).toContain(
+      "Prices are raw API list prices in USD: a relative cost signal, also for subscription models, not an exact measure of a subscription&#x27;s allowance or charges.",
+    );
+    expect(priceText(undefined)).toBe("API price unknown");
+  });
+
+  it("keeps tiny prices and makes no assumption about tier direction", () => {
+    expect(usd(0.000001)).toBe("$0.000001");
+    expect(usd(2.5)).toBe("$2.5");
+    expect(usd(0)).toBe("$0");
+    const cheaperTier = {
+      status: "listed" as const,
+      rates: { input: 0.000001, output: 2, cacheRead: 0, cacheWrite: 0 },
+      tiers: [
+        { inputTokensAbove: 1_000_000, input: 0.0000005, output: 1, cacheRead: 0, cacheWrite: 0 },
+      ],
+      source: SOURCE,
+    };
+    expect(priceText(cheaperTier)).toBe(
+      "$0.000001 in · $2 out · $0 cache read · $0 cache write per 1M tokens (other rates above set input sizes)",
+    );
+    expect(priceTierTexts(cheaperTier)).toEqual([
+      "Above 1M input tokens: $0.0000005 in · $1 out · $0 cache read · $0 cache write per 1M tokens",
+    ]);
+    expect(priceTierTexts({ status: "zero", source: SOURCE })).toEqual([]);
+  });
+
+  it("round-trips a profile through the editor draft", () => {
+    const profile: ProfileSummary = {
+      id: "p",
+      name: "P",
+      main: "openai/gpt-x",
+      fallbacks: ["openai/gpt-old"],
+      memoryModel: "openai/gpt-free",
+      guidance: "Opus writes nicer code. Sol is thorough. Check Astra's work.",
+      pool: [{ model: "openai/gpt-free", useFor: "Lookups" }],
+    };
+    expect(toInput(toDraft(profile))).toEqual({
+      id: "p",
+      name: "P",
+      main: "openai/gpt-x",
+      fallbacks: ["openai/gpt-old"],
+      memoryModel: "openai/gpt-free",
+      guidance: "Opus writes nicer code. Sol is thorough. Check Astra's work.",
+      pool: [{ model: "openai/gpt-free", useFor: "Lookups" }],
+    });
+    // "Use active main model" sends no memory model.
+    const plain = toInput(toDraft({ ...profile, memoryModel: undefined, pool: [] }));
+    expect(plain).not.toHaveProperty("memoryModel");
+    expect(plain.pool).toEqual([]);
   });
 
   it("keeps account notes as guidance", () => {

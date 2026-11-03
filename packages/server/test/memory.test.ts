@@ -12,6 +12,7 @@ import { createBotHarnessOptions } from "../src/agent.ts";
 import { BotManager } from "../src/bots.ts";
 import { parseConfig } from "../src/config.ts";
 import { isCronExpression, parseCron } from "../src/cron.ts";
+import { ModelAvailability } from "../src/limits.ts";
 import {
   editFacts,
   MAX_EDITED_FACT_CHARS,
@@ -181,18 +182,28 @@ describe("MemoryExtractor", () => {
     return fauxAssistantMessage([fauxText(`ok: ${text}`)]);
   };
 
-  const open = async (background: boolean) => {
+  /**
+   * `memory`: the profile's memory extraction model set as `memory_model = "faux/faux-2"`, as a
+   * legacy pool `background = true` flag on faux-2, or not at all (the active main model).
+   */
+  const open = async (
+    memory: "model" | "legacy" | "none",
+    options: { fallbacks?: string; availability?: ModelAvailability } = {},
+  ) => {
     const profiles = new ProfileStore(
       parseConfig(`
 [profiles.default]
 name = "Default"
 main = "faux/faux-1"
-${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
+${options.fallbacks ? `fallbacks = ["${options.fallbacks}"]` : ""}
+${memory === "model" ? 'memory_model = "faux/faux-2"' : ""}
+${memory === "legacy" ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
 `).modelProfiles,
     );
     manager = await BotManager.open({
       db,
       profiles,
+      ...(options.availability ? { availability: options.availability } : {}),
       harnessOptions: (bot, self) =>
         createBotHarnessOptions({
           bot,
@@ -236,8 +247,8 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
     await dir.cleanup();
   });
 
-  it("appends facts from new messages on the background model; bots see them in their prompt", async () => {
-    await open(true);
+  it("appends facts from new messages on the memory model; bots see them in their prompt", async () => {
+    await open("model");
     const bot = await manager.create("Ada");
     await say(bot.id, "I always drink tea, and I moved to Lisbon");
     const memory = extractorFor();
@@ -257,7 +268,7 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
   });
 
   it("uses the checkpoint: nothing is re-sent, nothing runs without new messages", async () => {
-    await open(true);
+    await open("model");
     const bot = await manager.create("Ada");
     await say(bot.id, "first message");
     const memory = extractorFor();
@@ -289,7 +300,7 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
   });
 
   it("puts the user's edits in the prompt the way extracted facts are", async () => {
-    await open(true);
+    await open("model");
     const bot = await manager.create("Ada");
     await say(bot.id, "hello");
     expect(systems.at(-1)).not.toContain("What you remember");
@@ -317,7 +328,7 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
   });
 
   it("merges into the memory as it is when saving: edits made during an extraction stay", async () => {
-    await open(true);
+    await open("model");
     const bot = await manager.create("Ada");
     await say(bot.id, "I drink tea in Lisbon");
     await manager.registry.updateMemory(bot.id, () => ({
@@ -357,7 +368,7 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
   });
 
   it("falls back quietly to the main model; a total failure keeps the checkpoint", async () => {
-    await open(true);
+    await open("model");
     const bot = await manager.create("Ada");
     await say(bot.id, "remember that I like jazz");
     broken.add("faux-2");
@@ -372,8 +383,44 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
     expect(await manager.registry.memory(bot.id)).toEqual(before);
   });
 
+  it("reads a legacy pool background flag as the memory model", async () => {
+    await open("legacy");
+    const bot = await manager.create("Ada");
+    await say(bot.id, "I drink tea");
+    await expect(extractorFor().extract(bot.id)).resolves.toBe(2);
+    expect(prompts.map((prompt) => prompt.model)).toEqual(["faux-2"]);
+    expect(manager.memoryModels(bot.id)).toEqual(["faux/faux-2", "faux/faux-1"]);
+  });
+
+  it("keeps the memory model out of chat and delegation", async () => {
+    await open("model");
+    const bot = await manager.create("Ada");
+    await say(bot.id, "hello");
+    const system = systems.at(-1) ?? "";
+    // Chat runs on the main model; the memory model is not offered for subagents.
+    expect(system).toContain('\\"self\\" = faux/faux-1');
+    expect(system).not.toContain("faux/faux-2");
+    expect(manager.profileOf(bot.id)?.pool).toEqual([]);
+  });
+
+  it("uses the active main model by default, a fallback while main is limited", async () => {
+    const availability = new ModelAvailability();
+    try {
+      await open("none", { fallbacks: "faux/faux-2", availability });
+      const bot = await manager.create("Ada");
+      await say(bot.id, "I drink tea");
+      expect(manager.memoryModels(bot.id)).toEqual(["faux/faux-1"]);
+      availability.mark("faux/faux-1", { kind: "weekly" });
+      expect(manager.memoryModels(bot.id)).toEqual(["faux/faux-2"]);
+      await expect(extractorFor().extract(bot.id)).resolves.toBe(2);
+      expect(prompts.map((prompt) => prompt.model)).toEqual(["faux-2"]);
+    } finally {
+      availability.close();
+    }
+  });
+
   it("runs every bot with new messages when the schedule fires, one at a time", async () => {
-    await open(false);
+    await open("none");
     const a = await manager.create("A");
     const b = await manager.create("B");
     const quiet = await manager.create("Quiet");
@@ -388,7 +435,7 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
     await memory.tick();
     await memory.tick(); // the same minute fires once
     await memory.idle();
-    // No background model in the pool: the main model extracts.
+    // No memory model: the active main model extracts.
     expect(prompts.map((prompt) => prompt.model)).toEqual(["faux-1", "faux-1"]);
     expect((await manager.registry.memory(a.id)).facts).toHaveLength(2);
     expect((await manager.registry.memory(b.id)).facts).toHaveLength(2);
@@ -396,7 +443,7 @@ ${background ? '[profiles.default.pool."faux/faux-2"]\nbackground = true' : ""}
   });
 
   it("extracts a bot once it has been idle long enough after new messages", async () => {
-    await open(true);
+    await open("model");
     const bot = await manager.create("Ada");
     const memory = extractorFor({ idleMs: 60_000 });
     await say(bot.id, "I work at Woven Matter");

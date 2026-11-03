@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Loading } from "../../components/ui.tsx";
 import type { ProviderModels, Roles } from "../../protocol.ts";
-import { ModelSelect } from "./Profiles.tsx";
+import { ModelSelect, priceText } from "./Profiles.tsx";
 
 /**
  * Settings → Profiles → Thread titles: the one global model role (`[models.titles]`). Bots' own
@@ -45,7 +45,9 @@ export function TitleModelSettings({
         onSubmit={(e) => void submit(e)}
       >
         <h3 id="titles-heading">Thread titles</h3>
-        <p className="muted">Names threads from their first message. One model for every bot.</p>
+        <p className="muted">
+          Names threads from their first message. One model for every bot; profiles don't change it.
+        </p>
         <div className="title-model-fields">
           <ModelSelect
             providers={providers}
@@ -113,6 +115,9 @@ function AvailableModels({ providers }: { providers: readonly ProviderModels[] }
                           : ""}
                         {model.reasoning ? " · reasoning" : ""}
                       </small>
+                      {model.pricing ? (
+                        <small className="muted">{priceText(model.pricing)}</small>
+                      ) : null}
                     </div>
                   </li>
                 ))}

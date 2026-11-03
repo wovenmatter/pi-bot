@@ -378,6 +378,7 @@ class Connection {
             name: profile.name,
             main: profile.main,
             ...(profile.fallbacks ? { fallbacks: profile.fallbacks } : {}),
+            ...(profile.memoryModel ? { memoryModel: profile.memoryModel } : {}),
             pool: profile.pool,
             ...(profile.guidance !== undefined ? { guidance: profile.guidance } : {}),
           },

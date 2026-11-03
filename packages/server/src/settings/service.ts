@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import type { AuthPrompt, CredentialStore, Models } from "@earendil-works/pi-ai";
 import { ConfigError, type PiBotConfig, parseConfig, parseModelRef } from "../config.ts";
+import { LIMIT_LABELS, type LimitEntry, type LimitKind } from "../limits.ts";
+import { type ModelAccess, type ModelPricing, modelAccess, modelFacts } from "../model-info.ts";
 import { TITLE_REASONING } from "../titles.ts";
 import { ACCOUNTS, type AccountSpec, findAccount, SEARCH_PROVIDERS } from "./catalog.ts";
 import {
@@ -63,8 +65,28 @@ export type ModelOption = {
   readonly name: string;
   readonly reasoning: boolean;
   readonly contextWindow: number;
+  readonly maxTokens?: number;
+  /** Input modalities from the catalog, e.g. ["text", "image"]. */
+  readonly input?: readonly string[];
+  /** Reasoning levels the model rejects. */
+  readonly unsupportedReasoning?: readonly string[];
+  /** Raw API list price (USD per 1M tokens) with its source; see `ModelPricing`. */
+  readonly pricing: ModelPricing;
+  /** A marked usage limit: only what the provider said. */
+  readonly limit?: {
+    readonly kind: LimitKind;
+    readonly label: string;
+    readonly account: string;
+    readonly resetsAt?: number;
+  };
 };
-export type ProviderModels = { readonly id: string; readonly name: string; models: ModelOption[] };
+export type ProviderModels = {
+  readonly id: string;
+  readonly name: string;
+  /** How Pi Bot reaches this provider (subscription or API key). */
+  readonly access: ModelAccess;
+  models: ModelOption[];
+};
 
 /** The global model settings (the title model) Settings → Profiles → Thread titles edits; bots' models are in profiles. */
 export type Roles = {
@@ -193,6 +215,8 @@ export type SettingsOptions = {
    * (`provider` is the credential-store / pi-ai provider id). Clears its marked usage limits.
    */
   readonly onCredentialsChanged?: (provider: string) => void;
+  /** A model's marked usage limit (`ModelAvailability.limit`), shown in the model catalog. */
+  readonly modelLimit?: (ref: string) => LimitEntry | undefined;
 };
 
 /**
@@ -209,8 +233,10 @@ export class SettingsService {
 
   readonly #onGitChanged: (() => void) | undefined;
   readonly #onCredentialsChanged: ((provider: string) => void) | undefined;
+  readonly #modelLimit: ((ref: string) => LimitEntry | undefined) | undefined;
 
   constructor(options: SettingsOptions) {
+    this.#modelLimit = options.modelLimit;
     this.#onGitChanged = options.onGitChanged;
     this.#onCredentialsChanged = options.onCredentialsChanged;
     this.#credentials = options.credentials;
@@ -477,18 +503,37 @@ export class SettingsService {
     for (const model of available) {
       let entry = byProvider.get(model.provider);
       if (!entry) {
+        const auth = await this.#models.checkAuth(model.provider).catch(() => undefined);
         entry = {
           id: model.provider,
           name: this.#models.getProvider(model.provider)?.name ?? model.provider,
+          access: modelAccess(model.provider, auth?.type),
           models: [],
         };
         byProvider.set(model.provider, entry);
       }
+      const ref = `${model.provider}/${model.id}`;
+      const facts = modelFacts(ref, model);
+      const limit = this.#modelLimit?.(ref);
       entry.models.push({
         id: model.id,
         name: model.name,
         reasoning: model.reasoning,
         contextWindow: model.contextWindow,
+        ...(facts.maxTokens ? { maxTokens: facts.maxTokens } : {}),
+        ...(facts.input ? { input: facts.input } : {}),
+        ...(facts.unsupportedReasoning ? { unsupportedReasoning: facts.unsupportedReasoning } : {}),
+        pricing: facts.pricing,
+        ...(limit
+          ? {
+              limit: {
+                kind: limit.kind,
+                label: LIMIT_LABELS[limit.kind],
+                account: limit.account,
+                ...(limit.resetsAt ? { resetsAt: limit.resetsAt } : {}),
+              },
+            }
+          : {}),
       });
     }
     return {

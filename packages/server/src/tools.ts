@@ -471,9 +471,8 @@ function adminTools(platform: BotPlatform) {
 
 const poolEntry = Type.Object({
   model: Type.String({ description: "provider/model-id" }),
-  useFor: Type.String({ description: "What this model is good for, shown to the main model" }),
-  background: Type.Optional(
-    Type.Boolean({ description: "Use it for background work (at most one per profile)" }),
+  useFor: Type.Optional(
+    Type.String({ description: "Optional notes on this model, shown to the main model" }),
   ),
 });
 
@@ -489,7 +488,7 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
     defineTool({
       name: "list_profiles",
       description:
-        "List the model profiles (main model, its ordered fallbacks, pool models with their use-for notes, guidance), which is the default, and which profile each bot runs.",
+        "List the model profiles (main model, its ordered fallbacks, memory extraction model, model pool with optional notes, model preferences), which is the default, and which profile each bot runs.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: () =>
@@ -510,7 +509,7 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
     }),
     defineTool({
       name: "save_profile",
-      description: `Create (create: true) or replace a model profile. main runs the main channel and threads of every bot on it; fallbacks (optional, ordered, at most 5) are main models to switch to when main hits a usage limit or runs out of credits (none: the bot pauses until the limit resets); pool lists the models the main model may hand work to with run_subagent. Models must be listed by settings_status. Changes apply from each bot's next reply. ${confirm}`,
+      description: `Create (create: true) or replace a model profile. main runs the main channel and threads of every bot on it; fallbacks (optional, ordered, at most 5) are main models to switch to when main hits a usage limit or runs out of credits (none: the bot pauses until the limit resets); pool lists additional models for subagents (run_subagent; the main model can always run subagents on itself, so pool may be empty); guidance is the model preferences: the user's own words about the models (e.g. "Opus writes nicer code", "double-check Astra"), weighed by the main model, never enforced; memoryModel (optional) is the memory extraction model, which reviews new conversation messages and saves useful facts into the bot's memory on the extraction schedule and when idle; omit it to use the active main model. It never affects chat or subagents. Models must be listed by settings_status. Changes apply from each bot's next reply. ${confirm}`,
       parameters: Type.Object({
         id: Type.String({ description: "lowercase letters, digits, - and _" }),
         name: Type.String(),
@@ -523,7 +522,16 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
         ),
         pool: Type.Array(poolEntry),
         guidance: Type.Optional(
-          Type.String({ description: "When to use which pool model or reasoning level" }),
+          Type.String({
+            description:
+              "Model preferences: the user's preferences and experiences with the models",
+          }),
+        ),
+        memoryModel: Type.Optional(
+          Type.String({
+            description:
+              "Memory extraction model, provider/model-id; omit for the active main model",
+          }),
         ),
         create: Type.Optional(Type.Boolean()),
       }),
@@ -533,6 +541,7 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
           service.checkModel(args.main);
           for (const ref of args.fallbacks ?? []) service.checkModel(ref);
           for (const entry of args.pool) service.checkModel(entry.model);
+          if (args.memoryModel) service.checkModel(args.memoryModel);
           const profiles = store();
           const saved = await profiles.save(
             {
@@ -541,6 +550,7 @@ function profileTools(platform: BotPlatform, settings: () => SettingsService) {
               main: args.main,
               ...(args.fallbacks ? { fallbacks: args.fallbacks } : {}),
               pool: args.pool,
+              ...(args.memoryModel ? { memoryModel: args.memoryModel } : {}),
               ...(args.guidance !== undefined ? { guidance: args.guidance } : {}),
             },
             { create: args.create === true },

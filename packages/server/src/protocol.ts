@@ -79,15 +79,12 @@ export const requestSchema = z.discriminatedUnion("type", [
       name: z.string().max(80),
       main: modelRefText,
       fallbacks: z.array(modelRefText).max(5).optional(),
+      /** Memory extraction model; omitted or null: the active main model. */
+      memoryModel: modelRefText.nullable().optional(),
+      /** Model preferences. */
       guidance: z.string().max(4000).optional(),
       pool: z
-        .array(
-          z.strictObject({
-            model: modelRefText,
-            useFor: z.string().max(500).optional(),
-            background: z.boolean().optional(),
-          }),
-        )
+        .array(z.strictObject({ model: modelRefText, useFor: z.string().max(500).optional() }))
         .max(50),
     }),
   }),
@@ -287,13 +284,16 @@ export type ModelStatusSummary = {
   limits: ModelLimitSummary[];
 };
 
-export type PoolModelSummary = { model: string; useFor: string; background?: boolean };
+export type PoolModelSummary = { model: string; useFor: string };
 export type ProfileSummary = {
   id: string;
   name: string;
   main: string;
   /** Ordered main-model fallbacks for usage limits (absent: none). */
   fallbacks?: string[];
+  /** Memory extraction model (absent: the active main model). */
+  memoryModel?: string;
+  /** Model preferences. */
   guidance?: string;
   pool: PoolModelSummary[];
   default?: boolean;

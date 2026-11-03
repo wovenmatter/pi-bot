@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { type SqliteDatabase, SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { type BotHarnessOptions, defaultAgent } from "./agent.ts";
-import { backgroundPoolModel, type ModelRef, type Profile, parseModelRef } from "./config.ts";
+import { type ModelRef, type Profile, parseModelRef } from "./config.ts";
 import { conversationId as toConversationId, entryId as toEntryId } from "./ids.ts";
 import { fallbackNote, type Limit, type LimitEntry, type ModelAvailability } from "./limits.ts";
 import type { ProfileStore } from "./profiles.ts";
@@ -331,7 +331,6 @@ export class ThreadTitles {
   readonly #registry: BotRegistry;
   readonly #onReport: (error: unknown) => void;
   readonly #onTitled: (botId: string, conversationId: number) => void;
-  readonly #background: (botId: string) => ModelRef | undefined;
   readonly #inFlight = new Map<string, Promise<void>>();
   readonly #abort = new AbortController();
 
@@ -340,14 +339,11 @@ export class ThreadTitles {
     registry: BotRegistry,
     onReport: (error: unknown) => void = () => {},
     onTitled: (botId: string, conversationId: number) => void = () => {},
-    /** A bot's pool background model, tried before the default title model. */
-    background: (botId: string) => ModelRef | undefined = () => undefined,
   ) {
     this.#generator = generator;
     this.#registry = registry;
     this.#onReport = onReport;
     this.#onTitled = onTitled;
-    this.#background = background;
   }
 
   /** Title the thread from `firstPrompt` unless it already has a title or a request running. */
@@ -357,11 +353,7 @@ export class ThreadTitles {
     const run = (async () => {
       const thread = await this.#registry.getThread(botId, conversationId);
       if (!thread || thread.title) return;
-      const title = await this.#generator.generate(
-        firstPrompt,
-        this.#abort.signal,
-        this.#background(botId),
-      );
+      const title = await this.#generator.generate(firstPrompt, this.#abort.signal);
       if (await this.#registry.setThreadTitleIfUntitled(botId, conversationId, title)) {
         this.#onTitled(botId, conversationId);
       }
@@ -489,18 +481,8 @@ export class BotManager {
     this.#options = options;
     this.registry = new BotRegistry(options.db);
     this.titles = options.titles
-      ? new ThreadTitles(
-          options.titles,
-          this.registry,
-          options.onReport,
-          (botId) => options.onThreadsChanged?.(botId),
-          (botId) => {
-            const profile = this.profileOf(botId);
-            const pool = profile && backgroundPoolModel(profile);
-            return pool && this.#options.availability?.limit(pool) === undefined
-              ? parseModelRef(pool)
-              : undefined;
-          },
+      ? new ThreadTitles(options.titles, this.registry, options.onReport, (botId) =>
+          options.onThreadsChanged?.(botId),
         )
       : undefined;
   }
@@ -557,18 +539,18 @@ export class BotManager {
   }
 
   /**
-   * Models for a bot's background work (memory extraction), in order: its pool's background model,
-   * then the main model it runs now (a fallback while main is limited). Limited models are skipped;
-   * callers fall back to the next one quietly.
+   * Models for a bot's memory extraction, in order: its profile's memory extraction model, then the
+   * main model it runs now (a fallback while main is limited), which is also the default when no
+   * memory model is set. Limited models are skipped; the extractor tries the next one quietly.
+   * Only memory extraction uses this: never chat, subagents or thread titles.
    */
-  backgroundModels(id: string): string[] {
+  memoryModels(id: string): string[] {
     const profile = this.profileOf(id);
     if (!profile) return [];
     const availability = this.#options.availability;
-    const candidates = [
-      backgroundPoolModel(profile),
-      effectiveModel(profile, availability).model,
-    ].filter((ref): ref is string => ref !== undefined && availability?.limit(ref) === undefined);
+    const candidates = [profile.memoryModel, effectiveModel(profile, availability).model].filter(
+      (ref): ref is string => ref !== undefined && availability?.limit(ref) === undefined,
+    );
     return [...new Set(candidates)];
   }
 
@@ -746,6 +728,7 @@ export class BotManager {
             name: record.name,
             main: legacy,
             pool: fallback.pool.map((entry) => ({ ...entry })),
+            ...(fallback.memoryModel ? { memoryModel: fallback.memoryModel } : {}),
             ...(fallback.guidance ? { guidance: fallback.guidance } : {}),
           },
           { create: true },

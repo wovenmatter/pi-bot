@@ -1,14 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  backgroundModel,
-  ConfigError,
-  isAllowedBindHost,
-  type Profile,
-  parseConfig,
-  parseModelRef,
-} from "../src/config.ts";
+import { ConfigError, isAllowedBindHost, parseConfig, parseModelRef } from "../src/config.ts";
 
 const minimal = `
 [models]
@@ -28,17 +21,14 @@ describe("config", () => {
         name: "Default",
         main: "openai/gpt-6-sol",
         fallbacks: ["claude-subscription/claude-opus-5-5", "openrouter/openai/gpt-6.1-sol"],
-        guidance: "Prefer the cheaper pool models for lookups and summaries.",
+        memoryModel: "openai/gpt-6-luna",
+        guidance:
+          "Luna is fine for quick lookups and summaries. Sonnet writes nicer prose; Sol is thorough.",
         pool: [
-          {
-            model: "openai/gpt-6-luna",
-            useFor: "Quick lookups, summaries and background work",
-            background: true,
-          },
+          { model: "openai/gpt-6-luna", useFor: "Quick lookups and summaries" },
           {
             model: "openrouter/anthropic/claude-sonnet-5",
             useFor: "Careful writing and code review",
-            background: false,
           },
         ],
       },
@@ -61,7 +51,7 @@ describe("config", () => {
     expect(config.extraction.schedule).toBe("0 3 * * *");
   });
 
-  it("turns legacy orchestrator/background roles into a default profile", () => {
+  it("turns legacy orchestrator/background roles into a default profile with a memory model", () => {
     const config = parseConfig(minimal);
     expect(config.modelProfiles).toEqual({
       defaultId: "default",
@@ -70,26 +60,53 @@ describe("config", () => {
           id: "default",
           name: "Default",
           main: "openai/gpt-6-sol",
-          pool: [
-            {
-              model: "openrouter/anthropic/claude-sonnet-5",
-              useFor: "Background work",
-              background: true,
-            },
-          ],
+          // The old background role was memory extraction: it is not a subagent pool model.
+          memoryModel: "openrouter/anthropic/claude-sonnet-5",
+          pool: [],
         },
       ],
     });
-    expect(backgroundModel(config.modelProfiles.profiles[0] as Profile)).toBe(
-      "openrouter/anthropic/claude-sonnet-5",
+    const same = parseConfig('[models]\norchestrator = "a/b"\nbackground = "a/b"\n');
+    expect(same.modelProfiles.profiles[0]).toEqual({
+      id: "default",
+      name: "Default",
+      main: "a/b",
+      pool: [],
+    });
+  });
+
+  it("reads memory_model, and a legacy pool background flag as the memory model only", () => {
+    const base = '[profiles.p]\nname = "P"\nmain = "a/main"\n';
+    expect(parseConfig(base).modelProfiles.profiles[0]?.memoryModel).toBeUndefined();
+    expect(
+      parseConfig(`${base}memory_model = "a/mem"\n`).modelProfiles.profiles[0]?.memoryModel,
+    ).toBe("a/mem");
+    const legacy = parseConfig(
+      `${base}[profiles.p.pool."a/cheap"]\nuse_for = "x"\nbackground = true\n[profiles.p.pool."a/other"]\nbackground = false\n`,
     );
+    expect(legacy.modelProfiles.profiles[0]).toEqual({
+      id: "p",
+      name: "P",
+      main: "a/main",
+      memoryModel: "a/cheap",
+      // The pool keeps its models; no entry carries any background meaning any more.
+      pool: [
+        { model: "a/cheap", useFor: "x" },
+        { model: "a/other", useFor: "" },
+      ],
+    });
+    // An explicit memory_model wins over a leftover flag.
+    const both = parseConfig(
+      `${base}memory_model = "a/mem"\n[profiles.p.pool."a/cheap"]\nbackground = true\n`,
+    );
+    expect(both.modelProfiles.profiles[0]?.memoryModel).toBe("a/mem");
+    expect(() => parseConfig(`${base}memory_model = "nope"\n`)).toThrow(ConfigError);
   });
 
   it("validates profiles and the default profile", () => {
     const profiles = `[models]\ndefault_profile = "fast"\n[profiles.fast]\nname = "Fast"\nmain = "a/b"\n`;
     const config = parseConfig(profiles);
     expect(config.modelProfiles.defaultId).toBe("fast");
-    expect(backgroundModel(config.modelProfiles.profiles[0] as Profile)).toBe("a/b");
     expect(() => parseConfig(`[profiles.fast]\nname = "Fast"\nmain = "a/b"\n`)).not.toThrow();
     expect(() =>
       parseConfig(

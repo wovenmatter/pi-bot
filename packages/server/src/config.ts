@@ -87,9 +87,12 @@ export const configSchema = z.strictObject({
       default_profile: z.string().regex(PROFILE_ID).optional(),
       /** Legacy: before profiles, the bots' model. Read as the main model of a synthesized default profile. */
       orchestrator: modelRef.optional(),
-      /** Legacy: the old background role. Read as that profile's pool model for background work. */
+      /** Legacy: the old background role. Read as that profile's memory extraction model. */
       background: modelRef.optional(),
-      /** Thread titles (metadata for listing and search), generated from a thread's first message. */
+      /**
+       * Thread titles (metadata for listing and search), generated from a thread's first message.
+       * The only source of the title model: profiles never take part.
+       */
       titles: z
         .strictObject({
           model: modelRef.default("openai-codex/gpt-6-luna"),
@@ -99,8 +102,9 @@ export const configSchema = z.strictObject({
     })
     .prefault({}),
   /**
-   * Model profiles: a main model for a bot's main channel and threads, plus a pool of models the
-   * main model may hand work to (`run_subagent`). Pool keys are `provider/model-id`.
+   * Model profiles: a main model for a bot's main channel and threads, which can run subagents
+   * (`run_subagent`) on itself or on the pool's additional models, plus an optional memory
+   * extraction model. Pool keys are `provider/model-id`.
    */
   profiles: z
     .record(
@@ -113,16 +117,28 @@ export const configSchema = z.strictObject({
          * out of credits, the bot switches to the first available one and back once it resets.
          */
         fallbacks: z.array(modelRef).max(5, "at most 5 fallbacks").default([]),
-        /** Free text for the main model: when to use which pool model or reasoning level. */
+        /**
+         * Memory extraction model: reviews new conversation messages and saves useful facts into
+         * the bot's memory (`[extraction]`). Unset: the main model the bot runs at that moment.
+         */
+        memory_model: modelRef.optional(),
+        /**
+         * Model preferences, free text for the main model: the user's preferences and experiences
+         * with the models, used when it picks a model for a subagent. Never an enforced policy.
+         */
         guidance: z.string().max(4000).optional(),
+        /** Additional models for subagents; the main model can always use itself. */
         pool: z
           .record(
             modelRef,
             z.strictObject({
-              /** What this model is good for, shown to the main model. */
+              /** Optional notes on this model, shown to the main model. */
               use_for: z.string().max(500).default(""),
-              /** Background work (memory extraction and the like) uses this model. */
-              background: z.boolean().default(false),
+              /**
+               * Legacy: the old background designation. Read only as the profile's `memory_model`
+               * (when that is unset) and rewritten as it on start; it has no other meaning.
+               */
+              background: z.boolean().optional(),
             }),
           )
           .default({}),
@@ -220,22 +236,18 @@ export type PiBotConfig = RawConfig & {
     readonly webDir?: string;
   };
   readonly roles: {
+    /** `[models.titles] model` (or its default): titles every bot's threads. */
     readonly titles: ModelRef;
-    /**
-     * `[models.titles] model` is set in the file. Then it titles every thread; otherwise a bot's
-     * pool background model goes first and the default title model is its fallback.
-     */
-    readonly titlesConfigured: boolean;
   };
   /** `[profiles]` normalized; legacy `[models] orchestrator`/`background` become a default profile. */
   readonly modelProfiles: ProfileSet;
 };
 
-/** One pool model the main model may delegate to. */
+/** One additional model the main model may run subagents on. */
 export type PoolModel = {
   readonly model: string;
+  /** Optional notes on this model for the main model (`use_for`); "" for none. */
   readonly useFor: string;
-  readonly background: boolean;
 };
 
 export type Profile = {
@@ -245,7 +257,14 @@ export type Profile = {
   readonly main: string;
   /** Ordered main-model fallbacks for usage limits (0–5); none: the bot pauses at a limit. */
   readonly fallbacks?: readonly string[];
+  /**
+   * Memory extraction model (`memory_model`). Unset: the main model the bot runs at that moment
+   * (its fallback while main is limited). Used only for memory extraction.
+   */
+  readonly memoryModel?: string;
+  /** Model preferences (`guidance`): the user's free-text notes for choosing subagent models. */
   readonly guidance?: string;
+  /** Additional subagent models; the main model can always run subagents on itself. */
   readonly pool: readonly PoolModel[];
 };
 
@@ -267,20 +286,27 @@ function checkFallbacks(id: string, main: string, fallbacks: readonly string[]):
 
 /** Profiles from the raw config, synthesizing one from the legacy model roles when there are none. */
 export function normalizeProfiles(raw: RawConfig): ProfileSet {
-  let profiles: Profile[] = Object.entries(raw.profiles).map(([id, value]) => ({
-    id,
-    name: value.name,
-    main: value.main,
-    ...(value.fallbacks.length
-      ? { fallbacks: checkFallbacks(id, value.main, value.fallbacks) }
-      : {}),
-    ...(value.guidance?.trim() ? { guidance: value.guidance.trim() } : {}),
-    pool: Object.entries(value.pool).map(([model, entry]) => ({
-      model,
-      useFor: entry.use_for,
-      background: entry.background,
-    })),
-  }));
+  let profiles: Profile[] = Object.entries(raw.profiles).map(([id, value]) => {
+    // Legacy: a pool model flagged `background` was the profile's model for background work,
+    // which was memory extraction. It becomes the memory model and nothing else.
+    const memoryModel =
+      value.memory_model ??
+      Object.entries(value.pool).find(([, entry]) => entry.background === true)?.[0];
+    return {
+      id,
+      name: value.name,
+      main: value.main,
+      ...(value.fallbacks.length
+        ? { fallbacks: checkFallbacks(id, value.main, value.fallbacks) }
+        : {}),
+      ...(memoryModel ? { memoryModel } : {}),
+      ...(value.guidance?.trim() ? { guidance: value.guidance.trim() } : {}),
+      pool: Object.entries(value.pool).map(([model, entry]) => ({
+        model,
+        useFor: entry.use_for,
+      })),
+    };
+  });
   if (profiles.length === 0) {
     const { orchestrator, background } = raw.models;
     if (!orchestrator) {
@@ -293,10 +319,9 @@ export function normalizeProfiles(raw: RawConfig): ProfileSet {
         id: "default",
         name: "Default",
         main: orchestrator,
-        pool:
-          background && background !== orchestrator
-            ? [{ model: background, useFor: "Background work", background: true }]
-            : [],
+        // The old background role did memory extraction; it is not a subagent model.
+        ...(background && background !== orchestrator ? { memoryModel: background } : {}),
+        pool: [],
       },
     ];
   }
@@ -307,16 +332,6 @@ export function normalizeProfiles(raw: RawConfig): ProfileSet {
   return { defaultId, profiles };
 }
 
-/** A profile's pool model flagged `background`, if it has one. */
-export function backgroundPoolModel(profile: Profile): string | undefined {
-  return profile.pool.find((entry) => entry.background)?.model;
-}
-
-/** The model background work of a profile uses: its pool model flagged `background`, else its main model. */
-export function backgroundModel(profile: Profile): string {
-  return backgroundPoolModel(profile) ?? profile.main;
-}
-
 export class ConfigError extends Error {
   override name = "ConfigError";
 }
@@ -324,12 +339,6 @@ export class ConfigError extends Error {
 function expandPath(value: string, baseDir: string): string {
   const expanded = value === "~" || value.startsWith("~/") ? homedir() + value.slice(1) : value;
   return isAbsolute(expanded) ? expanded : resolve(baseDir, expanded);
-}
-
-/** Whether the parsed document sets `[models.titles] model` itself (before defaults). */
-function titlesModelSet(input: unknown): boolean {
-  const models = (input as { models?: { titles?: { model?: unknown } } } | null)?.models;
-  return typeof models?.titles?.model === "string";
 }
 
 /** Validate an already-parsed TOML document. Relative paths resolve against `baseDir`. */
@@ -365,10 +374,7 @@ export function validateConfig(
         : resolve(dataDir, "credentials.key"),
       ...(raw.server.web_dir ? { webDir: expandPath(raw.server.web_dir, baseDir) } : {}),
     },
-    roles: {
-      titles: parseModelRef(raw.models.titles.model),
-      titlesConfigured: titlesModelSet(input),
-    },
+    roles: { titles: parseModelRef(raw.models.titles.model) },
     modelProfiles,
   };
 }

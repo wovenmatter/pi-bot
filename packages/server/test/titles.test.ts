@@ -198,56 +198,62 @@ describe("title model selection", () => {
     return { models, used, faux };
   }
 
-  it("knows whether [models.titles] model is set explicitly", () => {
-    const base = '[profiles.default]\nname = "D"\nmain = "a/b"\n';
-    expect(parseConfig(base).roles.titlesConfigured).toBe(false);
-    expect(parseConfig(`${base}[models.titles]\nreasoning = "low"\n`).roles.titlesConfigured).toBe(
-      false,
+  it("reads only [models.titles] (or its default), whatever the profiles say", () => {
+    const profile = `[profiles.default]
+name = "D"
+main = "openai-codex/gpt-6-main"
+memory_model = "openai-codex/gpt-6-pool"
+[profiles.default.pool."openai-codex/gpt-6-pool"]
+background = true
+`;
+    expect(parseConfig(profile).roles.titles).toEqual(LUNA);
+    expect(parseConfig(`${profile}[models.titles]\nreasoning = "low"\n`).roles.titles).toEqual(
+      LUNA,
     );
-    expect(parseConfig(`${base}[models.titles]\nmodel = "x/y"\n`).roles.titlesConfigured).toBe(
-      true,
-    );
+    expect(
+      parseConfig(`${profile}[models.titles]\nmodel = "openai-codex/gpt-6-pool"\n`).roles.titles,
+    ).toEqual(POOL);
   });
 
-  it("prefers the pool background model unless the title model is explicit", async () => {
-    const { models, used } = twoModels();
+  it("generates on its one model, with no profile fallback", async () => {
+    const { models, used } = twoModels(new Set(["gpt-6-luna"]));
     const generator = new TitleGenerator({ models, model: LUNA, reasoning: "low" });
-    expect(generator.candidates()).toEqual([LUNA]);
-    expect(generator.candidates(POOL)).toEqual([POOL, LUNA]);
-    expect(generator.candidates(LUNA)).toEqual([LUNA]);
-    await expect(generator.generate("hi", undefined, POOL)).resolves.toBe("From gpt-6-pool");
-    const explicit = new TitleGenerator({ models, model: LUNA, reasoning: "low", explicit: true });
-    expect(explicit.candidates(POOL)).toEqual([LUNA]);
-    await expect(explicit.generate("hi", undefined, POOL)).resolves.toBe("From gpt-6-luna");
-    expect(used).toEqual(["gpt-6-pool", "gpt-6-luna"]);
+    await expect(generator.generate("hi")).rejects.toBeInstanceOf(TitleError);
+    expect(used).toEqual(["gpt-6-luna"]);
   });
 
-  it("falls back quietly from a failing background model to the title model", async () => {
-    const { models, used } = twoModels(new Set(["gpt-6-pool"]));
-    const generator = new TitleGenerator({ models, model: LUNA, reasoning: "low" });
-    await expect(generator.generate("hi", undefined, POOL)).resolves.toBe("From gpt-6-luna");
-    expect(used).toEqual(["gpt-6-pool", "gpt-6-luna"]);
-  });
-
-  it("titles a bot's threads with its profile's background model", async () => {
+  it.each([
+    ["the default title model", "", "gpt-6-luna"],
+    [
+      "a configured title model",
+      '[models.titles]\nmodel = "openai-codex/gpt-6-pool"\n',
+      "gpt-6-pool",
+    ],
+  ])("titles every thread with %s, never a profile model", async (_name, titles, expected) => {
     const dir = await tempDir();
     const { models: titleSource, used } = twoModels();
     const { models: botModels } = echoModels();
-    const profiles = new ProfileStore(
-      parseConfig(`
+    // The profile's pool, memory model and a legacy background flag all name other models.
+    const config = parseConfig(`${titles}
 [profiles.default]
 name = "Default"
 main = "faux/faux-1"
-[profiles.default.pool."openai-codex/gpt-6-pool"]
+memory_model = "openai-codex/gpt-6-mem"
+[profiles.default.pool."openai-codex/gpt-6-other"]
 background = true
-`).modelProfiles,
-    );
+[profiles.default.pool."openai-codex/gpt-6-pool"]
+`);
+    const profiles = new ProfileStore(config.modelProfiles);
     const db = await openSharedDatabase(join(dir.path, "db.sqlite"));
     const reports: unknown[] = [];
     const manager = await BotManager.open({
       db,
       profiles,
-      titles: new TitleGenerator({ models: titleSource, model: LUNA, reasoning: "low" }),
+      titles: new TitleGenerator({
+        models: titleSource,
+        model: config.roles.titles,
+        reasoning: config.models.titles.reasoning,
+      }),
       onReport: (error) => reports.push(error),
       harnessOptions: (bot, self) =>
         createBotHarnessOptions({
@@ -262,8 +268,8 @@ background = true
       const thread = await bot.fork({ entryId: await lastEntryId(bot) });
       await say(bot, "plan the trip", thread.conversationId);
       await manager.titles?.idle();
-      expect(used).toEqual(["gpt-6-pool"]);
-      expect((await bot.threads())[0]?.title).toBe("From gpt-6-pool");
+      expect(used).toEqual([expected]);
+      expect((await bot.threads())[0]?.title).toBe(`From ${expected}`);
       expect(reports).toEqual([]);
     } finally {
       await manager.close();

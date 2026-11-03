@@ -14,23 +14,22 @@ data_dir = "~/.local/share/pi-bot"
 
 # Models: provider/model-id from the pi-ai catalog. Every bot runs one model profile; new bots get
 # the default one. Older configs with [models] orchestrator/background still load: they become a
-# "default" profile (the background model as its background pool entry) and are rewritten on start.
+# "default" profile (the background model as its memory_model) and are rewritten on start.
 [models]
 default_profile = "default"
 
 # Thread titles: generated once from a thread's first message with Woven Matter's title prompt.
-# Shown read-only in the thread list and used for search; threads can't be renamed.
-# Precedence: an explicit model here titles every thread. Without one, each bot's pool background
-# model is used, falling back quietly to the default openai-codex/gpt-6-luna.
+# Shown read-only in the thread list and used for search; threads can't be renamed. This is the
+# only title model, for every bot (default openai-codex/gpt-6-luna); profiles never change it.
 [models.titles]
 model = "openai-codex/gpt-6-luna"
 reasoning = "high"                  # minimal | low | medium | high | xhigh
 
-# A profile: the main model runs the main channel and every thread; it can hand self-contained
-# tasks to pool models with run_subagent (it picks the model and reasoning level). background = true
-# marks the pool entry for background work: thread titles (when [models.titles] model is unset) and
-# run_subagent with model = "background"; without one, background work uses the main model. Admin Bot
-# and Settings → Profiles edit these; changes apply from each bot's next reply.
+# A profile: the main model runs the main channel and every thread. With run_subagent it can hand
+# self-contained tasks to subagents running on itself ("self": the model it runs right now, a
+# fallback included) or on a model of its pool; it picks the model and reasoning level from the
+# guidance (model preferences), the task, and each model's capabilities and API list prices.
+# Admin Bot and Settings → Profiles edit these; changes apply from each bot's next reply.
 [profiles.default]
 name = "Default"
 main = "openai/gpt-6-sol"
@@ -39,20 +38,26 @@ main = "openai/gpt-6-sol"
 # main model resets (or retries it after a ~15-minute cooldown when the provider gave no reset).
 # No fallbacks: the bot pauses and the chat says why. Transient rate limits just retry.
 fallbacks = ["claude-subscription/claude-opus-5-5", "openrouter/openai/gpt-6.1-sol"]
-guidance = "Prefer the cheaper pool models for lookups and summaries."
+# Optional memory extraction model (see [extraction]); unset: the bot's active main model. It only
+# extracts memory: never chat, subagents or titles. (Older configs flagged a pool entry with
+# background = true; that is read as memory_model and rewritten on start.)
+memory_model = "openai/gpt-6-luna"
+# Model preferences: your own words about these models, weighed by the main model, never enforced.
+guidance = "Luna is fine for quick lookups and summaries. Sonnet writes nicer prose; Sol is thorough."
 
+# Model pool: additional models for subagents (the main model can always use itself). use_for is
+# an optional note on the model.
 [profiles.default.pool."openai/gpt-6-luna"]
-use_for = "Quick lookups, summaries and background work"
-background = true
+use_for = "Quick lookups and summaries"
 
 [profiles.default.pool."openrouter/anthropic/claude-sonnet-5"]
 use_for = "Careful writing and code review"
 
-# Memory extraction: each bot's new messages since its last extraction go to its background model
-# (else its main model), and new durable facts are appended to the bot's memory, which it sees in
-# its prompt. Runs on the schedule and when a bot has been idle idle_minutes after new messages;
-# bots with nothing new are skipped. Without this section: on, nightly 03:00 UTC plus 30 idle minutes.
-# View and edit each bot's memory in Settings → Bots → Memory.
+# Memory extraction: each bot's new messages since its last extraction go to its profile's
+# memory_model (else its active main model), and new durable facts are appended to the bot's
+# memory, which it sees in its prompt. Runs on the schedule and when a bot has been idle
+# idle_minutes after new messages; bots with nothing new are skipped. Without this section: on,
+# nightly 03:00 UTC plus 30 idle minutes. View and edit each bot's memory in Settings → Bots → Memory.
 [extraction]
 enabled = true
 schedule = "0 3 * * *"              # 5-field cron

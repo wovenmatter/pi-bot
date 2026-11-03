@@ -1493,6 +1493,8 @@ input[type="file"] {
 }
 .settings-section {
   display: grid;
+  /* One column that never grows past the page: long model names truncate or wrap inside it. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   padding-top: 24px;
   border-top: 1px solid var(--line);
@@ -1510,6 +1512,7 @@ input[type="file"] {
 }
 .settings-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   margin: 4px 0 0;
   padding: 0;
@@ -1879,6 +1882,8 @@ details.account-api-key > .settings-list {
 }
 .profile-editor {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 2px;
   padding: 16px;
   border: 1px solid var(--line);
@@ -1917,7 +1922,7 @@ details.account-api-key > .settings-list {
 }
 .profile-section-title {
   flex: none;
-  width: 92px;
+  width: 132px;
   font-size: 13px;
   font-weight: 600;
 }
@@ -1955,6 +1960,7 @@ details.account-api-key > .settings-list {
 }
 .profile-section-body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   padding: 0 4px 14px;
 }
@@ -1969,28 +1975,87 @@ details.account-api-key > .settings-list {
 }
 .profile-pool-rows {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   justify-items: start;
 }
+/* Long model names must not widen the editor: its controls shrink to their column. */
+.profile-editor select,
+.profile-editor input,
+.profile-editor textarea,
+.profile-editor-field,
+.profile-section,
+.profile-pool-row > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.profile-model-facts small,
+.profile-pricing-note,
+.profile-pool-self-label {
+  overflow-wrap: anywhere;
+}
 .profile-pool-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   width: 100%;
+}
+.profile-pool-row.profile-pool-self {
+  grid-template-columns: minmax(0, 1fr);
+}
+.profile-pool-self-label {
+  font-size: 12px;
+}
+.profile-pool-self-label code {
+  color: var(--ink);
+}
+.profile-model-facts {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 2px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.profile-price-tiers > summary {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.profile-price-tiers > summary:hover {
+  color: var(--ink);
+}
+.profile-price-tiers ul {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+.profile-pricing-note {
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 .profile-pool-row.profile-fallback-row {
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
 }
+@media (max-width: 640px) {
+  .profile-editor {
+    padding: 12px;
+  }
+  .profile-section-title {
+    width: auto;
+    max-width: 50%;
+  }
+  /* Pool rows stack: the model picker gets the full width, notes and remove share the next line. */
+  .profile-pool-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .profile-pool-row:not(.profile-fallback-row) > select {
+    grid-column: 1 / -1;
+  }
+}
 .profile-fallback-error {
   color: var(--danger-ink);
-}
-.profile-background {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  white-space: nowrap;
 }
 .settings-fields {
   display: grid;

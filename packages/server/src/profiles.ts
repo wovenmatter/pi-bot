@@ -31,8 +31,12 @@ export type ProfileInput = {
   readonly main: string;
   /** Ordered main-model fallbacks for usage limits, at most 5. */
   readonly fallbacks?: readonly string[];
+  /** Memory extraction model; omitted, null or "": the active main model. */
+  readonly memoryModel?: string | null;
+  /** Model preferences: free text for choosing subagent models. */
   readonly guidance?: string;
-  readonly pool?: readonly { model: string; useFor?: string; background?: boolean }[];
+  /** Additional subagent models with optional notes. */
+  readonly pool?: readonly { model: string; useFor?: string }[];
 };
 
 /** What `ProfileStore` persists: the new set, and the set it replaces (only the change is written). */
@@ -160,23 +164,19 @@ export class ProfileStore {
       if (pool.some((existing) => existing.model === entry.model)) {
         throw new ProfileError(`pool lists ${entry.model} twice`);
       }
-      pool.push({
-        model: entry.model,
-        useFor: (entry.useFor ?? "").trim().slice(0, 500),
-        background: entry.background === true,
-      });
+      pool.push({ model: entry.model, useFor: (entry.useFor ?? "").trim().slice(0, 500) });
     }
-    if (pool.filter((entry) => entry.background).length > 1) {
-      throw new ProfileError("flag at most one pool model for background work");
-    }
+    const memoryModel = input.memoryModel?.trim() || undefined;
+    if (memoryModel) check(memoryModel);
     const guidance = input.guidance?.trim();
     if (guidance && guidance.length > 4000)
-      throw new ProfileError("guidance is too long (max 4000)");
+      throw new ProfileError("model preferences are too long (max 4000)");
     return {
       id,
       name,
       main: input.main,
       ...(fallbacks.length ? { fallbacks } : {}),
+      ...(memoryModel ? { memoryModel } : {}),
       ...(guidance ? { guidance } : {}),
       pool,
     };
@@ -212,15 +212,16 @@ export function renderProfiles(set: ProfileSet): string {
     if (profile.fallbacks?.length) {
       lines.push(`fallbacks = [${profile.fallbacks.map((ref) => JSON.stringify(ref)).join(", ")}]`);
     }
+    if (profile.memoryModel) lines.push(`memory_model = ${JSON.stringify(profile.memoryModel)}`);
     if (profile.guidance) lines.push(`guidance = ${JSON.stringify(profile.guidance)}`);
     blocks.push(lines.join("\n"));
     for (const entry of profile.pool) {
-      const pool = [
-        `[profiles.${key(profile.id)}.pool.${JSON.stringify(entry.model)}]`,
-        `use_for = ${JSON.stringify(entry.useFor)}`,
-      ];
-      if (entry.background) pool.push("background = true");
-      blocks.push(pool.join("\n"));
+      blocks.push(
+        [
+          `[profiles.${key(profile.id)}.pool.${JSON.stringify(entry.model)}]`,
+          `use_for = ${JSON.stringify(entry.useFor)}`,
+        ].join("\n"),
+      );
     }
   }
   return `${blocks.join("\n\n")}\n`;
@@ -265,12 +266,9 @@ function canonical(profile: Profile | undefined): string | undefined {
     name: profile.name,
     main: profile.main,
     fallbacks: profile.fallbacks ?? [],
+    memoryModel: profile.memoryModel ?? "",
     guidance: profile.guidance ?? "",
-    pool: profile.pool.map((entry) => ({
-      model: entry.model,
-      useFor: entry.useFor,
-      background: entry.background === true,
-    })),
+    pool: profile.pool.map((entry) => ({ model: entry.model, useFor: entry.useFor })),
   });
 }
 
@@ -391,12 +389,81 @@ export function describeProfile(profile: Profile, defaultId: string) {
     name: profile.name,
     main: profile.main,
     ...(profile.fallbacks?.length ? { fallbacks: [...profile.fallbacks] } : {}),
+    ...(profile.memoryModel ? { memoryModel: profile.memoryModel } : {}),
     ...(profile.guidance ? { guidance: profile.guidance } : {}),
-    pool: profile.pool.map((entry) => ({
-      model: entry.model,
-      useFor: entry.useFor,
-      ...(entry.background ? { background: true } : {}),
-    })),
+    pool: profile.pool.map((entry) => ({ model: entry.model, useFor: entry.useFor })),
     ...(profile.id === defaultId ? { default: true } : {}),
   };
+}
+
+const LEGACY_BACKGROUND = /^\s*(?:background|"background")\s*=/;
+
+/**
+ * Rewrite the legacy pool `background` flags of `text` in place: each flagged profile without a
+ * `memory_model` gets `memory_model = "<that pool model>"` in its own table, and every pool
+ * `background = …` line is dropped. Line-level, so comments and layout stay. Returns undefined
+ * when there is nothing to rewrite, or when the rewrite would change any profile as parsed (a
+ * profile defined in a form these line edits can't reach): then the file is left as it is and
+ * the flags keep being read as the memory model.
+ */
+export function migrateLegacyBackground(text: string, path?: string): string | undefined {
+  let before: PiBotConfig;
+  try {
+    before = parseConfig(text, path ? dirname(path) : undefined, path);
+  } catch {
+    return undefined;
+  }
+  const flagged = Object.entries(before.profiles).filter(([, profile]) =>
+    Object.values(profile.pool).some((entry) => entry.background !== undefined),
+  );
+  if (flagged.length === 0) return undefined;
+  const lines = text.split("\n");
+  const kept: string[] = [];
+  let section = "";
+  for (const line of lines) {
+    const name = headerName(line);
+    if (name !== undefined) section = name;
+    if (/^profiles\.[^.]+\.pool\./.test(section) && LEGACY_BACKGROUND.test(line)) continue;
+    kept.push(line);
+  }
+  let next = kept.join("\n");
+  for (const [id, profile] of flagged) {
+    if (profile.memory_model) continue;
+    const memory = Object.entries(profile.pool).find(([, entry]) => entry.background === true)?.[0];
+    if (!memory) continue;
+    const header = kept.findIndex((line) => headerName(line) === `profiles.${id}`);
+    if (header < 0) return undefined;
+    next = setTomlValues(next, [{ path: ["profiles", id, "memory_model"], value: memory }]);
+  }
+  try {
+    const after = parseConfig(next, path ? dirname(path) : undefined, path);
+    const same = (a: ProfileSet, b: ProfileSet) =>
+      a.defaultId === b.defaultId &&
+      a.profiles.length === b.profiles.length &&
+      a.profiles.every((profile, index) => sameProfile(profile, b.profiles[index]));
+    if (!same(before.modelProfiles, after.modelProfiles)) return undefined;
+    const leftover = Object.values(after.profiles).some((profile) =>
+      Object.values(profile.pool).some((entry) => entry.background !== undefined),
+    );
+    if (leftover) return undefined;
+  } catch {
+    return undefined;
+  }
+  return next;
+}
+
+/**
+ * On start: rewrite legacy pool `background` flags in the config file at `path` as
+ * `memory_model` (`migrateLegacyBackground`), serialized with every other config.toml write.
+ * Returns whether the file changed.
+ */
+export async function migrateLegacyBackgroundFile(path: string): Promise<boolean> {
+  let changed = false;
+  await updateConfigFile(path, ({ text }) => {
+    const next = migrateLegacyBackground(text, path);
+    if (next === undefined || next === text) return text;
+    changed = true;
+    return next;
+  });
+  return changed;
 }

@@ -52,14 +52,20 @@ export type ModelStatusSummary = {
   limits: ModelLimitSummary[];
 };
 
-export type PoolModelSummary = { model: string; useFor: string; background?: boolean };
-/** A model profile: a main model for the main channel and threads, plus a pool for subagents. */
+export type PoolModelSummary = { model: string; useFor: string };
+/**
+ * A model profile: a main model for the main channel and threads, a model pool for subagents (the
+ * main model can always use itself), model preferences, and a memory extraction model.
+ */
 export type ProfileSummary = {
   id: string;
   name: string;
   main: string;
   /** Ordered main-model fallbacks (0–5) used when the main model hits a usage limit. */
   fallbacks?: string[];
+  /** Memory extraction model (absent: the active main model). */
+  memoryModel?: string;
+  /** Model preferences. */
   guidance?: string;
   pool: PoolModelSummary[];
   default?: boolean;
@@ -70,8 +76,10 @@ export type ProfileInput = {
   name: string;
   main: string;
   fallbacks?: string[];
+  /** Omitted: the active main model. */
+  memoryModel?: string;
   guidance?: string;
-  pool: { model: string; useFor?: string; background?: boolean }[];
+  pool: { model: string; useFor?: string }[];
 };
 export type DeletedBotSummary = BotSummary & { deletedAt: string };
 
@@ -164,8 +172,40 @@ export type LoginEvent =
 
 export type LoginMessage = { type: "login"; loginId: string; event: LoginEvent };
 
-export type ModelOption = { id: string; name: string; reasoning: boolean; contextWindow: number };
-export type ProviderModels = { id: string; name: string; models: ModelOption[] };
+/** USD per million tokens. */
+export type PriceRates = { input: number; output: number; cacheRead: number; cacheWrite: number };
+/**
+ * A model's raw API list price, a comparison signal (never subscription billing). `zero`: the
+ * catalog lists $0, which also stands for "unpriced"; `unknown`: not in the catalog.
+ */
+export type ModelPricing =
+  | {
+      status: "listed";
+      rates: PriceRates;
+      tiers?: (PriceRates & { inputTokensAbove: number })[];
+      source: string;
+    }
+  | { status: "zero"; source: string }
+  | { status: "unknown" };
+export type ModelAccess = { kind: "subscription" | "api_key" | "unknown"; label: string };
+export type ModelOption = {
+  id: string;
+  name: string;
+  reasoning: boolean;
+  contextWindow: number;
+  maxTokens?: number;
+  input?: string[];
+  unsupportedReasoning?: string[];
+  /** Absent from older servers. */
+  pricing?: ModelPricing;
+  limit?: { kind: string; label: string; account: string; resetsAt?: number };
+};
+export type ProviderModels = {
+  id: string;
+  name: string;
+  access?: ModelAccess;
+  models: ModelOption[];
+};
 /** Global model roles; bots' models come from their profiles. */
 export type Roles = {
   titles: string;

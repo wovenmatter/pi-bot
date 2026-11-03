@@ -497,10 +497,27 @@ describe("settings over the websocket", () => {
         name: "Cheap",
         main: "openai/openai-model",
         guidance: "Prefer low reasoning.",
-        pool: [{ model: "openai/openai-model", useFor: "Summaries", background: true }],
+        memoryModel: "openai/openai-model",
+        pool: [{ model: "openai/openai-model", useFor: "Summaries" }],
       },
     });
     expect(saved.profiles.map((profile) => profile.id)).toEqual(["default", "cheap"]);
+    expect(saved.profiles[1]).toMatchObject({
+      memoryModel: "openai/openai-model",
+      guidance: "Prefer low reasoning.",
+      pool: [{ model: "openai/openai-model", useFor: "Summaries" }],
+    });
+    // The background designation is gone from the protocol.
+    await expect(
+      client.request("profiles.save", {
+        profile: {
+          id: "cheap",
+          name: "Cheap",
+          main: "openai/openai-model",
+          pool: [{ model: "openai/openai-model", background: true }],
+        },
+      }),
+    ).rejects.toThrow(/background/);
     await expect(
       client.request("profiles.save", {
         create: true,
@@ -526,7 +543,8 @@ describe("settings over the websocket", () => {
     const text = await readFile(configPath, "utf8");
     expect(text).toContain("[profiles.cheap]");
     expect(text).toContain('[profiles.cheap.pool."openai/openai-model"]');
-    expect(text).toContain("background = true");
+    expect(text).toContain('memory_model = "openai/openai-model"');
+    expect(text).not.toContain("background");
     expect(text).toContain("# my settings");
 
     await expect(client.request("profiles.delete", { profileId: "default" })).rejects.toThrow(
@@ -561,9 +579,20 @@ describe("settings over the websocket", () => {
 
     await client.request("credentials.set", { accountId: "openai", key: OPENAI_KEY });
     catalog = await client.request("models.catalog");
-    expect(catalog.providers.find((provider) => provider.id === "openai")?.models).toEqual([
-      expect.objectContaining({ id: "openai-model" }),
-    ]);
+    const openai = catalog.providers.find((provider) => provider.id === "openai") as
+      | {
+          access: unknown;
+          models: { id: string; pricing: { status: string; source?: string } }[];
+        }
+      | undefined;
+    expect(openai?.models).toEqual([expect.objectContaining({ id: "openai-model" })]);
+    expect(openai?.access).toEqual({ kind: "api_key", label: "OpenAI API key" });
+    // A test provider's prices are never attributed to pi-ai's bundled catalog.
+    const pricing = openai?.models[0]?.pricing;
+    expect(pricing?.status).toBeDefined();
+    if (pricing?.status !== "unknown") {
+      expect(pricing?.source).toBe("openai provider's own model list (not a verified price list)");
+    }
 
     await expect(client.request("models.setRoles", { titles: "openai/missing" })).rejects.toThrow(
       /unknown model/,
@@ -824,5 +853,66 @@ describe("SettingsService config writes", () => {
       settings.updateConfig([{ path: ["extraction", "timezone"], value: "Mars/Base" }]),
     ).rejects.toThrow(/time zone/);
     expect(await readFile(path, "utf8")).toBe(before);
+  });
+});
+
+describe("legacy background flags on start", () => {
+  it("rewrites them as memory_model in place, keeping comments, and runs it as such", async () => {
+    const dir = await tempDir();
+    const configPath = join(dir.path, "config.toml");
+    await writeFile(
+      configPath,
+      [
+        "# my settings",
+        "[profiles.default]",
+        'name = "Default"',
+        'main = "faux/faux-1"   # main',
+        "",
+        "# the cheap one",
+        '[profiles.default.pool."faux/faux-2"]',
+        'use_for = "Lookups"',
+        "background = true",
+        "",
+        "[storage]",
+        `data_dir = "${dir.path}"`,
+        "",
+      ].join("\n"),
+      { mode: 0o640 },
+    );
+    const app = await startPiBot(await loadConfig(configPath), {
+      models: echoModels(15).models,
+      port: 0,
+      log: () => {},
+    });
+    try {
+      const text = await readFile(configPath, "utf8");
+      expect(text).toBe(
+        [
+          "# my settings",
+          "[profiles.default]",
+          'name = "Default"',
+          'main = "faux/faux-1"   # main',
+          'memory_model = "faux/faux-2"',
+          "",
+          "# the cheap one",
+          '[profiles.default.pool."faux/faux-2"]',
+          'use_for = "Lookups"',
+          "",
+          "[storage]",
+          `data_dir = "${dir.path}"`,
+          "",
+        ].join("\n"),
+      );
+      expect((await stat(configPath)).mode & 0o777).toBe(0o640);
+      const admin = await app.manager.admin();
+      expect(admin && app.manager.profileOf(admin.id)).toMatchObject({
+        memoryModel: "faux/faux-2",
+        pool: [{ model: "faux/faux-2", useFor: "Lookups" }],
+      });
+      expect(admin && app.manager.memoryModels(admin.id)).toEqual(["faux/faux-2", "faux/faux-1"]);
+    } finally {
+      await app.close();
+      await dir.cleanup();
+    }
   });
 });

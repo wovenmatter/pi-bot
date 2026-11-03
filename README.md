@@ -18,8 +18,9 @@ under his direction.
 - **Bots with roles.** **Admin Bot** is created on first start; it sets up accounts, profiles
   and other bots for you. An optional **Orchestrator** oversees everything. **Managers** lead
   one-level teams of regular **bots**. Bots can create bots and message each other.
-- **Model profiles.** Each bot runs one profile: a main model, 0–5 fallback models and a pool
-  of subagent models the main model can hand tasks to (`run_subagent`).
+- **Model profiles.** Each bot runs one profile: a main model, 0–5 fallback models, a model pool
+  and model preferences for subagents (`run_subagent`; the main model can always use itself),
+  and an optional memory extraction model.
 - **Honest limit notices.** When a subscription hits its 5-hour or weekly limit, or an API key
   runs out of credits, the chat says exactly what the provider reported, the bot moves to its
   next fallback, and it switches back when the limit resets. Reset times are never guessed.

@@ -165,8 +165,8 @@ const replyText = (message: AssistantMessage) =>
 /**
  * Scheduled memory extraction. Each tick (a minute) queues every bot when the cron schedule fires,
  * and any bot idle `idleMs` since its newest unprocessed message. Queued bots run one at a time:
- * new user and assistant messages since the bot's checkpoint go to its background model (else its
- * main model, quietly trying the next on failure), and new facts are appended to its memory with
+ * new user and assistant messages since the bot's checkpoint go to its profile's memory extraction
+ * model (else its active main model, quietly trying that next on failure), and new facts are appended to its memory with
  * the checkpoint in one transaction, merged into the memory as it is then (so the user's edits
  * made meanwhile stay). Nothing touches the bots' conversations, so user turns never wait.
  */
@@ -320,11 +320,11 @@ export class MemoryExtractor {
     return added;
   }
 
-  /** The reply of the first background model that answers. */
+  /** The reply of the first memory extraction model that answers. */
   async #ask(botId: string, prompt: string): Promise<string> {
     const source = this.#options.models;
     const models = typeof source === "function" ? source() : source;
-    const candidates = this.#options.manager.backgroundModels(botId);
+    const candidates = this.#options.manager.memoryModels(botId);
     if (candidates.length === 0) throw new Error("no model available for memory extraction");
     let failure: unknown;
     for (const ref of candidates) {

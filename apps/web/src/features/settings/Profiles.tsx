@@ -2,7 +2,14 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { Icon } from "../../components/Icon.tsx";
 import { Loading } from "../../components/ui.tsx";
-import type { BotSummary, ProfileInput, ProfileSummary, ProviderModels } from "../../protocol.ts";
+import type {
+  BotSummary,
+  ModelPricing,
+  PriceRates,
+  ProfileInput,
+  ProfileSummary,
+  ProviderModels,
+} from "../../protocol.ts";
 
 const isKnown = (providers: readonly ProviderModels[], ref: string) =>
   providers.some((p) => p.models.some((m) => `${p.id}/${m.id}` === ref));
@@ -13,12 +20,15 @@ export function ModelSelect({
   value,
   label,
   disabled,
+  emptyLabel,
   onChange,
 }: {
   providers: readonly ProviderModels[];
   value: string;
   label: string;
   disabled?: boolean;
+  /** An always-offered first choice with the value "" (e.g. "Use active main model"). */
+  emptyLabel?: string;
   onChange: (model: string) => void;
 }) {
   return (
@@ -28,7 +38,11 @@ export function ModelSelect({
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
     >
-      {value === "" ? <option value="">Pick a model…</option> : null}
+      {emptyLabel !== undefined ? (
+        <option value="">{emptyLabel}</option>
+      ) : value === "" ? (
+        <option value="">Pick a model…</option>
+      ) : null}
       {value && !isKnown(providers, value) ? (
         <option value={value}>{value} (not signed in)</option>
       ) : null}
@@ -106,8 +120,10 @@ type Draft = {
   name: string;
   main: string;
   fallbacks: { key: number; model: string }[];
+  /** "" = use the active main model. */
+  memoryModel: string;
   guidance: string;
-  pool: { key: number; model: string; useFor: string; background: boolean }[];
+  pool: { key: number; model: string; useFor: string }[];
 };
 
 let poolKeys = 0;
@@ -115,34 +131,130 @@ let poolKeys = 0;
 /** Ordered main-model fallbacks a profile may have. Mirrors the server's MAX_FALLBACKS. */
 export const MAX_FALLBACKS = 5;
 
-const toDraft = (profile?: ProfileSummary): Draft => ({
+/** The memory model choice that means "whatever main model the bot runs at that moment". */
+export const ACTIVE_MAIN_MODEL = "Use active main model";
+
+export const toDraft = (profile?: ProfileSummary): Draft => ({
   id: profile?.id ?? "",
   name: profile?.name ?? "",
   main: profile?.main ?? "",
   fallbacks: (profile?.fallbacks ?? []).map((model) => ({ key: poolKeys++, model })),
+  memoryModel: profile?.memoryModel ?? "",
   guidance: profile?.guidance ?? "",
   pool: (profile?.pool ?? []).map((entry) => ({
     key: poolKeys++,
     model: entry.model,
     useFor: entry.useFor,
-    background: entry.background === true,
   })),
 });
 
-const toInput = (draft: Draft): ProfileInput => ({
+export const toInput = (draft: Draft): ProfileInput => ({
   id: draft.id.trim(),
   name: draft.name.trim(),
   main: draft.main,
   fallbacks: draft.fallbacks.map((entry) => entry.model).filter(Boolean),
+  ...(draft.memoryModel ? { memoryModel: draft.memoryModel } : {}),
   ...(draft.guidance.trim() ? { guidance: draft.guidance.trim() } : {}),
   pool: draft.pool
     .filter((entry) => entry.model)
-    .map((entry) => ({
-      model: entry.model,
-      useFor: entry.useFor.trim(),
-      ...(entry.background ? { background: true } : {}),
-    })),
+    .map((entry) => ({ model: entry.model, useFor: entry.useFor.trim() })),
 });
+
+const findModel = (providers: readonly ProviderModels[], ref: string) => {
+  for (const provider of providers) {
+    const model = provider.models.find((entry) => `${provider.id}/${entry.id}` === ref);
+    if (model) return { provider, model };
+  }
+  return undefined;
+};
+
+/**
+ * Catalog values as given, never rounded to $0: `$2.5`, `$0.125`, `$0.000001`. Only float noise past
+ * 10 significant digits is dropped.
+ */
+export const usd = (value: number) =>
+  `$${Number(value.toPrecision(10)).toLocaleString("en-US", {
+    useGrouping: false,
+    maximumFractionDigits: 20,
+  })}`;
+const tokens = (value: number) =>
+  value >= 1_000_000 && value % 1_000_000 === 0
+    ? `${value / 1_000_000}M`
+    : value >= 1000
+      ? `${Math.round(value / 1000)}k`
+      : String(value);
+
+/** A model's raw API list price as shown in the editor. */
+export function priceText(pricing: ModelPricing | undefined): string {
+  if (!pricing || pricing.status === "unknown") return "API price unknown";
+  if (pricing.status === "zero") return "API price listed as $0 (free or unpriced)";
+  const tiered = pricing.tiers?.length ? " (other rates above set input sizes)" : "";
+  return `${ratesText(pricing.rates)} per 1M tokens${tiered}`;
+}
+
+const ratesText = (rates: PriceRates) =>
+  `${usd(rates.input)} in · ${usd(rates.output)} out · ${usd(rates.cacheRead)} cache read · ${usd(rates.cacheWrite)} cache write`;
+
+/** Every price tier, as listed: no assumption that a tier costs more. */
+export function priceTierTexts(pricing: ModelPricing | undefined): string[] {
+  if (pricing?.status !== "listed") return [];
+  return (pricing.tiers ?? []).map(
+    (tier) =>
+      `Above ${tokens(tier.inputTokensAbove)} input tokens: ${ratesText(tier)} per 1M tokens`,
+  );
+}
+
+/** A model's catalog facts, with its price tiers (if any) in an expandable list. */
+function ModelFacts({ providers, model }: { providers: readonly ProviderModels[]; model: string }) {
+  const tiers = priceTierTexts(findModel(providers, model)?.model.pricing);
+  return (
+    <div className="profile-model-facts">
+      <small className="muted">{modelFactsText(providers, model)}</small>
+      {tiers.length ? (
+        <details className="profile-price-tiers">
+          <summary>Price tiers by input size</summary>
+          <ul>
+            {tiers.map((tier) => (
+              <li key={tier}>
+                <small className="muted">{tier}</small>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+/** Price, capabilities, access and limit state of one model, from the server's catalog. */
+export function modelFactsText(providers: readonly ProviderModels[], ref: string): string {
+  const found = findModel(providers, ref);
+  if (!found) return "Not signed in: no catalog details";
+  const { provider, model } = found;
+  const parts = [priceText(model.pricing)];
+  if (model.contextWindow) parts.push(`${tokens(model.contextWindow)} context`);
+  if (model.maxTokens) parts.push(`${tokens(model.maxTokens)} max output`);
+  if (model.input?.length) parts.push(model.input.join(", "));
+  if (model.reasoning) parts.push("reasoning");
+  if (provider.access && provider.access.kind !== "unknown") parts.push(provider.access.label);
+  if (model.limit) {
+    const reset = model.limit.resetsAt
+      ? `resets ${new Date(model.limit.resetsAt).toISOString().replace("T", " ").slice(0, 16)} UTC`
+      : "reset unknown";
+    parts.push(`${model.limit.label}, ${reset}`);
+  }
+  return parts.join(" · ");
+}
+
+/** Where the shown prices come from, once for the section. */
+function pricingSources(providers: readonly ProviderModels[], refs: readonly string[]): string[] {
+  const sources = new Set<string>();
+  for (const ref of refs) {
+    const pricing = findModel(providers, ref)?.model.pricing;
+    if (pricing && pricing.status !== "unknown") sources.add(pricing.source);
+  }
+  return [...sources];
+}
 
 /** One folding part of the profile editor; its summary line keeps the editor scannable. */
 function EditorSection({
@@ -171,7 +283,10 @@ function EditorSection({
   );
 }
 
-/** Create or edit one profile: name, main model, pool (with "use it for" notes) and guidance. */
+/**
+ * Create or edit one profile: name, main model, fallbacks, memory extraction model, model pool
+ * (with optional notes and each model's catalog facts) and model preferences.
+ */
 export function ProfileEditor({
   profile,
   providers,
@@ -193,13 +308,7 @@ export function ProfileEditor({
   const setPool = (index: number, change: Partial<Draft["pool"][number]>) =>
     setDraft((current) => ({
       ...current,
-      pool: current.pool.map((entry, at) =>
-        at === index
-          ? { ...entry, ...change }
-          : change.background
-            ? { ...entry, background: false }
-            : entry,
-      ),
+      pool: current.pool.map((entry, at) => (at === index ? { ...entry, ...change } : entry)),
     }));
 
   const fallbackModels = draft.fallbacks.map((entry) => entry.model).filter(Boolean);
@@ -228,6 +337,10 @@ export function ProfileEditor({
   }
 
   const poolModels = draft.pool.filter((entry) => entry.model);
+  const sources = pricingSources(providers, [
+    ...(draft.main ? [draft.main] : []),
+    ...poolModels.map((entry) => entry.model),
+  ]);
   return (
     <form
       className="profile-editor"
@@ -341,21 +454,43 @@ export function ProfileEditor({
           ) : null}
         </div>
       </EditorSection>
+      <EditorSection title="Memory extraction" summary={draft.memoryModel || ACTIVE_MAIN_MODEL}>
+        <p className="muted">
+          Reviews new conversation messages and saves useful facts into the bot's memory, on the
+          extraction schedule and when the bot goes idle, if memory extraction is enabled. Doesn't
+          affect chat or subagents.
+        </p>
+        <ModelSelect
+          providers={providers}
+          value={draft.memoryModel}
+          label="Memory extraction model"
+          emptyLabel={ACTIVE_MAIN_MODEL}
+          disabled={busy}
+          onChange={(memoryModel) => setDraft({ ...draft, memoryModel })}
+        />
+        {draft.memoryModel ? <ModelFacts providers={providers} model={draft.memoryModel} /> : null}
+      </EditorSection>
       <EditorSection
-        title="Pool"
+        title="Model pool"
         summary={
           poolModels.length
-            ? poolModels
-                .map((entry) => `${entry.model}${entry.background ? " (background)" : ""}`)
-                .join(", ")
-            : "None"
+            ? `Main model + ${poolModels.map((entry) => entry.model).join(", ")}`
+            : "Main model only"
         }
       >
         <p className="muted">
-          Models the main model can hand tasks to. The background one also does background work
-          (else the main model does).
+          Additional models available for subagents. The main model can always spawn subagents using
+          itself, even when this list is empty.
         </p>
         <div className="profile-pool-rows">
+          {draft.main ? (
+            <div className="profile-pool-row profile-pool-self">
+              <span className="profile-pool-self-label">
+                Main model <code>{draft.main}</code>
+              </span>
+              <ModelFacts providers={providers} model={draft.main} />
+            </div>
+          ) : null}
           {draft.pool.map((entry, index) => (
             <div key={entry.key} className="profile-pool-row">
               <ModelSelect
@@ -366,21 +501,12 @@ export function ProfileEditor({
                 onChange={(model) => setPool(index, { model })}
               />
               <input
-                aria-label={`Use pool model ${index + 1} for`}
+                aria-label={`Notes on pool model ${index + 1}`}
                 value={entry.useFor}
                 disabled={busy}
-                placeholder="Use it for…"
+                placeholder="Notes (optional)"
                 onChange={(event) => setPool(index, { useFor: event.target.value })}
               />
-              <label className="profile-background">
-                <input
-                  type="checkbox"
-                  checked={entry.background}
-                  disabled={busy}
-                  onChange={(event) => setPool(index, { background: event.target.checked })}
-                />
-                Background
-              </label>
               <button
                 type="button"
                 className="text-button danger"
@@ -392,6 +518,7 @@ export function ProfileEditor({
               >
                 <Icon icon={Trash2} size={13} />
               </button>
+              {entry.model ? <ModelFacts providers={providers} model={entry.model} /> : null}
             </div>
           ))}
           <button
@@ -401,25 +528,31 @@ export function ProfileEditor({
             onClick={() =>
               setDraft({
                 ...draft,
-                pool: [
-                  ...draft.pool,
-                  { key: poolKeys++, model: "", useFor: "", background: false },
-                ],
+                pool: [...draft.pool, { key: poolKeys++, model: "", useFor: "" }],
               })
             }
           >
             <Icon icon={Plus} size={13} weight="control" />
             Add pool model
           </button>
+          <small className="muted profile-pricing-note">
+            Prices are raw API list prices in USD: a relative cost signal, also for subscription
+            models, not an exact measure of a subscription's allowance or charges.
+            {sources.length ? ` Source: ${sources.join("; ")}.` : ""}
+          </small>
         </div>
       </EditorSection>
-      <EditorSection title="Guidance" summary={draft.guidance.trim() || "None"}>
-        <p className="muted">Optional notes for the main model on using the pool.</p>
+      <EditorSection title="Model preferences" summary={draft.guidance.trim() || "None"}>
+        <p className="muted">
+          Describe your preferences and experiences with these models. The main model uses this
+          guidance when choosing models for subagents.
+        </p>
         <textarea
-          aria-label="Guidance"
+          aria-label="Model preferences"
           rows={3}
           value={draft.guidance}
           disabled={busy}
+          placeholder="e.g. Opus writes nicer code. Sol is thorough. Check Astra's work."
           onChange={(event) => setDraft({ ...draft, guidance: event.target.value })}
         />
       </EditorSection>
@@ -476,8 +609,9 @@ export function ProfilesPanel({
     <section className="settings-section" aria-labelledby="profiles-heading">
       <h3 id="profiles-heading">Profiles</h3>
       <p className="muted">
-        A profile is a main model for a bot's channel and threads, plus a pool it can hand tasks to.
-        New bots get the default. Changes apply from each bot's next reply.
+        A profile is a main model for a bot's channel and threads, which can run subagents on itself
+        or on the models in its pool. New bots get the default. Changes apply from each bot's next
+        reply.
       </p>
       <ul className="settings-list">
         {profiles.map((profile) => {
@@ -507,8 +641,10 @@ export function ProfilesPanel({
                 </small>
                 <small className="muted">
                   {profile.pool.length
-                    ? `Pool: ${profile.pool.map((entry) => `${entry.model}${entry.background ? " (background)" : ""}`).join(", ")}`
-                    : "No pool"}
+                    ? `Model pool: main model + ${profile.pool.map((entry) => entry.model).join(", ")}`
+                    : "Model pool: main model only"}
+                  {" · "}
+                  {`Memory extraction: ${profile.memoryModel ?? "active main model"}`}
                   {" · "}
                   {using.length ? `Used by ${using.join(", ")}` : "No bots"}
                 </small>

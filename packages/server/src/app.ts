@@ -10,7 +10,7 @@ import { type BotEnvironmentAdapter, DockerEnvironmentAdapter } from "./env.ts";
 import { ModelAvailability } from "./limits.ts";
 import { MemoryExtractor, memorySection } from "./memory.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
-import { ProfileStore, persistProfiles } from "./profiles.ts";
+import { migrateLegacyBackgroundFile, ProfileStore, persistProfiles } from "./profiles.ts";
 import { type PiBotServer, type RestartAccepted, startServer } from "./server.ts";
 import { SettingsService } from "./settings/service.ts";
 import { openSharedDatabase } from "./storage/database.ts";
@@ -111,6 +111,9 @@ export async function startPiBot(
       const refs: Record<string, ModelRef> = { "titles.model": config.roles.titles };
       for (const profile of config.modelProfiles.profiles) {
         refs[`profiles.${profile.id}.main`] = parseModelRef(profile.main);
+        if (profile.memoryModel) {
+          refs[`profiles.${profile.id}.memory_model`] = parseModelRef(profile.memoryModel);
+        }
         for (const entry of profile.pool) {
           refs[`profiles.${profile.id}.pool "${entry.model}"`] = parseModelRef(entry.model);
         }
@@ -131,6 +134,14 @@ export async function startPiBot(
         () =>
           log(`config: wrote [models] orchestrator/background as [profiles.${profiles.defaultId}]`),
         (error: unknown) => log(`config: could not write profiles: ${String(error)}`),
+      );
+    } else if (configPath) {
+      // Legacy pool `background = true`: rewrite it in place as the profile's `memory_model`.
+      await migrateLegacyBackgroundFile(configPath).then(
+        (changed) => {
+          if (changed) log("config: rewrote pool background flags as profile memory_model");
+        },
+        (error: unknown) => log(`config: could not rewrite background flags: ${String(error)}`),
       );
     }
     // Marked usage limits outlive a restart: restore the live ones before any bot opens.
@@ -162,8 +173,9 @@ export async function startPiBot(
           profile: () => profiles.resolve(self.assignedProfile(bot.id)),
           onSubagent: (event) =>
             log(
-              `bot ${bot.id}: subagent ${event.phase} on ${event.model}${event.reasoning ? ` (${event.reasoning})` : ""}${event.detail ? `: ${event.detail}` : ""}`,
+              `bot ${bot.id}: subagent ${event.phase} on ${event.model}${event.self ? " (self)" : ""}${event.reasoning ? ` (${event.reasoning})` : ""}${event.detail ? `: ${event.detail}` : ""}`,
             ),
+          modelLimit: (ref) => availability?.limit(ref),
           platform,
           web: { credentials: credentials.store, provider: config.search.provider },
           compaction: config.compaction,
@@ -196,12 +208,10 @@ export async function startPiBot(
               Promise.resolve(),
           }
         : {}),
-      // An explicit [models.titles] model titles every thread; otherwise each bot's pool
-      // background model goes first, with the default title model as its quiet fallback.
+      // [models.titles] (or its default) titles every bot's threads; profiles never take part.
       titles: new TitleGenerator({
         models,
         model: config.roles.titles,
-        explicit: config.roles.titlesConfigured,
         reasoning: config.models.titles.reasoning,
       }),
       onReport: (error) => log(`thread title: ${String(error)}`),
@@ -238,6 +248,7 @@ export async function startPiBot(
       config,
       // New credentials for a provider account end its marked limits; bots go back to main.
       onCredentialsChanged: (provider) => availability?.clear(provider),
+      modelLimit: (ref) => availability?.limit(ref),
       ...(env?.gitChanged
         ? {
             onGitChanged: () =>

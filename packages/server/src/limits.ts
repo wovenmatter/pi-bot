@@ -200,12 +200,14 @@ export function accountLabel(provider: string): string {
   }
 }
 
-const NOTE_REASON: Record<LimitKind, string> = {
+/** Short names of the limit kinds, for notes and model descriptions. */
+export const LIMIT_LABELS: Readonly<Record<LimitKind, string>> = {
   five_hour: "5-hour limit",
   weekly: "weekly limit",
   usage: "usage limit",
   credits: "out of credits",
 };
+const NOTE_REASON = LIMIT_LABELS;
 
 /**
  * The note put in front of a user turn that runs on a fallback main model, so the replying model

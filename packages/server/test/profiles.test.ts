@@ -9,6 +9,8 @@ import { createBotHarnessOptions } from "../src/agent.ts";
 import { BotManager } from "../src/bots.ts";
 import { parseConfig } from "../src/config.ts";
 import {
+  migrateLegacyBackground,
+  migrateLegacyBackgroundFile,
   ProfileConflictError,
   ProfileError,
   ProfileStore,
@@ -55,16 +57,11 @@ describe("ProfileStore", () => {
       /unknown model/,
     );
     await expect(
-      profiles.save({
-        id: "x",
-        name: "x",
-        main: "faux/faux-1",
-        pool: [
-          { model: "faux/faux-2", background: true },
-          { model: "faux/faux-3", background: true },
-        ],
-      }),
-    ).rejects.toThrow(/background/);
+      profiles.save({ id: "x", name: "x", main: "faux/faux-1", memoryModel: "openai/gpt" }),
+    ).rejects.toThrow(/unknown model/);
+    await expect(
+      profiles.save({ id: "x", name: "x", main: "faux/faux-1", memoryModel: "nope" }),
+    ).rejects.toThrow(/invalid model/);
     await expect(
       profiles.save({
         id: "x",
@@ -80,16 +77,38 @@ describe("ProfileStore", () => {
     await expect(
       profiles.save({ id: "fast", name: "Fast", main: "faux/faux-2" }, { create: true }),
     ).rejects.toThrow(/already exists/);
-    expect(profiles.get("fast")?.pool).toEqual([
-      { model: "faux/faux-1", useFor: "", background: false },
-    ]);
+    expect(profiles.get("fast")?.pool).toEqual([{ model: "faux/faux-1", useFor: "" }]);
+    // No memory model: the active main model extracts. "" and null mean the same.
+    expect(profiles.get("fast")?.memoryModel).toBeUndefined();
+    const memory = await profiles.save({
+      id: "fast",
+      name: "Fast",
+      main: "faux/faux-2",
+      memoryModel: "faux/faux-3",
+      pool: [{ model: "faux/faux-1" }],
+    });
+    expect(memory.memoryModel).toBe("faux/faux-3");
+    // The memory model is never a pool model and never a subagent alias.
+    expect(memory.pool).toEqual([{ model: "faux/faux-1", useFor: "" }]);
+    for (const cleared of ["", null]) {
+      expect(
+        (
+          await profiles.save({
+            id: "fast",
+            name: "Fast",
+            main: "faux/faux-2",
+            memoryModel: cleared,
+          })
+        ).memoryModel,
+      ).toBeUndefined();
+    }
     expect(profiles.resolve("missing").id).toBe("default");
     await expect(profiles.remove("default")).rejects.toThrow(/cannot be deleted/);
     await profiles.setDefault("fast");
     expect(profiles.resolve(undefined).id).toBe("fast");
     await profiles.remove("default");
     expect(profiles.list().map((profile) => profile.id)).toEqual(["fast"]);
-    expect(changes).toEqual(["1->2", "2->2", "2->1"]);
+    expect(changes).toEqual(["1->2", "2->2", "2->2", "2->2", "2->2", "2->1"]);
   });
 
   it("validates main-model fallbacks", async () => {
@@ -116,12 +135,15 @@ describe("ProfileStore", () => {
       name: "Default",
       main: "faux/faux-1",
       fallbacks: ["faux/faux-3", "faux/faux-2"],
+      memoryModel: "faux/faux-2",
       guidance: 'Say "hi"\nthen work.',
-      pool: [{ model: "faux/faux-2", useFor: "Background", background: true }],
+      pool: [{ model: "faux/faux-2", useFor: "Lookups" }],
     });
     const text = writeProfilesToml(legacy, profiles.snapshot());
     expect(text).toContain("# mine");
     expect(text).not.toContain("orchestrator");
+    expect(text).not.toContain("background");
+    expect(text).toContain('memory_model = "faux/faux-2"');
     expect(text).toContain('[models.titles]\nmodel = "faux/faux-2"');
     expect(text).toContain('fallbacks = ["faux/faux-3", "faux/faux-2"]');
     const parsed = parseConfig(text);
@@ -266,6 +288,145 @@ schedule = "0 3 * * *"
     ]);
   });
 
+  it("keeps a legacy background flag as the memory model through a live save", async () => {
+    const profiles = live();
+    // The file's flag reads as the running memory model: no false conflict.
+    expect(profiles.get("default")?.memoryModel).toBe("faux/faux-2");
+    const current = profiles.get("default");
+    if (!current) throw new Error("no default profile");
+    await profiles.save({ ...current, name: "Default (renamed)" });
+    const text = await readFile(path, "utf8");
+    expect(text).not.toContain("background");
+    expect(text).toContain('memory_model = "faux/faux-2"');
+    expect(text).toContain("# fast profile");
+    expect(parseConfig(text).modelProfiles.profiles[0]).toEqual({
+      id: "default",
+      name: "Default (renamed)",
+      main: "faux/faux-1",
+      memoryModel: "faux/faux-2",
+      pool: [{ model: "faux/faux-2", useFor: "Background" }],
+    });
+  });
+
+  it("round-trips a raw memory_model edit and guards it until a restart", async () => {
+    const profiles = live();
+    // A raw editor save that sets the fast profile's memory model, pending a restart.
+    await editFile('main = "faux/faux-2"', 'main = "faux/faux-2"\nmemory_model = "faux/faux-3"');
+    // A live change to another profile keeps the raw edit.
+    await profiles.save({ id: "default", name: "Default", main: "faux/faux-3" });
+    let text = await readFile(path, "utf8");
+    expect(text).toContain('memory_model = "faux/faux-3"');
+    expect(parseConfig(text).modelProfiles.profiles[1]?.memoryModel).toBe("faux/faux-3");
+    // A live change to the edited profile is refused: it was made against what runs.
+    await expect(
+      profiles.save({ id: "fast", name: "Fast live", main: "faux/faux-2" }),
+    ).rejects.toBeInstanceOf(ProfileConflictError);
+    expect(await readFile(path, "utf8")).toBe(text);
+    // After a restart the store runs the file, and saving it writes the same memory model back.
+    const restarted = new ProfileStore(parseConfig(text).modelProfiles, {
+      persist: (set) => persistProfiles(path, set),
+    });
+    const fast = restarted.get("fast");
+    if (!fast) throw new Error("no fast profile");
+    await restarted.save({ ...fast, name: "Fast 2" });
+    text = await readFile(path, "utf8");
+    expect(parseConfig(text).modelProfiles.profiles[1]).toEqual({
+      id: "fast",
+      name: "Fast 2",
+      main: "faux/faux-2",
+      memoryModel: "faux/faux-3",
+      pool: [],
+    });
+  });
+
+  it("rewrites legacy background flags as memory_model on start, keeping the rest", async () => {
+    // A pending raw edit elsewhere in the file must survive.
+    await editFile('schedule = "0 3 * * *"', 'schedule = "0 4 * * *"   # mine too');
+    const before = parseConfig(await readFile(path, "utf8")).modelProfiles;
+    expect(await migrateLegacyBackgroundFile(path)).toBe(true);
+    const text = await readFile(path, "utf8");
+    expect(text).not.toContain("background");
+    expect(text).toContain(
+      '[profiles.default]\nname = "Default"\nmain = "faux/faux-1"\nmemory_model = "faux/faux-2"\n',
+    );
+    expect(text).toContain('[profiles.default.pool."faux/faux-2"]\nuse_for = "Background"\n');
+    expect(text).toContain("# mine\n");
+    expect(text).toContain("# fast profile");
+    expect(text).toContain('schedule = "0 4 * * *"   # mine too');
+    expect(parseConfig(text).modelProfiles).toEqual(before);
+    expect((await stat(path)).mode & 0o777).toBe(0o640);
+    // Idempotent: nothing left to rewrite.
+    expect(await migrateLegacyBackgroundFile(path)).toBe(false);
+    expect(await readFile(path, "utf8")).toBe(text);
+  });
+
+  it("leaves legacy flags alone where a line edit can't reach them", () => {
+    const inline = `[profiles.p]\nname = "P"\nmain = "a/b"\npool = { "a/c" = { background = true } }\n`;
+    expect(migrateLegacyBackground(inline)).toBeUndefined();
+    expect(parseConfig(inline).modelProfiles.profiles[0]?.memoryModel).toBe("a/c");
+    // A false flag is just dropped; an explicit memory_model is kept.
+    const mixed = `[profiles.p]\nname = "P"\nmain = "a/b"\nmemory_model = "a/m"\n\n[profiles.p.pool."a/c"]\nbackground = true # old\n`;
+    const next = migrateLegacyBackground(mixed);
+    expect(next).toBe(
+      `[profiles.p]\nname = "P"\nmain = "a/b"\nmemory_model = "a/m"\n\n[profiles.p.pool."a/c"]\n`,
+    );
+    expect(migrateLegacyBackground('[profiles.p]\nname = "P"\nmain = "a/b"\n')).toBeUndefined();
+  });
+
+  it.each([
+    [
+      "an inline pool table",
+      'pool = { "faux/faux-2" = { use_for = "Cheap", background = true } }\n',
+    ],
+    [
+      "inline pool entries",
+      '\n[profiles.p.pool]\n"faux/faux-2" = { use_for = "Cheap", background = true }\n',
+    ],
+  ])("clearing the memory model of %s never re-inherits the legacy flag", async (_name, pool) => {
+    const inline = `# inline legacy\n[models]\ndefault_profile = "p"\n\n[profiles.p]\nname = "P"\nmain = "faux/faux-1"\n${pool}\n[extraction]\nschedule = "0 3 * * *"\n`;
+    await writeFile(path, inline, { mode: 0o640 });
+    // The start-up rewrite can't reach it with a line edit, so it leaves the file alone.
+    expect(migrateLegacyBackground(inline, path)).toBeUndefined();
+    expect(await migrateLegacyBackgroundFile(path)).toBe(false);
+    expect(await readFile(path, "utf8")).toBe(inline);
+    const running = parseConfig(inline).modelProfiles;
+    expect(running.profiles[0]?.memoryModel).toBe("faux/faux-2");
+    const profiles = new ProfileStore(running, { persist: (set) => persistProfiles(path, set) });
+    // Settings → "Use active main model", saved.
+    await profiles.save({
+      id: "p",
+      name: "P",
+      main: "faux/faux-1",
+      pool: [{ model: "faux/faux-2", useFor: "Cheap" }],
+    });
+    const text = await readFile(path, "utf8");
+    expect(text).not.toContain("background");
+    expect(text).not.toContain("memory_model");
+    expect(text).toContain("# inline legacy");
+    expect(text).toContain('schedule = "0 3 * * *"');
+    // After a restart the profile still uses the active main model and keeps its pool notes.
+    const restarted = parseConfig(text).modelProfiles.profiles[0];
+    if (!restarted) throw new Error("no profile after restart");
+    expect(restarted).toEqual({
+      id: "p",
+      name: "P",
+      main: "faux/faux-1",
+      pool: [{ model: "faux/faux-2", useFor: "Cheap" }],
+    });
+    expect(await migrateLegacyBackgroundFile(path)).toBe(false);
+    // Setting it again and resetting it again round-trips through the file too.
+    const again = new ProfileStore(parseConfig(text).modelProfiles, {
+      persist: (set) => persistProfiles(path, set),
+    });
+    await again.save({ ...restarted, memoryModel: "faux/faux-3" });
+    expect(parseConfig(await readFile(path, "utf8")).modelProfiles.profiles[0]?.memoryModel).toBe(
+      "faux/faux-3",
+    );
+    await again.save({ ...restarted, memoryModel: null });
+    const reset = parseConfig(await readFile(path, "utf8")).modelProfiles.profiles[0];
+    expect(reset?.memoryModel).toBeUndefined();
+  });
+
   it("refuses a write based on a revision the file no longer has", async () => {
     const first = await readConfigFile(path);
     await live().save({ id: "fast", name: "Fast", main: "faux/faux-3" });
@@ -376,9 +537,11 @@ describe("bot profiles", () => {
     const second = await open(path, profiles);
     try {
       expect(profiles.list().map((profile) => profile.id)).toEqual(["default", "admin-bot"]);
+      expect(profiles.get("default")?.memoryModel).toBe("faux/faux-2");
       expect(profiles.get("admin-bot")).toMatchObject({
         name: "Admin Bot",
         main: "faux/faux-2",
+        memoryModel: "faux/faux-2",
         pool: profiles.get("default")?.pool,
       });
       expect(second.manager.assignedProfile(same.id)).toBeUndefined();

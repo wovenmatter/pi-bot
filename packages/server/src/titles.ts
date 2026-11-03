@@ -74,13 +74,11 @@ export class TitleError extends Error {
 
 export type TitleGeneratorOptions = {
   readonly models: Models | (() => Models);
-  /** `[models.titles].model` (or its default). */
-  readonly model: ModelRef;
   /**
-   * `[models.titles] model` is set explicitly: it titles every thread. Otherwise a bot's pool
-   * background model (passed to `generate`) goes first and `model` is its quiet fallback.
+   * `[models.titles].model`, or its default when the file sets none: the one model that titles
+   * every bot's threads. Profiles (main, pool, memory model) never take part.
    */
-  readonly explicit?: boolean;
+  readonly model: ModelRef;
   /** `[models.titles].reasoning`. */
   readonly reasoning: TitleReasoning;
   /** Per-request timeout; titles are best-effort. */
@@ -102,36 +100,10 @@ export class TitleGenerator {
     return this.#options.model;
   }
 
-  /**
-   * The models a title is tried on, in order. Precedence: an explicit `[models.titles] model`
-   * alone; else the bot's pool background model (`background`), then the default title model.
-   */
-  candidates(background?: ModelRef): ModelRef[] {
-    const { model, explicit } = this.#options;
-    if (explicit || !background) return [model];
-    const same = background.provider === model.provider && background.modelId === model.modelId;
-    return same ? [model] : [background, model];
-  }
-
-  /**
-   * Title `firstPrompt`. A failing candidate quietly falls back to the next one; only the last
-   * failure is thrown.
-   */
-  async generate(
-    firstPrompt: string,
-    signal?: AbortSignal,
-    background?: ModelRef,
-  ): Promise<string> {
-    let failure: unknown;
-    for (const model of this.candidates(background)) {
-      if (signal?.aborted) break;
-      try {
-        return await this.#generateOn(model, firstPrompt, signal);
-      } catch (error) {
-        failure = error;
-      }
-    }
-    throw failure ?? new TitleError("title request aborted");
+  /** Title `firstPrompt` with the global title model (`[models.titles]`). */
+  generate(firstPrompt: string, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) return Promise.reject(new TitleError("title request aborted"));
+    return this.#generateOn(this.#options.model, firstPrompt, signal);
   }
 
   async #generateOn(ref: ModelRef, firstPrompt: string, signal?: AbortSignal): Promise<string> {

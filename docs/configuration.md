@@ -10,7 +10,7 @@ lists every key with its default. Unknown keys are rejected. Secrets never go in
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `[server]`        | `host = "127.0.0.1"` (loopback or tailnet only, see [security](security.md)), `port = 4317`, optional `web_dir`                    |
 | `[storage]`       | `data_dir = "~/.local/share/pi-bot"`: the shared `pi-bot.sqlite` (0600) and the credential key                                     |
-| `[models]`        | `default_profile`; legacy `orchestrator` / `background` keys are migrated into a `default` profile on first start                  |
+| `[models]`        | `default_profile`; legacy `orchestrator` / `background` keys become a `default` profile (main / `memory_model`) on first start     |
 | `[models.titles]` | Thread-title model, default `openai-codex/gpt-6-luna`, `reasoning = "high"`                                                        |
 | `[profiles.<id>]` | Model profiles, below                                                                                                              |
 | `[compaction]`    | `enabled`, `reserve_tokens = 16384`, `keep_recent_tokens = 20000`, `background_tokens = 0`, `native = "auto"`, per-model overrides |
@@ -34,25 +34,58 @@ default_profile = "default"
 name = "Default"
 main = "openai-codex/gpt-6-sol"
 fallbacks = ["claude-subscription/claude-opus-5-5", "openrouter/openai/gpt-6.1-sol"]  # 0–5
-guidance = "Use the cheap pool models for lookups and summaries."
+memory_model = "openai-codex/gpt-6-luna"   # optional; unset: the active main model
+guidance = "Sonnet writes nicer prose. Sol is thorough. Double-check Luna on anything subtle."
 
 [profiles.default.pool."openrouter/anthropic/claude-sonnet-5"]
-use_for = "Careful writing and code review"
+use_for = "Careful writing and code review"   # optional note
 ```
 
 - **Main model** runs the main channel and every thread.
-- **Pool**: if non-empty, the main model gets `run_subagent {model, task, reasoning?}`, which runs
-  the task on a pool model in a separate child conversation and returns the result. A failure
-  comes back as an error, so the main model can try another pool model and tell you in one line.
-  `background = true` marks at most one pool entry for background work: thread titles (unless
-  `[models.titles] model` is set), memory extraction and `run_subagent` with `model =
-  "background"` (the main model when no entry is marked). Titles and extraction fall back to the
-  next model quietly, with no banner.
+- **Subagents**: every bot's main model has `run_subagent {model, task, reasoning?}`, which runs
+  the task in a separate child conversation and returns the result. `model` is `"self"` (the model
+  the calling conversation runs right now: the main model, or the active fallback while main is
+  limited) or one of the profile's pool models; nothing else is accepted. A pool model that is
+  the current model is listed once, as self, with its notes. The child keeps the bot's coding
+  tools (with a container) and web tools, which the prompt names, but none of its bot tools
+  (messaging and managing bots, teams, settings and config, account notes, history search and
+  reading), its identity, memory or `run_subagent`, so subagents never nest. A failure comes back as an error, so the main model can
+  try another listed model and tell you in one line. Messaging other bots (`message_bot`) is
+  separate and unchanged; the main model can use either as it sees fit.
+- **Model pool** (`pool`): additional models for subagents; it may be empty, since the main model
+  can always use itself. `use_for` is an optional note per model.
+- **Model preferences** (`guidance`): your own words about the models ("Opus writes nicer code",
+  "Sol is thorough", "check Astra's work"). The main model weighs them with the task and each
+  model's facts; there is no enforced routing.
+- **Model facts in the prompt**: for self and every pool model the main model sees the catalog's
+  context window, max output, input modalities and reasoning support, the provider's raw API list
+  price (input, output, cache read, cache write, in USD per million tokens, at the catalog's
+  full precision, with every input-size tier listed), how the provider is reached (subscription or API key), whether it is signed in, and a
+  marked usage limit with its reset when the provider gave one. Prices come from the model entry
+  pi-ai serves for that exact `provider/model-id`; the source is named (pi-ai version and catalog
+  date) only when that entry matches pi-ai's bundled catalog, otherwise it is called the
+  provider's own list. `claude-subscription` serves pi-ai's Anthropic entries under the same ids,
+  so its prices are Anthropic's API prices. They are a relative cost signal, also when comparing
+  models reached through a subscription, not an exact conversion to a subscription's allowance or
+  charges. A model missing from the
+  catalog has an unknown price, and an all-$0 entry reads "free or unpriced", never "free". No
+  quality scores are shown. Settings → Profiles shows the same facts under each model.
+- **Memory extraction** (`memory_model`): the model that reviews new conversation messages and
+  saves useful facts into the bot's [memory](#memory). Unset ("Use active main model"): the main
+  model the bot runs at that moment. It never affects chat, subagents or titles.
 - **Fallbacks** (at most 5, no duplicates, not the main model) only cover the main model.
 - Edit profiles in Settings → Profiles or ask Admin Bot. Changes apply from each bot's next reply.
   Deleting a profile moves its bots back to the default; the default can't be deleted.
+- **Older configs**: a pool entry with `background = true` is read as that profile's
+  `memory_model` (an explicit `memory_model` wins) and has no other meaning; on start Pi Bot
+  rewrites it in place (comments and layout kept, other edits untouched, through the same
+  serialized config writer as every other save). A flag it can't reach with a line edit (an
+  inline table) is left as is and still read the same way. `run_subagent` no longer accepts
+  `"background"`. Legacy `[models] background` becomes the default profile's `memory_model`.
 
 ![Settings → Profiles](images/profiles.png)
+
+Example shown with test models and synthetic prices; actual prices come from the model catalog.
 
 ## Usage limits and fallbacks
 
@@ -101,7 +134,8 @@ prompt stays cacheable. Extraction runs one bot at a time, in the background, on
 schedule (in `timezone`) and once a bot has been idle `idle_minutes` after new messages. It reads
 the user and assistant messages of the main channel and threads since the bot's checkpoint
 (`pibot_memory`, the newest entry id read; at most the newest ~60k characters per run), asks the
-pool background model (else the main model as it runs now, skipping limited models) for new facts,
+profile's `memory_model` (else, and as a quiet fallback, the main model as it runs now; limited
+models are skipped) for new facts,
 drops ones already known (case and punctuation ignored) and saves facts and checkpoint together.
 Bots with nothing new are skipped; a failed run leaves the checkpoint and is retried after another
 idle period or on the next schedule. Errors only go to the server log. Set `enabled = false` to
@@ -116,10 +150,10 @@ facts you deleted come back only if a later conversation brings them up again.
 ## Thread titles
 
 A thread's title is generated once, in the background, from its first message (max 50
-characters). Which model: `[models.titles] model` when it is set in the file; otherwise the bot's
-pool background model, falling back quietly to the default title model
-(`openai-codex/gpt-6-luna`). Threads can't be named or renamed by hand; the main
-channel has no title. A failed request leaves the thread "Untitled thread".
+characters), always with the global `[models.titles]` model (default `openai-codex/gpt-6-luna`
+when the file sets none) for every bot. Profiles (main, pool or memory model) never take part, and
+there is no fallback model. Threads can't be named or renamed by hand; the main channel has no
+title. A failed request leaves the thread "Untitled thread".
 
 ## Settings page
 

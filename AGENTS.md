@@ -58,15 +58,35 @@ the working agreement for every human or agent who changes this repository.
 
 ## Model profiles
 
-- Profiles (`[profiles.<id>]` in config.toml: name, main, `fallbacks` (0–5, ordered), pool `{use_for, background}`, guidance)
-  are owned by `ProfileStore` (`profiles.ts`); `[models] default_profile` names the default.
-  Bots store only a profile id (`pibot_bots.profile`, null = default). There is no per-bot model
-  and no global orchestrator/background role; `[models.titles]` stays global.
+- Profiles (`[profiles.<id>]` in config.toml: name, main, `fallbacks` (0–5, ordered), `memory_model`,
+  `guidance` (UI: "Model preferences"), pool `{use_for}` (UI: "Model pool", optional notes)) are owned
+  by `ProfileStore` (`profiles.ts`); `[models] default_profile` names the default. Bots store only a
+  profile id (`pibot_bots.profile`, null = default). There is no per-bot model and no global
+  orchestrator/background role. Thread titles use only `[models.titles]` (or its default), never a
+  profile model; `TitleGenerator` has one model and no fallback.
 - The main model drives the channel and all threads. Delegation is the `run_subagent` tool
-  (`subagent.ts`): a pool model, a task and an optional reasoning level, run in a task-owned child
-  conversation with no `run_subagent` of its own. Failures are returned as tool errors (the prompt
-  tells the main model to quietly pick another pool model and say so in one line); pool models
-  never switch automatically. Background work uses the `background` pool entry, else the main model.
+  (`subagent.ts`), on every bot even with an empty pool: model `"self"` (the calling conversation's
+  current model from `api.agent()`, so the active fallback, not `profile.main`) or a pool model,
+  validated against that allowlist (`allowedModels`/`subagentModel`; anything else, `"background"`
+  included, is refused). It runs in a task-owned child conversation without `run_subagent`, the bot
+  tools or the preamble (subagents never nest; coding and web tools stay, named in the prompt via
+  `childTools`). A pool model that is the current model is listed once, as self, with its notes. Failures are returned as
+  tool errors (the prompt tells the main model to quietly pick another listed model and say so in
+  one line); models never switch automatically. Bot-to-bot messaging is separate and unchanged.
+- The `model_pool` section (always shown) lists self and the pool with facts from `model-info.ts`:
+  catalog context/output/modalities/reasoning, raw API list prices (USD per 1M tokens, tiers),
+  access (subscription vs API key, explicit per provider, xAI by credential type), sign-in state and
+  marked limits, plus the user's model preferences (guidance, never enforced). Prices come only from
+  the entry pi-ai serves for that exact `provider/model-id`; the pricing source names pi-ai's bundled
+  catalog (version, `generatedAt`) only when that entry matches it, else "the provider's own model
+  list". All-zero is "free or unpriced", missing is "unknown", positive prices keep full precision; prices
+  are a relative cost signal also for subscription models, never presented as an exact subscription
+  allowance or charge; no invented prices, no quality scores, no network lookups. Settings → Profiles shows the same.
+- Memory extraction model (`Profile.memoryModel`, `memory_model`): only `MemoryExtractor` uses it,
+  via `BotManager.memoryModels` (memory model, then the active main model; unset = the active main
+  model). Legacy pool `background = true` (and `[models] background`) is read as `memory_model`
+  only; `migrateLegacyBackgroundFile` rewrites it in place on start through `updateConfigFile`,
+  and skips (leaving it readable) anything a line edit can't reach without changing the parse.
 - Main-model fallbacks: `limits.ts` classifies errors (`classifyLimit`, `claudeLimit`) into
   five_hour / weekly / usage / credits (or rate = normal retry). Never invent a kind or reset:
   `resetsAt` only from the provider; unknown resets use `LIMIT_COOLDOWN_MS` (15 min) as `retryAt`.
@@ -82,7 +102,7 @@ the working agreement for every human or agent who changes this repository.
   (`fallback` / `paused` / `returned`, 10 min) is `BotSummary.modelStatus`, pushed via `bots.changed`.
 - Memory (`memory.ts`): `MemoryExtractor` appends durable facts to `pibot_memory` (facts plus an
   entry-id checkpoint per bot) on `[extraction]`'s schedule and after `idle_minutes`, one bot at a
-  time, off the turn path, on `BotManager.backgroundModels`. Bots see it as the `memory` section,
+  time, off the turn path, on `BotManager.memoryModels`. Bots see it as the `memory` section,
   which changes only when facts are added or edited. The user views and edits it in Settings →
   Bots → Memory (WebSocket `memory.list/add/update/delete`, facts named by their text, rules in
   `editFacts`, pushes `memory.changed`); every write is a `BotRegistry.updateMemory` transaction,
