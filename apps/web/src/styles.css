@@ -1513,7 +1513,7 @@ input[type="file"] {
   padding: 6px 4px 6px 12px;
   border-radius: var(--row-radius);
 }
-.settings-row:hover {
+.settings-row:not(.profile-row):hover {
   background: var(--whisper);
 }
 .settings-row-text {
