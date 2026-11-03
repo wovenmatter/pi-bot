@@ -1990,7 +1990,6 @@ details.account-api-key > .settings-list {
   max-width: 100%;
 }
 .profile-model-facts small,
-.profile-pricing-note,
 .profile-pool-self-label {
   overflow-wrap: anywhere;
 }
@@ -2049,10 +2048,6 @@ details.account-api-key > .settings-list {
 .profile-model-details-content ul {
   margin: 0;
   padding-left: 16px;
-}
-.profile-pricing-note {
-  font-size: 11.5px;
-  line-height: 1.4;
 }
 .profile-pool-row.profile-fallback-row {
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;

@@ -234,11 +234,6 @@ export function ModelFacts({
             ))}
           </ul>
         ) : null}
-        <small className="muted profile-pricing-note">
-          Prices are raw API list prices in USD: a relative cost signal, also for subscription
-          models, not an exact measure of a subscription's allowance or charges.
-          {pricing && pricing.status !== "unknown" ? ` Source: ${pricing.source}.` : ""}
-        </small>
       </div>
     </details>
   );

@@ -515,8 +515,8 @@ describe("profiles", () => {
     expect(html).toContain("API price listed as $0 (free or unpriced)");
     expect(html).toContain("API price unknown");
     expect(html).toContain("Not signed in: no catalog details");
-    expect(html).toContain(`Source: ${SOURCE}.`);
-    expect(html).toContain(
+    expect(html).not.toContain(`Source: ${SOURCE}.`);
+    expect(html).not.toContain(
       "Prices are raw API list prices in USD: a relative cost signal, also for subscription models, not an exact measure of a subscription&#x27;s allowance or charges.",
     );
     expect(priceText(undefined)).toBe("API price unknown");
