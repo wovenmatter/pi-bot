@@ -4,6 +4,27 @@ Pi Bot is a self-hosted, single-user TypeScript service that runs many bots in o
 process on [Pi Durable](https://www.npmjs.com/package/@earendil-works/pi-durable). This file is
 the working agreement for every human or agent who changes this repository.
 
+## Current iteration target (standing instruction)
+
+Trey is actively testing the **existing workstation preview**, not a separate local build.
+For normal implementation requests, complete the tested change and update that same preview
+without requiring Trey to repeat the deployment request. This remains the default until Trey
+changes it. Investigation-only and documentation-only tasks do not require a service restart.
+
+- Host: `workstation-home-1` (Mac SSH alias `workstation`, user `trey`).
+- Runtime checkout: `/home/trey/Projects/pi-bot`, branch `main`.
+- Service: `systemctl --user … pi-bot`.
+- Preview: https://workstation-home-1.tail906b96.ts.net:10443
+- Read [docs/preview-workflow.md](docs/preview-workflow.md) before implementation or deployment.
+  Preserve the existing config, credentials, database, bots, conversations and Docker volumes.
+- Use isolated task worktrees; serialize merges and deployments, recheck current state, and
+  never overwrite another agent's work. Finish with the tested/deployed commit and preview URL,
+  or the exact blocker if deployment could not be completed. A push alone is not a deployment.
+- Use the `macagent131` GitHub account through existing SSH access; never use the GitHub connector.
+  Never operate account authentication UI or run `gh auth login/refresh/logout/switch`.
+  A sandbox credential failure is not proof of expired access: retry the same read-only check
+  through approved execution permissions; if access still fails, report the blocker.
+
 ## Working agreement
 
 1. **One task, one short-lived branch, one git worktree.** Create it with

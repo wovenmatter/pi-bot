@@ -97,6 +97,10 @@ The client uses a subset of the Woven Matter Enterprise web styles with the same
 
 ## Development
 
+Our current iteration target is the existing workstation preview. Agents should follow
+[the preview workflow](docs/preview-workflow.md) and [AGENTS.md](AGENTS.md); the local commands
+below are development tools, not a replacement for updating that preview.
+
 ```sh
 pnpm dev:server   # server with --watch on 127.0.0.1:4317
 pnpm dev:web      # Vite on http://127.0.0.1:5173, proxies /ws and /health
