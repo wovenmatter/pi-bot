@@ -61,17 +61,28 @@ const accounts: AccountStatus[] = [
 
 describe("Settings sections", () => {
   it("routes each section and keeps #/settings for the first one", () => {
+    expect(parseRoute("#/settings/general")).toEqual({ settings: true });
+    expect(parseRoute("#/settings/accounts")).toEqual({ settings: true, section: "accounts" });
+    expect(routeHref({ settings: true, section: "general" })).toBe("#/settings");
     expect(parseRoute("#/settings/github")).toEqual({ settings: true, section: "github" });
     expect(parseRoute("#/settings/profiles")).toEqual({ settings: true, section: "profiles" });
     // The old Models tab folded into Profiles; its links still land there.
     expect(parseRoute("#/settings/models")).toEqual({ settings: true, section: "profiles" });
     expect(parseRoute("#/settings/nope")).toEqual({ settings: true });
     expect(parseRoute("#/settings/toString")).toEqual({ settings: true });
-    expect(routeHref({ settings: true, section: "accounts" })).toBe("#/settings");
+    expect(routeHref({ settings: true, section: "accounts" })).toBe("#/settings/accounts");
     expect(routeHref({ settings: true, section: "config" })).toBe("#/settings/config");
     const nav = renderToStaticMarkup(<SettingsNav section="search" />);
     const labels = [...nav.matchAll(/<a [^>]*>([^<]+)<\/a>/g)].map((match) => match[1]);
-    expect(labels).toEqual(["Accounts", "Profiles", "Bots", "Search", "GitHub", "Config"]);
+    expect(labels).toEqual([
+      "General",
+      "Accounts",
+      "Profiles",
+      "Bots",
+      "Search",
+      "GitHub",
+      "Config",
+    ]);
     expect(nav).toContain('href="#/settings/search" class="active" aria-current="page"');
   });
 

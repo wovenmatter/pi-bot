@@ -13,6 +13,7 @@ import type {
   Requests,
 } from "../protocol.ts";
 import { routeHref, type SettingsSection } from "../routes.ts";
+import { THEMES, type Theme } from "../theme.ts";
 import { type AccountActions, AccountNotes, AccountsList } from "./settings/Accounts.tsx";
 import { BotsPanel, type Placement } from "./settings/Bots.tsx";
 import {
@@ -137,6 +138,7 @@ type SectionProps = {
 };
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
+  { id: "general", label: "General" },
   { id: "accounts", label: "Accounts" },
   { id: "profiles", label: "Profiles" },
   { id: "bots", label: "Bots" },
@@ -760,11 +762,15 @@ export function Settings({
   client,
   connected,
   section,
+  theme,
+  onTheme,
   onRestored,
 }: {
   client: PiBotClient;
   connected: boolean;
   section: SettingsSection;
+  theme: Theme;
+  onTheme: (theme: Theme) => void;
   onRestored: (bot: BotSummary) => void;
 }) {
   const [error, setError] = useState<string>();
@@ -839,6 +845,7 @@ export function Settings({
         />
       </div>
       <div className="settings-body">
+        {section === "general" ? <GeneralSettings theme={theme} onTheme={onTheme} /> : null}
         {section === "accounts" ? <AccountsTab {...props} /> : null}
         {section === "profiles" ? <ProfilesSection {...props} /> : null}
         {section === "search" ? <SearchSection {...props} /> : null}
@@ -873,5 +880,44 @@ export function SettingsNav({ section }: { section: SettingsSection }) {
         </a>
       ))}
     </nav>
+  );
+}
+
+export function GeneralSettings({
+  theme,
+  onTheme,
+}: {
+  theme: Theme;
+  onTheme: (theme: Theme) => void;
+}) {
+  return (
+    <>
+      <section className="settings-section" aria-labelledby="theme-heading">
+        <h3 id="theme-heading">Theme</h3>
+        <div className="tabs general-theme" role="radiogroup" aria-label="Theme">
+          {THEMES.map((option) => (
+            // biome-ignore lint/a11y/useSemanticElements: segmented control, as in Enterprise
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={theme === option.id}
+              className={theme === option.id ? "active" : undefined}
+              onClick={() => onTheme(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="settings-section" aria-labelledby="build-heading">
+        <h3 id="build-heading">Build</h3>
+        <p>
+          {typeof __BUILD_NUMBER__ === "number" && __BUILD_NUMBER__ > 0
+            ? `Build ${__BUILD_NUMBER__}`
+            : "Development build"}
+        </p>
+      </section>
+    </>
   );
 }

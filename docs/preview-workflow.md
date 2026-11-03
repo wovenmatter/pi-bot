@@ -73,11 +73,17 @@ activity without explicit direction.
 
 ## Build revision and deferred work
 
-The sidebar shows `Build <short git revision>` for the web assets loaded by the browser.
-Vite captures this at build time; uncommitted source is marked `-dirty`, and builds without
-Git metadata show `unknown`. Commit before the final build so the deployed label identifies
-the actual commit. Refresh an older browser tab to load the latest revision. This identifies
-the frontend bundle, not an independently queried backend revision.
+Settings → General shows the loaded web build as `Build 1`, `Build 2`, and so on,
+and contains the theme selector. General is the default Settings page. Theme preference
+remains browser-local and survives refresh.
+
+Each successful Vite production build increments `.preview-build-number` in that checkout
+by one and embeds the number in the web assets. The workstation runtime checkout is the
+canonical preview sequence, starting at 1 with this change. Preserve its ignored counter
+across updates; do not delete/reset it. Task worktrees have independent test counters and
+must not copy them or their built assets over the runtime checkout. Build on runtime main
+for deployment. Repeated validation builds also increment the counter; dev servers show
+“Development build” and do not increment it. Refresh older tabs to see the latest build.
 
 This is a rapid development preview, not production testing. Deploy validated changes promptly;
 do not introduce deployment locks or a production release process. Deployment locks are deferred

@@ -16,7 +16,6 @@ import { Icon } from "../components/Icon.tsx";
 import { threadLabel } from "../features/conversation-state.ts";
 import type { BotSummary, ThreadSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
-import { THEMES, type Theme } from "../theme.ts";
 import { groupBots } from "./bot-groups.ts";
 
 export function Sidebar({
@@ -27,8 +26,6 @@ export function Sidebar({
   threads = [],
   settings,
   connection,
-  theme,
-  onTheme,
   onCreate,
   onDelete,
 }: {
@@ -40,8 +37,6 @@ export function Sidebar({
   threads?: readonly ThreadSummary[];
   settings?: boolean;
   connection: ConnectionState;
-  theme: Theme;
-  onTheme: (theme: Theme) => void;
   onCreate: (name: string) => Promise<void>;
   onDelete: (bot: BotSummary) => void;
 }) {
@@ -225,9 +220,6 @@ export function Sidebar({
         </div>
       ) : null}
       <div className="sidebar-footer">
-        <small className="build-revision" title="Revision of the loaded web build">
-          Build {typeof __BUILD_REVISION__ === "string" ? __BUILD_REVISION__ : "unknown"}
-        </small>
         <a
           href={routeHref({ settings: true })}
           className={`nav-link${settings ? " active" : ""}`}
@@ -236,21 +228,6 @@ export function Sidebar({
           <Icon icon={Settings} />
           <span className="rail-title">Settings</span>
         </a>
-        <div className="tabs" role="radiogroup" aria-label="Theme">
-          {THEMES.map((option) => (
-            // biome-ignore lint/a11y/useSemanticElements: segmented control, as in Enterprise
-            <button
-              key={option.id}
-              type="button"
-              role="radio"
-              aria-checked={theme === option.id}
-              className={theme === option.id ? "active" : undefined}
-              onClick={() => onTheme(option.id)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
       </div>
     </aside>
   );

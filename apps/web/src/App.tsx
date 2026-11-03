@@ -170,8 +170,6 @@ export function App() {
           threads={threads}
           settings={route.settings}
           connection={connection}
-          theme={theme}
-          onTheme={setTheme}
           onCreate={createBot}
           onDelete={(target) => void deleteBot(target)}
         />
@@ -196,7 +194,9 @@ export function App() {
             <Settings
               client={client}
               connected={connection === "open"}
-              section={route.section ?? "accounts"}
+              section={route.section ?? "general"}
+              theme={theme}
+              onTheme={setTheme}
               onRestored={onRestored}
             />
           ) : bot ? (

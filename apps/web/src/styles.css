@@ -2417,11 +2417,6 @@ details.account-api-key > .settings-list {
   }
 }
 
-.build-revision {
-  display: block;
-  padding: 0 10px 4px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 16px;
-  user-select: text;
+.general-theme {
+  max-width: 320px;
 }

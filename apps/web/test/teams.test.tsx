@@ -64,8 +64,6 @@ describe("bot groups", () => {
         mainConversationId={undefined}
         settings={false}
         connection="open"
-        theme="green"
-        onTheme={noop}
         onCreate={async () => {}}
         onDelete={noop}
       />,
@@ -103,8 +101,6 @@ describe("bot groups", () => {
         ]}
         settings={false}
         connection="open"
-        theme="green"
-        onTheme={noop}
         onCreate={async () => {}}
         onDelete={noop}
       />,
@@ -144,8 +140,6 @@ describe("orchestrator", () => {
         mainConversationId={undefined}
         settings={false}
         connection="open"
-        theme="green"
-        onTheme={noop}
         onCreate={async () => {}}
         onDelete={noop}
       />,

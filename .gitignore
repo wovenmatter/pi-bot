@@ -12,3 +12,6 @@ data/
 *.key
 .env
 .env.*
+
+# Local preview build sequence; preserve in the runtime checkout.
+.preview-build-number

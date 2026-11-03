@@ -3,6 +3,7 @@
  * `#/settings[/<section>]` (Settings; Bots is the only place deleted bots are listed and restored).
  */
 export const SETTINGS_SECTIONS = [
+  "general",
   "accounts",
   "profiles",
   "bots",
@@ -22,7 +23,7 @@ export type Route = {
   botId?: string;
   conversationId?: number;
   settings?: true;
-  /** Settings tab; absent means the first one (Accounts). */
+  /** Settings tab; absent means the first one (General). */
   section?: SettingsSection;
 };
 
@@ -33,7 +34,7 @@ export function parseRoute(hash: string): Route {
     const section =
       SETTINGS_SECTIONS.find((item) => item === conversation) ??
       MOVED_SECTIONS.get(conversation ?? "");
-    return section && section !== "accounts" ? { settings: true, section } : { settings: true };
+    return section && section !== "general" ? { settings: true, section } : { settings: true };
   }
   const conversationId = conversation ? Number(conversation) : undefined;
   return conversationId !== undefined && Number.isInteger(conversationId) && conversationId >= 0
@@ -43,7 +44,7 @@ export function parseRoute(hash: string): Route {
 
 export function routeHref(route: Route): string {
   if (route.settings) {
-    return route.section && route.section !== "accounts"
+    return route.section && route.section !== "general"
       ? `#/settings/${route.section}`
       : "#/settings";
   }
