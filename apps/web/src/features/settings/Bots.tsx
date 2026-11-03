@@ -152,7 +152,7 @@ export function BotsPanel({
         team. Admin Bot's name is fixed; rename any other bot here or by asking it or Admin Bot.
       </p>
       <div className="settings-fields">
-        <label className="settings-field">
+        <div className="settings-field">
           <span>
             Orchestrator
             <small className="muted">Optional. Sits above every team; Admin Bot stays apart.</small>
@@ -170,7 +170,7 @@ export function BotsPanel({
               </option>
             ))}
           </select>
-        </label>
+        </div>
       </div>
       <div className="bots-table">
         <div className="bots-table-head" aria-hidden="true">
