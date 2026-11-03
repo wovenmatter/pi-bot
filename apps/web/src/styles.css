@@ -1655,9 +1655,6 @@ input[type="file"] {
   padding: 8px 4px 8px 12px;
   border-radius: var(--row-radius);
 }
-.bot-row:hover {
-  background: var(--whisper);
-}
 .bot-row + .bot-row {
   border-radius: 0;
 }
