@@ -204,15 +204,28 @@ export function priceTierTexts(pricing: ModelPricing | undefined): string[] {
   );
 }
 
-/** A model's catalog facts, with its price tiers (if any) in an expandable list. */
-function ModelFacts({ providers, model }: { providers: readonly ProviderModels[]; model: string }) {
-  const tiers = priceTierTexts(findModel(providers, model)?.model.pricing);
+/** Model metadata stays collapsed until the user asks to inspect it. */
+export function ModelFacts({
+  providers,
+  model,
+}: {
+  providers: readonly ProviderModels[];
+  model: string;
+}) {
+  const found = findModel(providers, model);
+  const pricing = found?.model.pricing;
+  const tiers = priceTierTexts(pricing);
   return (
-    <div className="profile-model-facts">
-      <small className="muted">{modelFactsText(providers, model)}</small>
-      {tiers.length ? (
-        <details className="profile-price-tiers">
-          <summary>Price tiers by input size</summary>
+    <details className="profile-model-facts" key={model}>
+      <summary aria-label={`Model details for ${found?.model.name ?? model}`}>
+        Model details
+      </summary>
+      <div className="profile-model-details-content">
+        <small className="muted">
+          <code>{model}</code>
+        </small>
+        <small className="muted">{modelFactsText(providers, model)}</small>
+        {tiers.length ? (
           <ul>
             {tiers.map((tier) => (
               <li key={tier}>
@@ -220,9 +233,14 @@ function ModelFacts({ providers, model }: { providers: readonly ProviderModels[]
               </li>
             ))}
           </ul>
-        </details>
-      ) : null}
-    </div>
+        ) : null}
+        <small className="muted profile-pricing-note">
+          Prices are raw API list prices in USD: a relative cost signal, also for subscription
+          models, not an exact measure of a subscription's allowance or charges.
+          {pricing && pricing.status !== "unknown" ? ` Source: ${pricing.source}.` : ""}
+        </small>
+      </div>
+    </details>
   );
 }
 
@@ -244,16 +262,6 @@ export function modelFactsText(providers: readonly ProviderModels[], ref: string
     parts.push(`${model.limit.label}, ${reset}`);
   }
   return parts.join(" · ");
-}
-
-/** Where the shown prices come from, once for the section. */
-function pricingSources(providers: readonly ProviderModels[], refs: readonly string[]): string[] {
-  const sources = new Set<string>();
-  for (const ref of refs) {
-    const pricing = findModel(providers, ref)?.model.pricing;
-    if (pricing && pricing.status !== "unknown") sources.add(pricing.source);
-  }
-  return [...sources];
 }
 
 /** One folding part of the profile editor; its summary line keeps the editor scannable. */
@@ -337,10 +345,6 @@ export function ProfileEditor({
   }
 
   const poolModels = draft.pool.filter((entry) => entry.model);
-  const sources = pricingSources(providers, [
-    ...(draft.main ? [draft.main] : []),
-    ...poolModels.map((entry) => entry.model),
-  ]);
   return (
     <form
       className="profile-editor"
@@ -535,11 +539,6 @@ export function ProfileEditor({
             <Icon icon={Plus} size={13} weight="control" />
             Add pool model
           </button>
-          <small className="muted profile-pricing-note">
-            Prices are raw API list prices in USD: a relative cost signal, also for subscription
-            models, not an exact measure of a subscription's allowance or charges.
-            {sources.length ? ` Source: ${sources.join("; ")}.` : ""}
-          </small>
         </div>
       </EditorSection>
       <EditorSection title="Model preferences" summary={draft.guidance.trim() || "None"}>

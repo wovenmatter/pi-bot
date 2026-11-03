@@ -489,7 +489,7 @@ describe("profiles", () => {
     expect(fresh).toContain('<span class="profile-section-summary">Use active main model</span>');
   });
 
-  it("shows raw API prices and catalog facts for the main model and pool models", () => {
+  it("keeps each model's full metadata inside a collapsed disclosure", () => {
     const html = renderToStaticMarkup(
       <ProfileEditor
         profile={{
@@ -509,10 +509,11 @@ describe("profiles", () => {
     expect(html).toContain(
       "$2 in · $10 out · $0.2 cache read · $2.5 cache write per 1M tokens (other rates above set input sizes) · 272k context · 128k max output · text, image · reasoning · OpenAI API key · weekly limit, reset unknown",
     );
-    // Every tier's own rates, in an expandable list.
-    expect(html).toContain(
-      '<details class="profile-price-tiers"><summary>Price tiers by input size</summary>',
-    );
+    // Metadata is present for inspection, but all four model disclosures start closed.
+    const metadata = [...html.matchAll(/<details class="profile-model-facts"( open="")?>/g)];
+    expect(metadata).toHaveLength(4);
+    expect(metadata.every((match) => match[1] === undefined)).toBe(true);
+    expect(html).toContain('<summary aria-label="Model details for GPT X">Model details</summary>');
     expect(html).toContain(
       "Above 272k input tokens: $4 in · $15 out · $0.4 cache read · $5 cache write per 1M tokens",
     );

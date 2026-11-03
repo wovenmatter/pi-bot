@@ -303,7 +303,8 @@ export function normalizeProfiles(raw: RawConfig): ProfileSet {
       ...(value.guidance?.trim() ? { guidance: value.guidance.trim() } : {}),
       pool: Object.entries(value.pool).map(([model, entry]) => ({
         model,
-        useFor: entry.use_for,
+        // Older editors inserted this placeholder into the first pool entry automatically.
+        useFor: entry.use_for === "Background work" ? "" : entry.use_for,
       })),
     };
   });

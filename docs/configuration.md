@@ -83,6 +83,8 @@ use_for = "Careful writing and code review"   # optional note
   inline table) is left as is and still read the same way. `run_subagent` no longer accepts
   `"background"`. Legacy `[models] background` becomes the default profile's `memory_model`.
 
+In the editor, pricing, capabilities and sources are collapsed under each model's **Model details**. The main model still receives the full metadata for subagent selection.
+
 ![Settings → Profiles](images/profiles.png)
 
 Example shown with test models and synthetic prices; actual prices come from the model catalog.

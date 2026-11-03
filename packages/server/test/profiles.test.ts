@@ -360,6 +360,36 @@ schedule = "0 3 * * *"
     expect(await readFile(path, "utf8")).toBe(text);
   });
 
+  it("clears the old automatic pool note without changing custom notes or memory selection", async () => {
+    const source = `[profiles.p]
+name = "P"
+main = "a/b"
+memory_model = "a/m"
+# keep my preferences
+guidance = "Prefer careful reviews"
+[profiles.p.pool."a/c"]
+use_for = "Background work" # old automatic default
+[profiles.p.pool."a/d"]
+use_for = "Background work for document summaries"
+`;
+    await writeFile(path, source, { mode: 0o640 });
+    expect(parseConfig(source).modelProfiles.profiles[0]?.pool[0]?.useFor).toBe("");
+    expect(await migrateLegacyBackgroundFile(path)).toBe(true);
+    const saved = await readFile(path, "utf8");
+    expect(saved).toContain('use_for = "" # old automatic default');
+    expect(saved).toContain("# keep my preferences");
+    expect(parseConfig(saved).modelProfiles.profiles[0]).toMatchObject({
+      memoryModel: "a/m",
+      guidance: "Prefer careful reviews",
+      pool: [
+        { model: "a/c", useFor: "" },
+        { model: "a/d", useFor: "Background work for document summaries" },
+      ],
+    });
+    expect((await stat(path)).mode & 0o777).toBe(0o640);
+    expect(await migrateLegacyBackgroundFile(path)).toBe(false);
+  });
+
   it("leaves legacy flags alone where a line edit can't reach them", () => {
     const inline = `[profiles.p]\nname = "P"\nmain = "a/b"\npool = { "a/c" = { background = true } }\n`;
     expect(migrateLegacyBackground(inline)).toBeUndefined();

@@ -399,7 +399,8 @@ export function describeProfile(profile: Profile, defaultId: string) {
 const LEGACY_BACKGROUND = /^\s*(?:background|"background")\s*=/;
 
 /**
- * Rewrite the legacy pool `background` flags of `text` in place: each flagged profile without a
+ * Remove the old automatic "Background work" note and rewrite legacy pool `background` flags
+ * in place: each flagged profile without a
  * `memory_model` gets `memory_model = "<that pool model>"` in its own table, and every pool
  * `background = …` line is dropped. Line-level, so comments and layout stay. Returns undefined
  * when there is nothing to rewrite, or when the rewrite would change any profile as parsed (a
@@ -414,7 +415,9 @@ export function migrateLegacyBackground(text: string, path?: string): string | u
     return undefined;
   }
   const flagged = Object.entries(before.profiles).filter(([, profile]) =>
-    Object.values(profile.pool).some((entry) => entry.background !== undefined),
+    Object.values(profile.pool).some(
+      (entry) => entry.background !== undefined || entry.use_for === "Background work",
+    ),
   );
   if (flagged.length === 0) return undefined;
   const lines = text.split("\n");
@@ -428,6 +431,13 @@ export function migrateLegacyBackground(text: string, path?: string): string | u
   }
   let next = kept.join("\n");
   for (const [id, profile] of flagged) {
+    for (const [model, entry] of Object.entries(profile.pool)) {
+      if (entry.use_for === "Background work") {
+        next = setTomlValues(next, [
+          { path: ["profiles", id, "pool", model, "use_for"], value: "" },
+        ]);
+      }
+    }
     if (profile.memory_model) continue;
     const memory = Object.entries(profile.pool).find(([, entry]) => entry.background === true)?.[0];
     if (!memory) continue;

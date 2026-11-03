@@ -1906,19 +1906,20 @@ details.account-api-key > .settings-list {
   display: inline;
   font-weight: 400;
 }
-.profile-section {
-  border-top: 1px solid var(--line);
-}
+/* Woven Matter SettingsDisclosureGroupStyle: 30px quiet disclosure target. */
 .profile-section > summary {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
-  min-height: 40px;
-  padding: 11px 4px;
-  border-radius: var(--row-radius);
+  min-height: 30px;
+  padding: 0 4px;
+  border-radius: var(--control-radius);
 }
 .profile-section > summary:hover {
-  background: var(--whisper);
+  background: color-mix(in srgb, var(--soft) 72%, transparent);
+}
+.profile-section > summary:active {
+  background: var(--soft);
 }
 .profile-section-title {
   flex: none;
@@ -1965,13 +1966,12 @@ details.account-api-key > .settings-list {
   padding: 0 4px 14px;
 }
 .profile-section-body > p {
-  margin: -4px 0 0;
+  margin: 0;
   font-size: 12px;
 }
 .profile-editor > .settings-actions {
   margin-top: 0;
   padding-top: 14px;
-  border-top: 1px solid var(--line);
 }
 .profile-pool-rows {
   display: grid;
@@ -2011,24 +2011,43 @@ details.account-api-key > .settings-list {
   color: var(--ink);
 }
 .profile-model-facts {
-  display: grid;
   grid-column: 1 / -1;
-  gap: 2px;
   min-width: 0;
   font-size: 11.5px;
   line-height: 1.4;
 }
-.profile-price-tiers > summary {
-  width: fit-content;
+.profile-model-facts > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 4px;
+  border-radius: var(--control-radius);
   color: var(--muted);
-  font-size: 11.5px;
   cursor: pointer;
 }
-.profile-price-tiers > summary:hover {
-  color: var(--ink);
+.profile-model-facts > summary:hover {
+  background: color-mix(in srgb, var(--soft) 72%, transparent);
 }
-.profile-price-tiers ul {
-  margin: 2px 0 0;
+.profile-model-facts > summary::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.profile-model-facts[open] > summary::before {
+  transform: rotate(45deg);
+}
+.profile-model-details-content {
+  display: grid;
+  gap: 6px;
+  padding: 4px 4px 10px;
+  overflow-wrap: anywhere;
+}
+.profile-model-details-content ul {
+  margin: 0;
   padding-left: 16px;
 }
 .profile-pricing-note {

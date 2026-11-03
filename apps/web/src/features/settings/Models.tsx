@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Loading } from "../../components/ui.tsx";
 import type { ProviderModels, Roles } from "../../protocol.ts";
-import { ModelSelect, priceText } from "./Profiles.tsx";
+import { ModelFacts, ModelSelect } from "./Profiles.tsx";
 
 /**
  * Settings → Profiles → Thread titles: the one global model role (`[models.titles]`). Bots' own
@@ -106,18 +106,7 @@ function AvailableModels({ providers }: { providers: readonly ProviderModels[] }
                   <li key={model.id} className="settings-row compact">
                     <div className="settings-row-text">
                       <strong>{model.name}</strong>
-                      <small className="muted">
-                        <code>
-                          {provider.id}/{model.id}
-                        </code>
-                        {model.contextWindow
-                          ? ` · ${Math.round(model.contextWindow / 1000)}k context`
-                          : ""}
-                        {model.reasoning ? " · reasoning" : ""}
-                      </small>
-                      {model.pricing ? (
-                        <small className="muted">{priceText(model.pricing)}</small>
-                      ) : null}
+                      <ModelFacts providers={providers} model={`${provider.id}/${model.id}`} />
                     </div>
                   </li>
                 ))}
