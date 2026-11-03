@@ -355,7 +355,7 @@ describe("Settings sections", () => {
     expect(html).toContain("200k context");
   });
 
-  it("shows search keys masked and the default provider", () => {
+  it("shows search keys masked and automatically uses the only configured provider", () => {
     const html = renderToStaticMarkup(
       <SearchSettings
         search={{
@@ -370,7 +370,8 @@ describe("Settings sections", () => {
         onRemove={noop}
       />,
     );
-    expect(html).toMatch(/aria-checked="true"[^>]*>Brave Search</);
+    expect(html).toContain("Brave Search is used when a bot searches the web.");
+    expect(html).not.toContain('role="radiogroup"');
     expect(html).toContain("Key ••••ABCD");
   });
 

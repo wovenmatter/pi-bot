@@ -120,7 +120,7 @@ export const SEARCH_PROVIDERS: readonly (AccountSpec & { id: SearchProviderId })
     group: "Search",
     label: "Exa",
     method: "api_key",
-    help: "Default provider. Key from dashboard.exa.ai.",
+    help: "Key from dashboard.exa.ai.",
     link: "https://dashboard.exa.ai/api-keys",
   },
   {

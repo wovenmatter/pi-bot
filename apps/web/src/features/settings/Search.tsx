@@ -20,30 +20,43 @@ export function SearchSettings({
   onRemove: (account: AccountStatus) => void;
 }) {
   if (!search) return <Loading />;
+  const configured = search.providers.filter((provider) => provider.configured);
+  const selected = configured.find((provider) => provider.id === search.provider) ?? configured[0];
   return (
     <>
       <section className="settings-section" aria-labelledby="search-default-heading">
-        <h3 id="search-default-heading">Default provider</h3>
-        <p className="muted">Used when a bot searches the web.</p>
-        <div className="tabs" role="radiogroup" aria-label="Default search provider">
-          {search.providers.map((provider) => (
-            // biome-ignore lint/a11y/useSemanticElements: segmented control, as in Enterprise
-            <button
-              key={provider.id}
-              type="button"
-              role="radio"
-              aria-checked={search.provider === provider.id}
-              className={search.provider === provider.id ? "active" : undefined}
-              disabled={disabled}
-              onClick={() => onSetDefault(provider.id as SearchProviderId)}
-            >
-              {provider.label}
-            </button>
-          ))}
-        </div>
+        <h3 id="search-default-heading">Search provider</h3>
+        <p className="muted">
+          {configured.length === 0
+            ? "Add a key below to enable web search."
+            : configured.length === 1
+              ? `${selected?.label} is used when a bot searches the web. Add another provider’s key to choose between them.`
+              : "Choose which provider bots use to search the web."}
+        </p>
+        {configured.length > 1 ? (
+          <div className="tabs" role="radiogroup" aria-label="Search provider">
+            {configured.map((provider) => (
+              // biome-ignore lint/a11y/useSemanticElements: segmented control, as in Enterprise
+              <button
+                key={provider.id}
+                type="button"
+                role="radio"
+                aria-checked={selected?.id === provider.id}
+                className={selected?.id === provider.id ? "active" : undefined}
+                disabled={disabled}
+                onClick={() => onSetDefault(provider.id as SearchProviderId)}
+              >
+                {provider.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </section>
       <section className="settings-section" aria-labelledby="search-keys-heading">
         <h3 id="search-keys-heading">Keys</h3>
+        <p className="muted">
+          Save one API key per provider. You can keep keys for multiple providers.
+        </p>
         <ul className="settings-list">
           {search.providers.map((provider) => (
             <li key={provider.id} className="settings-row account-row">
