@@ -35,7 +35,6 @@
   --success-ink: #0a6e46;
   --warning-ink: #7f5206;
   --link: var(--success);
-  --focus: rgb(10 31 22 / 0.45);
   --scrim: rgb(10 31 22 / 0.28);
   --popup-shadow: 0 12px 32px rgb(10 31 22 / 0.14), 0 2px 6px rgb(10 31 22 / 0.08);
   /* DashboardMetrics */
@@ -104,7 +103,6 @@ html[data-theme="dark"] {
   --danger-ink: var(--danger);
   --success-ink: var(--success);
   --warning-ink: var(--warning);
-  --focus: rgb(229 233 224 / 0.5);
   --scrim: rgb(0 0 0 / 0.5);
   --popup-shadow: 0 12px 32px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
 }
@@ -196,13 +194,10 @@ summary {
 summary::-webkit-details-marker {
   display: none;
 }
-/* Quiet neutral keyboard focus; pointer focus stays unmarked. */
-:focus {
-  outline: none;
-}
+/* Controls never draw focus outlines, including native pointer focus. */
+:focus,
 :focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+  outline: none;
 }
 .muted {
   color: var(--muted);
@@ -423,10 +418,6 @@ select:active:not(:disabled) {
 }
 select:focus {
   border-color: transparent;
-}
-select:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
 }
 select option {
   background: var(--surface);
@@ -2406,4 +2397,25 @@ details.account-api-key > .settings-list {
 
 .general-theme {
   max-width: 320px;
+}
+
+/* Keep keyboard navigation visible without adding a ring or changing geometry. */
+:is(
+  button,
+  select,
+  summary,
+  a[href],
+  [role="button"],
+  [role="tab"],
+  [role="radio"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="file"],
+  [tabindex]
+):focus-visible {
+  color: var(--ink);
+  background-color: color-mix(in srgb, var(--soft) 72%, transparent);
 }
