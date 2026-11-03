@@ -2419,3 +2419,26 @@ details.account-api-key > .settings-list {
   color: var(--ink);
   background-color: color-mix(in srgb, var(--soft) 72%, transparent);
 }
+
+/* Keep provider selection beside its saved key. */
+.search-key-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.search-key-selector {
+  flex: 0 0 18px;
+  padding-top: 3px;
+}
+.search-key-selector input {
+  margin: 0;
+}
+.search-key-content {
+  padding: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-key-row:hover {
+  background: transparent;
+}

@@ -370,7 +370,9 @@ describe("Settings sections", () => {
         onRemove={noop}
       />,
     );
-    expect(html).toContain("Brave Search is used when a bot searches the web.");
+    expect(html).toMatch(/aria-label="Use Brave Search for web search"[^>]*checked=""/);
+    expect(html).not.toContain('aria-label="Use Exa for web search"');
+    expect(html).not.toContain("search-default-heading");
     expect(html).not.toContain('role="radiogroup"');
     expect(html).toContain("Key ••••ABCD");
   });
