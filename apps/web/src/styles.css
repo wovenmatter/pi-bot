@@ -2421,8 +2421,8 @@ details.account-api-key > .settings-list {
 }
 .search-key-selector input[type="radio"] {
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   border: 1px solid var(--muted);
   border-radius: 50%;
