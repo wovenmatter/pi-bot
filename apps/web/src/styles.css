@@ -393,6 +393,12 @@ input[type="search"]::-webkit-search-decoration {
 }
 /* SettingsMenuPicker: quiet trigger with the desktop chevron and native semantics. */
 select {
+  /* Size the hit target to the current choice, not the surrounding form column. */
+  field-sizing: content;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  justify-self: start;
   appearance: none;
   min-height: 36px;
   padding-right: 32px;
@@ -1508,9 +1514,6 @@ input[type="file"] {
   padding: 6px 4px 6px 12px;
   border-radius: var(--row-radius);
 }
-.settings-row:not(.profile-row):hover {
-  background: var(--whisper);
-}
 .settings-row-text {
   display: grid;
   flex: 1;
@@ -1695,9 +1698,6 @@ input[type="file"] {
   align-items: stretch;
   gap: 6px;
   padding: 10px 12px;
-}
-.account-row:hover {
-  background: transparent;
 }
 .account-row + .account-row {
   border-radius: 0;
@@ -1929,7 +1929,7 @@ details.account-api-key > .settings-list {
   transform: translateY(1px) rotate(-135deg);
 }
 .profile-section[open] > summary .profile-section-summary {
-  visibility: hidden;
+  display: none;
 }
 .profile-section-body {
   display: grid;
@@ -2030,7 +2030,7 @@ details.account-api-key > .settings-list {
   }
   .profile-section-title {
     width: auto;
-    max-width: 50%;
+    max-width: calc(100% - 28px);
   }
   /* Pool rows stack: the model picker gets the full width, notes and remove share the next line. */
   .profile-pool-row {
@@ -2301,7 +2301,7 @@ details.account-api-key > .settings-list {
   gap: 8px;
 }
 .main-model-picker > select {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
 }
 .onboarding > .notice {
@@ -2441,6 +2441,22 @@ details.account-api-key > .settings-list {
   min-width: 0;
 }
 
-.settings-row.search-key-row:hover {
-  background: transparent;
+/* Quiet actions and disclosures should not turn empty grid space into a target.
+ * Navigation rows and segmented tabs deliberately keep their full clickable area. */
+.primary,
+.secondary,
+.text-button,
+.utility-button,
+.link-button {
+  justify-self: start;
+  max-width: 100%;
+}
+.disclosure > summary,
+.profile-section > summary,
+.profile-model-facts > summary {
+  width: fit-content;
+  max-width: 100%;
+}
+.profile-section-title {
+  width: auto;
 }

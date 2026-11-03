@@ -74,3 +74,12 @@ Settings sections, account and bot rows, bot-group spacing, account help, chat h
 Markdown horizontal rules, and table footers no longer draw decorative separator strokes.
 Keep functional input outlines, focus indicators, disclosure chevrons, table cell boundaries,
 and blockquote styling. Do not reintroduce decorative rules when adding new sections.
+
+### Hover target boundaries
+
+Passive settings rows never highlight as a unit. Selects size to their current choice
+(with intrinsic option sizing as the browser fallback), constrained by the available column.
+Settings disclosures and grid action buttons fit their content; only their actual controls
+highlight. Sidebar navigation and segmented tabs retain full clickable targets. Message/rail
+hover may reveal actions without painting the noninteractive container. Text-entry fields
+retain their usable editing width.
