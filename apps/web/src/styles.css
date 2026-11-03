@@ -2419,8 +2419,21 @@ details.account-api-key > .settings-list {
   flex: 0 0 18px;
   padding-top: 3px;
 }
-.search-key-selector input {
+.search-key-selector input[type="radio"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
   margin: 0;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  background: transparent;
+}
+.search-key-selector input[type="radio"]:checked {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+.search-key-selector input[type="radio"]:focus-visible {
+  box-shadow: 0 0 0 3px var(--soft);
 }
 .search-key-content {
   padding: 0;
