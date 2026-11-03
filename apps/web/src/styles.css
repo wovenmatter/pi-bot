@@ -2441,6 +2441,6 @@ details.account-api-key > .settings-list {
   min-width: 0;
 }
 
-.search-key-row:hover {
+.settings-row.search-key-row:hover {
   background: transparent;
 }
