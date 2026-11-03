@@ -255,11 +255,6 @@ summary::-webkit-details-marker {
 .primary:active:not(:disabled) {
   background: color-mix(in srgb, var(--primary-fill) 78%, transparent);
 }
-html[data-theme="dark"] .primary,
-html[data-theme="dark"] .send-button,
-html[data-theme="dark"] .stop-button {
-  box-shadow: inset 0 0 0 1px var(--ring);
-}
 .secondary {
   color: var(--ink);
   background: color-mix(in srgb, var(--soft) 50%, transparent);
@@ -372,7 +367,7 @@ input:not([type="checkbox"], [type="radio"], [type="file"]):focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--ink) 22%, transparent);
+  border-color: transparent;
 }
 input[readonly] {
   color: var(--muted);
@@ -912,7 +907,7 @@ input[type="file"] {
   gap: 5px;
   min-height: 24px;
   padding: 0 8px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--segment-radius);
   color: var(--muted);
   font-size: 12px;
@@ -1609,9 +1604,6 @@ input[type="file"] {
 }
 .config-raw {
   display: grid;
-}
-.config-raw > summary {
-  border: 1px solid var(--line);
 }
 .config-raw[open] {
   gap: 10px;
