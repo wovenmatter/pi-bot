@@ -250,7 +250,7 @@ describe("bots panel", () => {
     return html.slice(html.lastIndexOf("<li", at), at);
   };
 
-  it("lists teams with members nested under their manager, then Admin Bot after a separator", () => {
+  it("lists teams with members nested under their manager, then Admin Bot with spacing", () => {
     const html = panel(bots);
     const order = ["Lead", "Member", "Loose", "Admin Bot"].map((name) =>
       html.indexOf(`<strong>${name}<`),
@@ -260,7 +260,9 @@ describe("bots panel", () => {
     for (const name of ["Lead", "Loose", "Admin Bot"]) {
       expect(rowOf(html, name)).toContain('class="bot-row"');
     }
-    const separators = [...html.matchAll(/<hr class="bots-separator"\/>/g)].map((m) => m.index);
+    const separators = [
+      ...html.matchAll(/<div class="bots-spacer" aria-hidden="true"><\/div>/g),
+    ].map((m) => m.index);
     expect(separators).toHaveLength(1);
     expect(separators[0]).toBeGreaterThan(html.indexOf("<strong>Loose<"));
     expect(separators[0]).toBeLessThan(html.indexOf("<strong>Admin Bot<"));
@@ -279,11 +281,11 @@ describe("bots panel", () => {
     expect(rowOf(html, "Chief")).toContain('class="bot-row"');
   });
 
-  it("puts the deleted bots after Admin Bot behind a second separator", () => {
+  it("puts the deleted bots after Admin Bot with spacing", () => {
     const html = panel(bots, <p>Deleted list</p>);
-    const separators = [...html.matchAll(/<hr class="bots-separator"\/>/g)].map(
-      (m) => m.index ?? 0,
-    );
+    const separators = [
+      ...html.matchAll(/<div class="bots-spacer" aria-hidden="true"><\/div>/g),
+    ].map((m) => m.index ?? 0);
     expect(separators).toHaveLength(2);
     expect(separators[1]).toBeGreaterThan(html.indexOf("<strong>Admin Bot<"));
     expect(separators[1]).toBeLessThan(html.indexOf("Deleted list"));

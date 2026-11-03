@@ -814,7 +814,6 @@ input[type="file"] {
   gap: 8px;
   height: 40px;
   padding: 0 10px 0 16px;
-  border-bottom: 1px solid var(--line);
 }
 .thread-header h2 {
   flex: 1;
@@ -1025,7 +1024,6 @@ input[type="file"] {
 .markdown hr {
   margin: 14px 0;
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
 }
 .markdown a {
   color: var(--link);
@@ -1104,7 +1102,6 @@ input[type="file"] {
   gap: 12px;
   height: 32px;
   padding: 0 6px;
-  border-top: 1px solid color-mix(in srgb, var(--ink) 6%, transparent);
 }
 /* ---------- Composer (DashboardComposer) ---------- */
 .composer-area {
@@ -1497,7 +1494,6 @@ input[type="file"] {
   grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   padding-top: 24px;
-  border-top: 1px solid var(--line);
 }
 .settings-section h3 {
   margin: 0;
@@ -1663,19 +1659,17 @@ input[type="file"] {
   background: var(--whisper);
 }
 .bot-row + .bot-row {
-  border-top: 1px solid var(--line);
   border-radius: 0;
 }
 /* A team member sits under its manager, indented like the sidebar's members. */
 .bot-member > :first-child {
   padding-left: 12px;
 }
-/* Thin rules between the bots, Admin Bot and the deleted bots. */
-.bots-separator {
+/* Breathing room between bot groups without decorative rules. */
+.bots-spacer {
   width: 100%;
   margin: 8px 0;
   border: 0;
-  border-top: 1px solid var(--line);
 }
 .settings-section .settings-section {
   padding-top: 0;
@@ -1726,7 +1720,6 @@ input[type="file"] {
   background: transparent;
 }
 .account-row + .account-row {
-  border-top: 1px solid var(--line);
   border-radius: 0;
 }
 .account-row-main {
@@ -1800,7 +1793,6 @@ details.account-help > p {
   max-width: 600px;
   margin: 6px 0 2px;
   padding-left: 10px;
-  border-left: 2px solid var(--line);
 }
 /* A provider's API key, folded under its subscription sign-in. */
 details.account-api-key {

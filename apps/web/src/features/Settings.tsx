@@ -60,7 +60,7 @@ export async function purgeDeletedBot(
 }
 
 /** Presentational list of deleted bots; the only place a bot can be restored or purged from.
- * Settings → Bots shows it below Admin Bot, after a separator, only while there are deleted bots. */
+ * Settings → Bots shows it below Admin Bot, with spacing, only while there are deleted bots. */
 export function DeletedBotsList({
   bots,
   restoring,
@@ -606,7 +606,7 @@ function BotsSection({
       <MemoryPanel {...memory} bots={live ?? []} disabled={!connected} />
       {deleted?.length ? (
         <>
-          <hr className="bots-separator" />
+          <div className="bots-spacer" aria-hidden="true" />
           <DeletedBotsList
             bots={deleted}
             restoring={restoring}

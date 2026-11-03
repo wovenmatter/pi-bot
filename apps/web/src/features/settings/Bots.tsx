@@ -27,8 +27,8 @@ export const placementOf = (bot: BotSummary): Placement =>
  * first, above every team, never on a team itself (it may lead its own).
  *
  * Order: the orchestrator (with its own team nested under it), then each manager with its members
- * nested under it, then bots on no team; a separator, then Admin Bot; then, when given, another
- * separator and `children` (memory, and the deleted bots).
+ * nested under it, then bots on no team; spacing, then Admin Bot; then, when given, more
+ * spacing and `children` (memory, and the deleted bots).
  */
 export function BotsPanel({
   bots,
@@ -51,7 +51,7 @@ export function BotsPanel({
   onSetOrchestrator: (botId: string | null) => void;
   /** Rename a bot (never Admin Bot, whose name is fixed). */
   onRename: (bot: BotSummary, name: string) => void;
-  /** Shown below Admin Bot after a separator (memory, deleted bots); omit to skip both. */
+  /** Shown below Admin Bot with spacing (memory, deleted bots); omit to skip both. */
   children?: ReactNode;
 }) {
   if (bots === undefined || profiles === undefined) return <Loading />;
@@ -187,14 +187,14 @@ export function BotsPanel({
         </ul>
         {groups.admin ? (
           <>
-            <hr className="bots-separator" />
+            <div className="bots-spacer" aria-hidden="true" />
             <ul className="settings-list">{row(groups.admin)}</ul>
           </>
         ) : null}
       </div>
       {children ? (
         <>
-          <hr className="bots-separator" />
+          <div className="bots-spacer" aria-hidden="true" />
           {children}
         </>
       ) : null}

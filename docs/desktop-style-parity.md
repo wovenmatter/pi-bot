@@ -66,3 +66,11 @@ normal preview service.
 
 The sidebar container stays visually fixed on hover, per the desktop parity correction.
 Only its interactive children receive hover treatments; the rail rim does not change.
+
+## Preview refinement: no decorative dividers
+
+Trey prefers spacing and headings instead of thin divider lines throughout the app.
+Settings sections, account and bot rows, bot-group spacing, account help, chat headers,
+Markdown horizontal rules, and table footers no longer draw decorative separator strokes.
+Keep functional input outlines, focus indicators, disclosure chevrons, table cell boundaries,
+and blockquote styling. Do not reintroduce decorative rules when adding new sections.
