@@ -19,6 +19,7 @@ import { routeHref } from "../routes.ts";
 import { groupBots } from "./bot-groups.ts";
 
 export function Sidebar({
+  collapsed = false,
   bots,
   botId,
   conversationId,
@@ -29,6 +30,7 @@ export function Sidebar({
   onCreate,
   onDelete,
 }: {
+  collapsed?: boolean;
   bots: BotSummary[];
   botId?: string;
   conversationId?: number;
@@ -119,7 +121,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sidebar" aria-label="Navigation">
+    <aside id="app-sidebar" className="sidebar" aria-label="Navigation" hidden={collapsed}>
       <div className="sidebar-top">
         <Brand />
       </div>

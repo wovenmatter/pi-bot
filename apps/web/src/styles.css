@@ -2732,3 +2732,49 @@ details.account-api-key > .settings-list {
 .thread-header {
   min-height: var(--action-height);
 }
+
+/* Woven Matter sidebar hide/reveal: reclaim the rail and keep a corner control. */
+.shell-body {
+  position: relative;
+}
+.sidebar[hidden] {
+  display: none;
+}
+.sidebar-top {
+  padding-right: 52px;
+}
+.sidebar-toggle {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--shell-inset) + 16px);
+  left: calc(var(--shell-inset) + var(--rail-width) - 48px);
+  width: 36px;
+  height: 36px;
+  color: var(--ink);
+}
+.shell-body.sidebar-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sidebar-collapsed .sidebar-toggle {
+  top: calc(var(--shell-inset) + 2px);
+  left: calc(var(--shell-inset) + 8px);
+}
+.sidebar-collapsed .main-content:not(.conversation-page) {
+  padding-top: 52px;
+}
+.sidebar-collapsed .thread-header {
+  padding-left: 52px;
+}
+@media (max-width: 640px) {
+  .sidebar-toggle {
+    top: calc(var(--shell-inset) + 2px);
+    left: auto;
+    right: calc(var(--shell-inset) + 8px);
+  }
+  .shell-body.sidebar-collapsed {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .sidebar-collapsed .sidebar-toggle {
+    right: auto;
+  }
+}

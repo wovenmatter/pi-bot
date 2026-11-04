@@ -7,6 +7,7 @@ import { Settings } from "./features/Settings.tsx";
 import type { BotSummary, OnboardingStatus, ThreadSummary } from "./protocol.ts";
 import { parseRoute, type Route, routeHref } from "./routes.ts";
 import { Sidebar } from "./shell/Sidebar.tsx";
+import { SidebarToggle, useSidebarCollapsed } from "./shell/SidebarToggle.tsx";
 import { useTheme } from "./theme.ts";
 
 function useRoute(): Route {
@@ -24,6 +25,7 @@ function navigate(route: Route) {
 }
 
 export function App() {
+  const [sidebarCollapsed, toggleSidebar] = useSidebarCollapsed();
   const client = useMemo(() => new PiBotClient(defaultSocketUrl()), []);
   const [connection, setConnection] = useState<ConnectionState>(client.state);
   const [bots, setBots] = useState<BotSummary[]>();
@@ -161,8 +163,10 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <div className="shell-body">
+      <div className={`shell-body${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+        <SidebarToggle collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
         <Sidebar
+          collapsed={sidebarCollapsed}
           bots={bots ?? []}
           botId={route.botId}
           conversationId={route.conversationId}

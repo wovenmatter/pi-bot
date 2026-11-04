@@ -151,3 +151,13 @@ click-position lighting overlay.
 
 Composer send/stop actions retain a 50% radius after the shared button geometry rules,
 so both 36px pointer targets and 44px touch targets remain circular.
+
+## Sidebar visibility
+
+The top-right sidebar control uses Woven Matter’s rounded sidebar glyph and
+36-pixel button. Hiding navigation gives its space to the current page and moves
+the reveal control to the upper-left corner. Showing it restores navigation
+without remounting the chat or sidebar, preserving drafts and selection. The
+choice is browser-local and survives reloads. On narrow screens, hiding navigation
+also removes its stacked row. The toggle keeps keyboard focus and exposes its
+expanded state and controlled sidebar to assistive technology.
