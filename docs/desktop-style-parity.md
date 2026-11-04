@@ -126,3 +126,17 @@ hit targets, and layout remain stationary. CSS `:active` releases naturally on p
 or cancellation without capturing text selection or scrolling. Keyboard focus retains the
 focus glow without a press animation. Reduced motion removes deformation and shimmer.
 These timing/scale values are a web approximation, not exported native system constants.
+
+### Shared control sizing and feedback
+
+At Treys request, the shared web control rules now supersede the reference tables
+mixed button, icon, segment, navigation and disclosure sizes. Actions use a 36px minimum
+height (44px with a coarse pointer), 12px horizontal text padding, 12.5px medium labels,
+and the shared control radius. Icon-only actions use a square of the same height; native
+selects reserve an additional 20px on the right for their chevron.
+
+Quiet controls start transparent and use the same 72% soft hover/focus fill and full soft
+pressed fill, with a 120ms color transition and no per-type press scaling. Secondary
+buttons retain their subtle idle fill; primary actions retain their semantic primary
+colors, and selected navigation/tab states remain distinct. Disabled controls share 40%
+opacity. Model-detail controls follow these rules instead of a separate compact style.

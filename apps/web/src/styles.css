@@ -2618,29 +2618,141 @@ details.account-api-key > .settings-list {
   flex-shrink: 0;
 }
 
-/* Pool disclosures use the same compact button surface for main and additional models. */
-.profile-pool-row .model-details-toggle,
-.profile-pool-row .profile-model-facts > summary {
-  min-height: 32px;
-  padding: 0 10px;
-  color: var(--ink);
-  background: color-mix(in srgb, var(--soft) 50%, transparent);
+/* Shared control contract: quiet actions, pickers and disclosures use identical
+ * geometry and interaction fills. Primary/selected states retain their meaning. */
+:root {
+  --action-height: 36px;
+  --action-padding: 12px;
+  --action-hover: color-mix(in srgb, var(--soft) 72%, transparent);
+  --action-pressed: var(--soft);
+}
+:is(
+  .primary,
+  .secondary,
+  .text-button,
+  .utility-button,
+  .link-button,
+  .model-details-toggle,
+  select,
+  .disclosure > summary,
+  .profile-section > summary,
+  .profile-model-facts > summary,
+  details.account-help > summary,
+  .tabs > button,
+  .tabs > a,
+  .thread-reply-link,
+  .nav-link
+) {
+  min-height: var(--action-height);
+  padding: 0 var(--action-padding);
+  border-radius: var(--control-radius);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
   transition: background-color 0.12s ease-out;
 }
-.profile-pool-row .model-details-toggle:hover,
-.profile-pool-row .profile-model-facts > summary:hover {
-  background: color-mix(in srgb, var(--soft) 72%, transparent);
+:root select:not([multiple]) {
+  padding-right: 32px;
 }
-.profile-pool-row .model-details-toggle:active,
-.profile-pool-row .profile-model-facts > summary:active {
-  background: var(--soft);
+:is(.model-details-toggle, .profile-model-facts > summary, .utility-button, .link-button) {
+  color: var(--ink);
+  background: transparent;
+}
+:is(
+  .icon-button,
+  .icon-button.small,
+  .rail-action,
+  .icon-button.rail-action,
+  .send-button,
+  .stop-button,
+  .composer-attachment button
+) {
+  width: var(--action-height);
+  height: var(--action-height);
+  min-height: var(--action-height);
+  padding: 0;
+  border-radius: var(--control-radius);
+  transition: background-color 0.12s ease-out;
+}
+:is(
+  .secondary,
+  .text-button,
+  .utility-button,
+  .link-button,
+  .icon-button,
+  .rail-action,
+  .model-details-toggle,
+  select,
+  .disclosure > summary,
+  .profile-section > summary,
+  .profile-model-facts > summary,
+  details.account-help > summary,
+  .tabs > button,
+  .tabs > a,
+  .thread-reply-link,
+  .nav-link,
+  .composer-attachment button
+):hover:not(:disabled),
+:is(button, select, summary, .tabs > a, .nav-link):focus-visible {
+  background-color: var(--action-hover);
+  text-decoration: none;
+}
+:is(
+  .secondary,
+  .text-button,
+  .utility-button,
+  .link-button,
+  .icon-button,
+  .rail-action,
+  .model-details-toggle,
+  select,
+  .disclosure > summary,
+  .profile-section > summary,
+  .profile-model-facts > summary,
+  details.account-help > summary,
+  .tabs > button,
+  .tabs > a,
+  .thread-reply-link,
+  .nav-link,
+  .composer-attachment button
+):active:not(:disabled) {
+  background-color: var(--action-pressed);
+  transform: none;
+  opacity: 1;
+}
+:is(.primary, .send-button, .stop-button):hover:not(:disabled),
+:is(.primary, .send-button, .stop-button):focus-visible {
+  background-color: color-mix(in srgb, var(--primary-fill) 90%, transparent);
+}
+:is(.primary, .send-button, .stop-button):active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--primary-fill) 78%, transparent);
+  transform: none;
+  opacity: 1;
+}
+:is(button, select):disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+@media (pointer: coarse) {
+  :root {
+    --action-height: 44px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .composer-area > form:active::before {
     transform: none;
+    opacity: 1;
   }
   .composer-area > form::after {
     display: none;
   }
+}
+
+/* Containers must accommodate the same targets without clipping their feedback. */
+.code-block-header,
+.markdown-table-footer,
+.disclosure-heading,
+.thread-header {
+  min-height: var(--action-height);
 }
