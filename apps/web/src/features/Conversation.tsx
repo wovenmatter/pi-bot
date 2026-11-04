@@ -4,9 +4,12 @@ import {
   CornerUpLeft,
   GitBranch,
   MessageSquareReply,
+  Mic,
+  Plus,
   Square,
+  X,
 } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
 import { ModelStatusBanner } from "../components/ModelStatusBanner.tsx";
@@ -21,6 +24,7 @@ import {
   mergeEntries,
   threadLabel,
 } from "./conversation-state.ts";
+import { useDictation } from "./use-dictation.ts";
 
 export function Conversation({
   client,
@@ -51,6 +55,66 @@ export function Conversation({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [draft, setDraft] = useState("");
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [attachments, setAttachments] = useState<{ id: number; name: string; text: string }[]>([]);
+  const [readingFiles, setReadingFiles] = useState(false);
+  const attachmentId = useRef(0);
+  const dictation = useDictation(
+    (text) => setDraft((value) => `${value}${value && !/\s$/.test(value) ? " " : ""}${text}`),
+    setError,
+  );
+
+  // Resize on typing, dictation, clearing, and viewport changes, without a layout toggle.
+  useLayoutEffect(() => {
+    const element = editor.current;
+    if (!element) return;
+    const resize = () => {
+      element.style.height = "0px";
+      element.style.height = `${Math.min(element.scrollHeight, 154)}px`;
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    const parent = element.parentElement;
+    if (parent) observer.observe(parent, { box: "content-box" });
+    return () => observer.disconnect();
+  }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: draft changes require measuring the editor
+  useLayoutEffect(() => {
+    const element = editor.current;
+    if (!element) return;
+    element.style.height = "0px";
+    element.style.height = `${Math.min(element.scrollHeight, 154)}px`;
+  }, [draft]);
+
+  async function attachFiles(files: File[]) {
+    setReadingFiles(true);
+    setError(undefined);
+    try {
+      const added: { id: number; name: string; text: string }[] = [];
+      for (const file of files) {
+        if (file.size > 80_000) throw new Error("Attach text files smaller than 80 KB.");
+        if (
+          !file.type.startsWith("text/") &&
+          !/\.(txt|md|csv|json|log|xml|yaml|yml|ts|tsx|js|jsx|py|html|css|sh)$/i.test(file.name)
+        ) {
+          throw new Error(
+            "Attachments currently support text, code, and CSV files. Images and binary documents are not supported yet.",
+          );
+        }
+        const text = await file.text();
+        if (text.includes("\0"))
+          throw new Error("This file contains binary data. Choose a text file.");
+        added.push({ id: ++attachmentId.current, name: file.name, text });
+      }
+      setAttachments((current) => [...current, ...added]);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setReadingFiles(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [following, setFollowing] = useState(true);
@@ -133,8 +197,20 @@ export function Conversation({
 
   async function send(event?: FormEvent) {
     event?.preventDefault();
-    const text = draft.trim();
-    if (!text || sending || !ready || viewed === undefined) return;
+    const draftText = draft.trim();
+    const sentAttachments = attachments;
+    const text = [
+      draftText,
+      ...attachments.map((file) => `Attached text file: ${file.name}\n\n${file.text}`),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    if (!text || sending || readingFiles || dictation.listening || !ready || viewed === undefined)
+      return;
+    if (text.length > 100_000) {
+      setError("Message and attachments must total fewer than 100,000 characters.");
+      return;
+    }
     setSending(true);
     setError(undefined);
     const key = ++pendingKey.current;
@@ -143,7 +219,8 @@ export function Conversation({
     setFollowing(true);
     try {
       await client.request("message.send", { botId: bot.id, conversationId: viewed, text });
-      setDraft((current) => (current.trim() === text ? "" : current));
+      setDraft((current) => (current.trim() === draftText ? "" : current));
+      setAttachments((current) => current.filter((file) => !sentAttachments.includes(file)));
     } catch (e) {
       setState((current) => ({
         ...current,
@@ -308,36 +385,102 @@ export function Conversation({
             </button>
           ) : null}
           <form onSubmit={(event) => void send(event)}>
-            <textarea
-              aria-label={`Message ${bot.name}`}
-              rows={3}
-              placeholder={ready ? `Message ${bot.name}…` : "Connecting…"}
-              value={draft}
-              maxLength={100000}
-              disabled={!ready}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  void send();
-                } else if (event.key === "Escape" && state.running) {
-                  event.preventDefault();
-                  void stop();
-                }
-              }}
-            />
-            <div className="composer-controls">
-              <ComposerActions
-                running={state.running}
-                stopping={stopping}
-                canSend={ready && !sending && draft.trim() !== ""}
-                canStop={ready}
-                onStop={() => void stop()}
+            {attachments.length ? (
+              <div className="composer-attachments">
+                {attachments.map((file) => (
+                  <span className="composer-attachment" key={file.id}>
+                    <span>{file.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${file.name}`}
+                      onClick={() =>
+                        setAttachments((current) => current.filter((item) => item.id !== file.id))
+                      }
+                    >
+                      <Icon icon={X} size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <div className="composer-row">
+              <input
+                ref={fileInput}
+                type="file"
+                hidden
+                multiple
+                accept="text/*,.md,.csv,.json,.log,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.html,.css,.sh"
+                onChange={(event) => void attachFiles(Array.from(event.target.files ?? []))}
               />
+              <button
+                type="button"
+                className="composer-icon"
+                aria-label="Attach files"
+                title="Attach text or code files"
+                disabled={!ready || readingFiles || sending}
+                onClick={() => fileInput.current?.click()}
+              >
+                <Icon icon={Plus} size={18} weight="control" />
+              </button>
+              <textarea
+                ref={editor}
+                aria-label={`Message ${bot.name}`}
+                rows={1}
+                placeholder={ready ? `Message ${bot.name}…` : "Connecting…"}
+                value={draft}
+                maxLength={100000}
+                disabled={!ready}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    void send();
+                  } else if (event.key === "Escape" && state.running) {
+                    event.preventDefault();
+                    void stop();
+                  }
+                }}
+              />
+              <div className="composer-controls">
+                <button
+                  type="button"
+                  className={`composer-icon${dictation.listening ? " recording" : ""}`}
+                  aria-label={dictation.listening ? "Stop dictation" : "Start dictation"}
+                  aria-pressed={dictation.listening}
+                  title={
+                    dictation.supported
+                      ? "Dictate a message"
+                      : "Dictation is unavailable in this browser; use your device’s keyboard dictation"
+                  }
+                  disabled={!ready || !dictation.supported || sending}
+                  onClick={dictation.toggle}
+                >
+                  <Icon icon={Mic} size={18} weight="control" />
+                </button>
+                <ComposerActions
+                  running={state.running}
+                  stopping={stopping}
+                  canSend={
+                    ready &&
+                    !sending &&
+                    !readingFiles &&
+                    !dictation.listening &&
+                    (draft.trim() !== "" || attachments.length > 0)
+                  }
+                  canStop={ready}
+                  onStop={() => void stop()}
+                />
+              </div>
             </div>
           </form>
           <div className="composer-status" role="status" aria-live="polite">
-            {state.running ? `${bot.name} is replying…` : null}
+            {dictation.listening
+              ? "Listening…"
+              : readingFiles
+                ? "Reading files…"
+                : state.running
+                  ? `${bot.name} is replying…`
+                  : null}
           </div>
         </div>
       </div>
@@ -354,7 +497,7 @@ export function stopReply(
   return client.request("conversation.abort", { botId, conversationId });
 }
 
-/** Send, with Stop beside it while a reply is streaming. */
+/** One trailing action: Stop while replying, or Send when a draft is ready. */
 export function ComposerActions({
   running,
   stopping,
@@ -370,7 +513,7 @@ export function ComposerActions({
 }) {
   return (
     <div className="composer-send-actions">
-      {running ? (
+      {running && !canSend ? (
         <button
           type="button"
           className="stop-button"
@@ -381,10 +524,11 @@ export function ComposerActions({
         >
           <Icon icon={Square} size={12} weight="send" />
         </button>
-      ) : null}
-      <button type="submit" className="send-button" aria-label="Send message" disabled={!canSend}>
-        <Icon icon={ArrowUp} size={16} weight="send" />
-      </button>
+      ) : (
+        <button type="submit" className="send-button" aria-label="Send message" disabled={!canSend}>
+          <Icon icon={ArrowUp} size={16} weight="send" />
+        </button>
+      )}
     </div>
   );
 }

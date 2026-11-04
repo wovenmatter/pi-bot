@@ -1129,9 +1129,12 @@ input[type="file"] {
 .composer-area textarea {
   display: block;
   width: 100%;
-  min-height: 60px;
-  max-height: 140px;
-  padding: 0 2px;
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  max-height: 154px;
+  padding: 7px 2px;
+  box-sizing: border-box;
   overflow-y: auto;
   border: 0;
   border-radius: 0;
@@ -1153,13 +1156,64 @@ input[type="file"] {
   align-items: center;
   flex-wrap: nowrap;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 0;
 }
 .composer-controls > * {
   flex-shrink: 0;
 }
-.composer-area form[data-composer-overflow="expanded"] .composer-controls {
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+.composer-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--ink);
+  background: transparent;
+}
+.composer-icon:hover:not(:disabled),
+.composer-icon.recording {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+}
+.composer-attachments {
+  display: flex;
   flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.composer-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  font-size: 12px;
+}
+.composer-attachment > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-attachment button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 4px;
+  min-height: 24px;
+  border: 0;
+  background: transparent;
+  color: inherit;
 }
 @media (pointer: fine) {
   .composer-area .send-button,

@@ -83,3 +83,19 @@ Settings disclosures and grid action buttons fit their content; only their actua
 highlight. Sidebar navigation and segmented tabs retain full clickable targets. Message/rail
 hover may reveal actions without painting the noninteractive container. Text-entry fields
 retain their usable editing width.
+
+### Always-condensed composer
+
+The chat composer follows `DashboardComposer.swift`'s condensed row: 12px horizontal /
+10px vertical insets, rounded translucent surface, 36px controls, attachment plus at the
+leading edge and microphone / send at the trailing edge. There is no expand/collapse
+control or separate toolbar. The editor grows from one line to six visible lines, then
+scrolls; clearing the draft shrinks it again. The send slot becomes Stop while a reply runs and no draft can be sent; Escape also stops the reply.
+
+The plus picker currently accepts text/code/CSV files (80 KB each), previews removable
+filename chips, and includes their contents in the existing text message protocol. Combined
+messages retain the server's 100,000-character limit. Binary documents and images are
+explicitly rejected; full binary uploads are not implemented by this text-only protocol.
+Dictation uses the browser's SpeechRecognition API only after a microphone click, inserts
+final transcripts into the draft, and never auto-sends. Unsupported browsers show a disabled
+microphone with keyboard-dictation guidance. Permission and recognition errors are visible.

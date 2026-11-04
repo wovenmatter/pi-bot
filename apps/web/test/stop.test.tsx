@@ -3,19 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 import { ComposerActions, stopReply } from "../src/features/Conversation.tsx";
 import { applyStreamEvent, emptyConversation } from "../src/features/conversation-state.ts";
 
-const actions = (running: boolean, extra: { stopping?: boolean } = {}) =>
+const actions = (running: boolean, extra: { stopping?: boolean; canSend?: boolean } = {}) =>
   renderToStaticMarkup(
     <ComposerActions
       running={running}
       stopping={extra.stopping ?? false}
-      canSend
+      canSend={extra.canSend ?? false}
       canStop
       onStop={() => {}}
     />,
   );
 
 describe("Stop reply", () => {
-  it("shows Stop beside Send only while a reply is running", () => {
+  it("uses one action slot for Stop while running and Send with a draft", () => {
     const idle = actions(false);
     expect(idle).not.toContain("Stop reply");
     expect(idle).toContain('aria-label="Send message"');
@@ -24,7 +24,10 @@ describe("Stop reply", () => {
     expect(running).toContain('class="stop-button"');
     expect(running).toContain('aria-label="Stop reply"');
     expect(running).toContain("lucide-square");
-    expect(running.indexOf("Stop reply")).toBeLessThan(running.indexOf("Send message"));
+    expect(running).not.toContain('aria-label="Send message"');
+    const draft = actions(true, { canSend: true });
+    expect(draft).toContain('aria-label="Send message"');
+    expect(draft).not.toContain('aria-label="Stop reply"');
     expect(actions(true, { stopping: true })).toMatch(/aria-label="Stop reply"[^>]*disabled/);
   });
 
