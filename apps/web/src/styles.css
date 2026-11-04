@@ -2577,3 +2577,21 @@ details.account-api-key > .settings-list {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* Pool disclosures use the same compact button surface for main and additional models. */
+.profile-pool-row .model-details-toggle,
+.profile-pool-row .profile-model-facts > summary {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--soft) 50%, transparent);
+  transition: background-color 0.12s ease-out;
+}
+.profile-pool-row .model-details-toggle:hover,
+.profile-pool-row .profile-model-facts > summary:hover {
+  background: color-mix(in srgb, var(--soft) 72%, transparent);
+}
+.profile-pool-row .model-details-toggle:active,
+.profile-pool-row .profile-model-facts > summary:active {
+  background: var(--soft);
+}
