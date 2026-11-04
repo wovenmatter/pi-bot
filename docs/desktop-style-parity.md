@@ -99,3 +99,20 @@ explicitly rejected; full binary uploads are not implemented by this text-only p
 Dictation uses the browser's SpeechRecognition API only after a microphone click, inserts
 final transcripts into the draft, and never auto-sends. Unsupported browsers show a disabled
 microphone with keyboard-dictation guidance. Permission and recognition errors are visible.
+
+### Composer materials and focus
+
+All themes follow the native `DashboardComposer` regular interactive glass and
+`DashboardComposerTextEditor` neutral system placeholder. Green and Cognac share the
+Aqua white material over their respective workspace colors; Dark uses a dedicated
+neutral fill that resolves to approximately `#383b37` over its workspace, sampled from
+the supplied native reference. Fine rims and top/bottom sheen approximate macOS glass.
+The disabled dark send button has a muted glass tint.
+
+Clicking the shell focuses the editor; clicking outside releases focus, matching the
+native click-away monitor. The native focus shadow (primary at 18%, radius 14, y 8)
+transitions from the idle shadow with a soft 220ms ease-out. Browser blur, rim lighting,
+and shadow interpolation approximate the system-owned Liquid Glass interaction; CSS
+cannot reproduce its native refraction exactly. Reduced motion disables animation,
+and reduced transparency uses each material's opaque equivalent. The always-condensed
+layout and automatic text growth remain unchanged.

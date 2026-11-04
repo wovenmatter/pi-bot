@@ -44,6 +44,11 @@
   --card-radius: 14px;
   --control-radius: 10px;
   --composer-radius: 18px;
+  --composer-fill: rgb(255 255 255 / 0.82);
+  --composer-solid: #ffffff;
+  --composer-rim: rgb(10 31 22 / 0.06);
+  --composer-highlight: rgb(255 255 255 / 0.65);
+  --composer-placeholder: #8a8c89;
   --row-radius: 8px;
   --segment-radius: 6px;
   --row-height: 28px;
@@ -86,6 +91,12 @@ html[data-theme="dark"] {
   --warning: #f5b84d;
   --danger: #ff8383;
   --workspace: #1b1d1a;
+  /* Native regular glass resolves to #383b37 over the dark workspace. */
+  --composer-fill: rgb(59 62 58 / 0.9);
+  --composer-solid: #383b37;
+  --composer-rim: rgb(229 233 224 / 0.14);
+  --composer-highlight: rgb(255 255 255 / 0.06);
+  --composer-placeholder: #a0a29f;
   --accent: #8bbc9e;
   --whisper: rgb(139 188 158 / 0.05);
   --soft: rgb(139 188 158 / 0.1);
@@ -1113,17 +1124,28 @@ input[type="file"] {
   margin: 0 auto;
   padding: 10px 12px;
   border-radius: var(--composer-radius);
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  background:
+    linear-gradient(
+      to bottom,
+      rgb(255 255 255 / 0.025),
+      transparent 7px,
+      transparent calc(100% - 5px),
+      rgb(255 255 255 / 0.015)
+    ),
+    var(--composer-fill);
   backdrop-filter: blur(24px) saturate(1.15);
   -webkit-backdrop-filter: blur(24px) saturate(1.15);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent),
+    inset 0 0 0 1px var(--composer-rim),
+    inset 0 1px 0 var(--composer-highlight),
     0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent);
-  transition: box-shadow 0.15s ease-out;
+  cursor: text;
+  transition: box-shadow 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .composer-area > form:focus-within {
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent),
+    inset 0 0 0 1px var(--composer-rim),
+    inset 0 1px 0 var(--composer-highlight),
     0 8px 28px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 .composer-area textarea {
@@ -1142,6 +1164,15 @@ input[type="file"] {
   font-size: 15px;
   line-height: 22px;
   resize: none;
+}
+.composer-area textarea::placeholder {
+  color: var(--composer-placeholder);
+}
+html[data-theme="dark"] .composer-area .send-button:disabled {
+  background: rgb(0 66 37 / 0.22);
+  color: rgb(229 233 224 / 0.2);
+  box-shadow: inset 0 0 0 1px rgb(229 233 224 / 0.05);
+  opacity: 1;
 }
 .composer-area textarea:focus {
   border: 0;
@@ -2404,7 +2435,7 @@ details.account-api-key > .settings-list {
     background: var(--rail-reduced);
   }
   .composer-area > form {
-    background: var(--surface);
+    background: var(--composer-solid);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }

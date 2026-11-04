@@ -65,6 +65,24 @@ export function Conversation({
     setError,
   );
 
+  // Like the native composer's click-away monitor, release focus on blank transcript clicks.
+  useEffect(() => {
+    const clickAway = (event: PointerEvent) => {
+      const form = editor.current?.form;
+      const active = document.activeElement;
+      if (
+        form &&
+        event.target instanceof Node &&
+        !form.contains(event.target) &&
+        active instanceof HTMLElement &&
+        form.contains(active)
+      )
+        active.blur();
+    };
+    document.addEventListener("pointerdown", clickAway);
+    return () => document.removeEventListener("pointerdown", clickAway);
+  }, []);
+
   // Resize on typing, dictation, clearing, and viewport changes, without a layout toggle.
   useLayoutEffect(() => {
     const element = editor.current;
@@ -384,7 +402,18 @@ export function Conversation({
               Latest reply
             </button>
           ) : null}
-          <form onSubmit={(event) => void send(event)}>
+          <form
+            onSubmit={(event) => void send(event)}
+            onPointerDown={(event) => {
+              if (
+                event.target instanceof Element &&
+                !event.target.closest("button, input, textarea, a")
+              ) {
+                event.preventDefault();
+                editor.current?.focus();
+              }
+            }}
+          >
             {attachments.length ? (
               <div className="composer-attachments">
                 {attachments.map((file) => (
