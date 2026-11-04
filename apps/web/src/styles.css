@@ -2780,7 +2780,7 @@ details.account-api-key > .settings-list {
 }
 
 /* Sidebar visibility is not a selected-button state. Match DashboardIconButtonStyle. */
-.sidebar-toggle[aria-expanded] {
+.icon-button.sidebar-toggle[aria-expanded] {
   background: transparent;
   box-shadow: none;
   border-radius: 8px;
@@ -2792,11 +2792,11 @@ details.account-api-key > .settings-list {
   color: var(--muted);
 }
 @media (hover: hover) {
-  .sidebar-toggle:hover:not(:disabled) {
+  .icon-button.sidebar-toggle:hover:not(:disabled) {
     background: var(--whisper);
   }
 }
-.sidebar-toggle:active:not(:disabled) {
+.icon-button.sidebar-toggle:active:not(:disabled) {
   background: var(--soft);
   transform: scale(0.94);
 }
@@ -2805,7 +2805,7 @@ details.account-api-key > .settings-list {
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-toggle:active:not(:disabled) {
+  .icon-button.sidebar-toggle:active:not(:disabled) {
     transform: none;
   }
 }
