@@ -167,8 +167,7 @@ export function GitHubSettings({
         <h3 id="git-identity-heading">Git identity</h3>
         <p className="muted">
           Author name and email on commits made by all your bots. Leave email blank to use your
-          GitHub account’s noreply address, or bot@pi-bot.invalid if the SSH-linked account is
-          unavailable.
+          GitHub account’s noreply address.
         </p>
         <div className="settings-fields">
           <label className="settings-field">
