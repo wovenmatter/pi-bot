@@ -12,7 +12,7 @@ the server's environment show as "From …" and can't be removed in the UI.
 | Account                               | Model prefix          | How you connect                                                       |
 | ------------------------------------- | --------------------- | --------------------------------------------------------------------- |
 | Claude subscription (Pro/Max)         | `claude-subscription` | **Sign in with Claude** (runs `claude setup-token`), or paste a token |
-| Anthropic API key                     | `anthropic`           | Key, under "Use an API key instead" on the Claude row                 |
+| Anthropic API key                     | `anthropic`           | Key, under "Use a Claude API key" on the Claude row                   |
 | ChatGPT subscription (Plus/Pro)       | `openai-codex`        | Device code, or browser plus pasting the redirect URL                 |
 | OpenAI API key                        | `openai`              | Key, under the ChatGPT row                                            |
 | Grok account (SuperGrok or X Premium) | `xai`                 | Device code; shares one credential slot with the xAI key              |

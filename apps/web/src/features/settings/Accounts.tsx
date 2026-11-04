@@ -62,7 +62,7 @@ export function AccountRow({
   login?: LoginState;
   disabled?: boolean;
   actions: AccountActions;
-  /** API keys offered instead of this sign-in, folded under "Use an API key instead". */
+  /** API keys offered instead of this sign-in, folded under a provider-specific disclosure. */
   apiKeys?: readonly AccountStatus[];
 }) {
   const keyed = account.method !== "oauth";
@@ -122,7 +122,7 @@ export function AccountRow({
         />
       ) : null}
       <div className="account-meta">
-        <AccountHelp help={account.help} link={account.link} />
+        {keyed ? <AccountHelp help={account.help} link={account.link} /> : null}
         {!keyed && !login && alternates.length ? (
           <span className="account-alternates">
             Or sign in with
@@ -158,7 +158,15 @@ export function AccountRow({
           className="account-help account-api-key"
           open={apiKeys.some((key) => key.configured) || undefined}
         >
-          <summary>Use an API key instead</summary>
+          <summary>
+            {account.id === "claude-oauth"
+              ? "Use a Claude API key"
+              : account.id === "openai-codex"
+                ? "Use an OpenAI API key"
+                : account.id === "xai-oauth"
+                  ? "Use an xAi API key"
+                  : "Use an API key"}
+          </summary>
           <ul className="settings-list">
             {apiKeys.map((key) => (
               <AccountRow key={key.id} account={key} disabled={disabled} actions={actions} />

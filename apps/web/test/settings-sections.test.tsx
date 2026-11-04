@@ -98,7 +98,7 @@ describe("Settings sections", () => {
     // Environment credentials can't be removed from here.
     expect(html).toContain("From OPENROUTER_API_KEY");
     expect(html).not.toContain('aria-label="Remove OpenRouter"');
-    // Short help stays inline; long provider instructions fold under "How it works".
+    // Subscription rows omit provider help, regardless of its length.
     expect(html).not.toContain("How it works");
     const long = "Open the sign-in page on any device, approve, then paste the code it shows here.";
     const folded = renderToStaticMarkup(
@@ -107,8 +107,8 @@ describe("Settings sections", () => {
         actions={actions}
       />,
     );
-    expect(folded).toContain("<summary>How it works</summary>");
-    expect(folded).toContain(long);
+    expect(folded).not.toContain("How it works");
+    expect(folded).not.toContain(long);
   });
 
   it("orders providers and folds each subscription's API key under a collapsed disclosure", () => {
@@ -154,26 +154,26 @@ describe("Settings sections", () => {
       const start = html.indexOf(`aria-label="${name}"`);
       return html.slice(start, html.indexOf("</section>", start));
     };
-    // Subscription sign-in first, its key behind a closed "Use an API key instead".
-    for (const [group, key] of [
-      ["Claude", "Anthropic API key"],
-      ["OpenAI", "OpenAI API key"],
-      ["Grok (xAI)", "xAI API key"],
+    // Subscription sign-in first, its key behind a closed provider-specific disclosure.
+    for (const [group, key, disclosure] of [
+      ["Claude", "Anthropic API key", "Use a Claude API key"],
+      ["OpenAI", "OpenAI API key", "Use an OpenAI API key"],
+      ["Grok (xAI)", "xAI API key", "Use an xAi API key"],
     ] as const) {
       const part = section(group);
-      expect(part).toMatch(
-        /<details class="account-help account-api-key"><summary>Use an API key instead<\/summary>/,
+      expect(part).toContain(
+        `<details class="account-help account-api-key"><summary>${disclosure}</summary>`,
       );
       expect(part.indexOf(">Sign in")).toBeLessThan(
         part.indexOf('<details class="account-help account-api-key"'),
       );
       expect(part.slice(part.indexOf("account-api-key"))).toContain(`aria-label="${key}"`);
-      expect(part.match(/Use an API key instead/g)).toHaveLength(1);
+      expect(part.split(disclosure)).toHaveLength(2);
     }
     // OpenRouter and OpenCode Go: plain key fields, no disclosure.
     for (const group of ["OpenRouter", "OpenCode Go"]) {
       const part = section(group);
-      expect(part).not.toContain("Use an API key instead");
+      expect(part).not.toContain("account-api-key");
       expect(part).toContain('type="password"');
     }
     // One Claude sign-in row: no separate long-lived-token field.
