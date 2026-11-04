@@ -2678,6 +2678,10 @@ details.account-api-key > .settings-list {
   background-color: var(--action-hover);
   text-decoration: none;
 }
+/* Composer actions retain Woven Matter's circular silhouette at both target sizes. */
+.composer-send-actions :is(.send-button, .stop-button) {
+  border-radius: 50%;
+}
 :is(
   .secondary,
   .text-button,

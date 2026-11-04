@@ -143,3 +143,6 @@ opacity. Model-detail controls follow these rules instead of a separate compact 
 The pointer-local radial highlight was removed from every theme: it produced an unwanted
 light patch in Dark. Press/release motion and the outer focus glow remain; there is no
 click-position lighting overlay.
+
+Composer send/stop actions retain a 50% radius after the shared button geometry rules,
+so both 36px pointer targets and 44px touch targets remain circular.
