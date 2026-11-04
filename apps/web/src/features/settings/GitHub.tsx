@@ -165,13 +165,18 @@ export function GitHubSettings({
         onSubmit={saveIdentity}
       >
         <h3 id="git-identity-heading">Git identity</h3>
-        <p className="muted">Author name and email on commits made by all your bots.</p>
+        <p className="muted">
+          Author name and email on commits made by all your bots. Leave email blank to use your
+          GitHub account’s noreply address, or bot@pi-bot.invalid if the SSH-linked account is
+          unavailable.
+        </p>
         <div className="settings-fields">
           <label className="settings-field">
             <span>Name</span>
             <input
               type="text"
               autoComplete="off"
+              placeholder="Your name"
               value={value.name}
               disabled={off}
               onChange={(event) => setIdentity({ ...value, name: event.target.value })}
@@ -184,16 +189,11 @@ export function GitHubSettings({
               autoComplete="off"
               value={value.email}
               disabled={off}
-              placeholder={status.automaticEmail ?? "bot@pi-bot.invalid"}
+              placeholder="you@example.com"
               onChange={(event) => setIdentity({ ...value, email: event.target.value })}
             />
           </label>
         </div>
-        <p className="muted">
-          {status.automaticEmail
-            ? "Leave blank to use the address shown, linked to your GitHub SSH key. Enter an email to override it."
-            : "GitHub account could not be resolved. Leave blank to use bot@pi-bot.invalid, or enter an email to override it."}
-        </p>
         <div className="settings-actions">
           <button
             type="submit"

@@ -204,9 +204,8 @@ its public key. The identity form edits the shared author name and optional emai
 
 ### Automatic Git commit email
 
-Settings → GitHub → Git identity accepts an optional email override. The blank email
-field shows the resolved GitHub noreply address as its placeholder, or
-`bot@pi-bot.invalid` with an explanation when the account cannot be resolved. A blank
+Settings → GitHub → Git identity accepts an optional email override. The form uses generic name and email placeholders and explains the automatic email
+default in the description above the fields. A blank
 `git.user_email` uses the personal GitHub account authenticated by the stored SSH key:
 Pi Bot checks the SSH greeting with pinned host keys, looks up the public account ID,
 and uses `ID+USERNAME@users.noreply.github.com`. Explicit email always wins.
