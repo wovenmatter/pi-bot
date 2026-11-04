@@ -1157,30 +1157,11 @@ input[type="file"] {
   transition-timing-function:
     linear(0, 0.45 10%, 0.8 22%, 1.02 38%, 1.035 50%, 0.995 72%, 1), ease-out;
 }
-.composer-area > form::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  border-radius: inherit;
-  background: radial-gradient(
-    ellipse 220px 100px at var(--press-x, 50%) var(--press-y, 50%),
-    rgb(255 255 255 / 0.22),
-    transparent 75%
-  );
-  opacity: 0;
-  transition: opacity 420ms ease-out;
-}
 .composer-area > form:active::before {
   transform: scale(1.006, 1.035);
   transition:
     transform 110ms ease-out,
     box-shadow 160ms ease-out;
-}
-.composer-area > form:active::after {
-  opacity: 1;
-  transition-duration: 90ms;
 }
 .composer-area > form:focus-within::before {
   box-shadow:
@@ -2743,9 +2724,6 @@ details.account-api-key > .settings-list {
   .composer-area > form:active::before {
     transform: none;
     opacity: 1;
-  }
-  .composer-area > form::after {
-    display: none;
   }
 }
 

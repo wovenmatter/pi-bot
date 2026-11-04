@@ -119,12 +119,11 @@ layout and automatic text growth remain unchanged.
 
 The interaction material now has a distinct press/release response, reflecting the native
 `.regular.interactive()` effect rather than only interpolating a focus shadow. The glass
-layer gently swells on press (110ms) and settles with a damped spring (460ms); a localized
-highlight appears under the pointer and fades on release. Each click responds, including
+layer gently swells on press (110ms) and settles with a damped spring (460ms); the fill remains uniform during the interaction. Each click responds, including
 clicks in an already-focused editor. Only the material layer transforms: content, caret,
 hit targets, and layout remain stationary. CSS `:active` releases naturally on pointer-up
 or cancellation without capturing text selection or scrolling. Keyboard focus retains the
-focus glow without a press animation. Reduced motion removes deformation and shimmer.
+focus glow without a press animation. Reduced motion removes deformation.
 These timing/scale values are a web approximation, not exported native system constants.
 
 ### Shared control sizing and feedback
@@ -140,3 +139,7 @@ pressed fill, with a 120ms color transition and no per-type press scaling. Secon
 buttons retain their subtle idle fill; primary actions retain their semantic primary
 colors, and selected navigation/tab states remain distinct. Disabled controls share 40%
 opacity. Model-detail controls follow these rules instead of a separate compact style.
+
+The pointer-local radial highlight was removed from every theme: it produced an unwanted
+light patch in Dark. Press/release motion and the outer focus glow remain; there is no
+click-position lighting overlay.
