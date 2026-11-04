@@ -200,7 +200,18 @@ tailscale serve --bg --https=10443 http://127.0.0.1:4317       # tailnet only; n
 ```
 
 GitHub settings use one shared SSH key for all bots and show account setup links alongside
-its public key. The identity form edits only the shared author name; saving it preserves any
-configured `git.user_email`. Containers use `bot@pi-bot.invalid` when no commit email is
-configured. This fallback does not claim GitHub author attribution and does not affect account
-notifications. An explicit `git.user_email` remains supported in config and the API.
+its public key. The identity form edits the shared author name and optional email.
+
+### Automatic Git commit email
+
+Settings → GitHub → Git identity accepts an optional email override. A blank
+`git.user_email` uses the personal GitHub account authenticated by the stored SSH key:
+Pi Bot checks the SSH greeting with pinned host keys, looks up the public account ID,
+and uses `ID+USERNAME@users.noreply.github.com`. Explicit email always wins.
+The SSH key is written only to a private temporary file for this check and removed
+afterwards; no account login or GitHub CLI token is needed. Lookups have bounded
+timeouts and are shared across container syncs (10-minute success cache, 30-second
+failure cache). Key replacement invalidates the matching identity. Deploy keys,
+missing keys, and unavailable lookups retain `bot@pi-bot.invalid`; a later container
+sync retries after the failure cache expires. Saving identity applies to running
+bot containers without a service restart.

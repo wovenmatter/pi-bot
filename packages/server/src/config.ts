@@ -203,7 +203,7 @@ export const configSchema = z.strictObject({
   git: z
     .strictObject({
       user_name: z.string().trim().min(1).max(200).optional(),
-      user_email: z.email().max(320).optional(),
+      user_email: z.union([z.email().max(320), z.literal("")]).optional(),
     })
     .prefault({}),
   /** Where a bot's tools run: `docker` gives each bot its own container; `none` gives no tools. */

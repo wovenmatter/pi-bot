@@ -238,7 +238,7 @@ export const requestSchema = z.discriminatedUnion("type", [
     id: requestId,
     type: z.literal("github.setIdentity"),
     name: z.string().trim().min(1).max(200),
-    email: z.email().max(320).optional(),
+    email: z.union([z.email().max(320), z.literal("")]).optional(),
   }),
   z.strictObject({ id: requestId, type: z.literal("server.restart") }),
 ]);

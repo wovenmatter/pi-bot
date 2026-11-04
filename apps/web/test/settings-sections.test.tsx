@@ -401,8 +401,8 @@ describe("Settings sections", () => {
     expect(html).toContain("Replace with a new key");
     expect(html).toContain("all your bots");
     expect(html).toContain('href="https://github.com/settings/ssh/new"');
-    expect(html).not.toContain('type="email"');
-    expect(html).not.toContain("bot@example.com");
+    expect(html).toContain('type="email"');
+    expect(html).toContain("bot@example.com");
     expect(html).not.toContain("PRIVATE KEY-----\n");
     const empty = renderToStaticMarkup(
       <GitHubSettings

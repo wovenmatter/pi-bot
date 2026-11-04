@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type PiBotApp, startPiBot } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
 import type { ServerMessage } from "../src/protocol.ts";
+import { GitHubEmailResolver } from "../src/settings/github-email.ts";
 import { type AccountStatus, type LoginEvent, SettingsService } from "../src/settings/service.ts";
 import type { SshPublicKey } from "../src/settings/ssh-key.ts";
 import { setTomlValues } from "../src/settings/toml-edit.ts";
@@ -792,10 +793,46 @@ describe("settings over the websocket", () => {
     await expect(
       client.request("github.setIdentity", { name: "Pi Bot", email: "not-an-email" }),
     ).rejects.toThrow();
+    await client.request("github.setIdentity", { name: "Pi Bot", email: "" });
+    expect(await client.request("github.get")).toMatchObject({ identity: { name: "Pi Bot" } });
+    expect(parseToml(await readFile(configPath, "utf8")).git).toEqual({
+      user_name: "Pi Bot",
+      user_email: "",
+    });
   });
 });
 
 describe("SettingsService config writes", () => {
+  it("prefers an explicit email and resolves the stored key only in automatic mode", async () => {
+    const resolve = vi
+      .spyOn(GitHubEmailResolver.prototype, "resolve")
+      .mockResolvedValue("123+fixture@users.noreply.github.com");
+    const temp = await tempDir();
+    try {
+      const { generateEd25519Key } = await import("../src/settings/ssh-key.ts");
+      const key = generateEd25519Key("test").pem;
+      const configPath = join(temp.path, "config.toml");
+      await writeFile(
+        configPath,
+        '[profiles.default]\nname = "Default"\nmain = "faux/faux-1"\n[git]\nuser_name = "Fixture"\nuser_email = "explicit@example.com"\n',
+      );
+      const service = new SettingsService({
+        config: await loadConfig(configPath),
+        models: createModels(),
+        credentials: { read: async () => ({ type: "api_key", key }) } as unknown as CredentialStore,
+      });
+      expect((await service.gitMaterial()).email).toBe("explicit@example.com");
+      expect(resolve).not.toHaveBeenCalled();
+      await service.setGitIdentity({ name: "Fixture", email: "" });
+      expect((await service.gitMaterial()).email).toBe("123+fixture@users.noreply.github.com");
+      expect(resolve).toHaveBeenCalledWith(key);
+      resolve.mockResolvedValue(undefined);
+      expect((await service.gitMaterial()).email).toBeUndefined();
+    } finally {
+      resolve.mockRestore();
+      await temp.cleanup();
+    }
+  });
   let dir: Awaited<ReturnType<typeof tempDir>>;
   let path: string;
   let settings: SettingsService;

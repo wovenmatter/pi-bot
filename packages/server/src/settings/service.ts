@@ -12,6 +12,7 @@ import {
   readConfigFile,
   updateConfigFile,
 } from "./config-file.ts";
+import { GitHubEmailResolver } from "./github-email.ts";
 import {
   generateEd25519Key,
   parseOpenSshPrivateKey,
@@ -225,6 +226,7 @@ export type SettingsOptions = {
  * Config edits apply on the next restart.
  */
 export class SettingsService {
+  #githubEmail = new GitHubEmailResolver();
   readonly #credentials: CredentialStore;
   readonly #models: Models;
   readonly #config: PiBotConfig;
@@ -741,10 +743,13 @@ export class SettingsService {
         key = undefined;
       }
     }
+    const email =
+      effective.git.user_email ||
+      (key ? await this.#githubEmail.resolve(key.privateKey) : undefined);
     return {
       ...(key ?? {}),
       ...(effective.git.user_name ? { name: effective.git.user_name } : {}),
-      ...(effective.git.user_email ? { email: effective.git.user_email } : {}),
+      ...(email ? { email } : {}),
     };
   }
 

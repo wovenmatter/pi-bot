@@ -18,17 +18,19 @@ export function GitHubSettings({
   onGenerate: () => Promise<void>;
   onPaste: (privateKey: string) => Promise<boolean>;
   onRemove: () => void;
-  onSaveIdentity: (identity: { name: string }) => Promise<boolean>;
+  onSaveIdentity: (identity: { name: string; email: string }) => Promise<boolean>;
 }) {
   const [pasting, setPasting] = useState(false);
   const [privateKey, setPrivateKey] = useState("");
   const [busy, setBusy] = useState(false);
-  const [identity, setIdentity] = useState<{ name: string }>();
+  const [identity, setIdentity] = useState<{ name: string; email: string }>();
   if (!status) return <Loading />;
   const value = identity ?? {
     name: status.identity.name ?? "",
+    email: status.identity.email ?? "",
   };
-  const identityChanged = value.name !== (status.identity.name ?? "");
+  const identityChanged =
+    value.name !== (status.identity.name ?? "") || value.email !== (status.identity.email ?? "");
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -50,7 +52,8 @@ export function GitHubSettings({
   function saveIdentity(event: FormEvent) {
     event.preventDefault();
     void run(async () => {
-      if (await onSaveIdentity({ name: value.name.trim() })) setIdentity(undefined);
+      if (await onSaveIdentity({ name: value.name.trim(), email: value.email.trim() }))
+        setIdentity(undefined);
     });
   }
   const off = disabled || busy;
@@ -162,7 +165,7 @@ export function GitHubSettings({
         onSubmit={saveIdentity}
       >
         <h3 id="git-identity-heading">Git identity</h3>
-        <p className="muted">Author name on commits made by all your bots.</p>
+        <p className="muted">Author name and email on commits made by all your bots.</p>
         <div className="settings-fields">
           <label className="settings-field">
             <span>Name</span>
@@ -174,7 +177,23 @@ export function GitHubSettings({
               onChange={(event) => setIdentity({ ...value, name: event.target.value })}
             />
           </label>
+          <label className="settings-field">
+            <span>Email</span>
+            <input
+              type="email"
+              autoComplete="off"
+              value={value.email}
+              disabled={off}
+              placeholder="Automatic GitHub noreply email"
+              onChange={(event) => setIdentity({ ...value, email: event.target.value })}
+            />
+          </label>
         </div>
+        <p className="muted">
+          Leave email blank to use the GitHub noreply address for the account linked to your SSH
+          key. If the account cannot be resolved, bots use bot@pi-bot.invalid until it can be
+          resolved.
+        </p>
         <div className="settings-actions">
           <button
             type="submit"
