@@ -176,6 +176,9 @@ describe("settings over the websocket", () => {
       ].join("\n"),
       { mode: 0o640 },
     );
+    vi.spyOn(GitHubEmailResolver.prototype, "resolve").mockResolvedValue(
+      "123+fixture@users.noreply.github.com",
+    );
     app = await startPiBot(await loadConfig(configPath), {
       models: echoModels(15).models,
       settingsModels,
@@ -189,6 +192,7 @@ describe("settings over the websocket", () => {
   afterEach(async () => {
     client.close();
     await app.close();
+    vi.restoreAllMocks();
     await dir.cleanup();
   });
 
@@ -748,7 +752,10 @@ describe("settings over the websocket", () => {
       privateKey: `\r\n${stored.key.replace(/\n/g, "\r\n")}  `,
     });
     expect(pasted.sshKey).toEqual(sshKey);
-    expect(await client.request("github.get")).toMatchObject({ sshKey });
+    expect(await client.request("github.get")).toMatchObject({
+      sshKey,
+      automaticEmail: "123+fixture@users.noreply.github.com",
+    });
 
     await expect(
       client.request("github.setSshKey", { privateKey: sshKey.publicKey }),

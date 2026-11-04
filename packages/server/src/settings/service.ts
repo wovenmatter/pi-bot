@@ -26,6 +26,7 @@ export const GITHUB_SSH_SLOT = "github-ssh";
 
 export type GitHubStatus = {
   sshKey?: SshPublicKey;
+  automaticEmail?: string;
   identity: { name?: string; email?: string };
 };
 
@@ -682,7 +683,9 @@ export class SettingsService {
     const stored = await this.#credentials.read(GITHUB_SSH_SLOT);
     if (stored?.type !== "api_key" || !stored.key) return { identity };
     try {
-      return { sshKey: parseOpenSshPrivateKey(stored.key).info, identity };
+      const sshKey = parseOpenSshPrivateKey(stored.key).info;
+      const automaticEmail = await this.#githubEmail.resolve(stored.key);
+      return { sshKey, identity, ...(automaticEmail ? { automaticEmail } : {}) };
     } catch {
       return { identity };
     }

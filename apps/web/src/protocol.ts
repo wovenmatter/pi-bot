@@ -225,7 +225,11 @@ export type SshPublicKey = {
   fingerprint: string;
   comment?: string;
 };
-export type GitHubStatus = { sshKey?: SshPublicKey; identity: { name?: string; email?: string } };
+export type GitHubStatus = {
+  automaticEmail?: string;
+  sshKey?: SshPublicKey;
+  identity: { name?: string; email?: string };
+};
 
 export type ConfigEdit = { path: string[]; value: string | number | boolean };
 

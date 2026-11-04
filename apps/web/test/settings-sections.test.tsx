@@ -388,6 +388,7 @@ describe("Settings sections", () => {
             comment: "pi-bot",
           },
           identity: { name: "Pi Bot", email: "bot@example.com" },
+          automaticEmail: "123+fixture@users.noreply.github.com",
         }}
         onGenerate={async () => {}}
         onPaste={async () => true}
@@ -403,6 +404,7 @@ describe("Settings sections", () => {
     expect(html).toContain('href="https://github.com/settings/ssh/new"');
     expect(html).toContain('type="email"');
     expect(html).toContain("bot@example.com");
+    expect(html).toContain('placeholder="123+fixture@users.noreply.github.com"');
     expect(html).not.toContain("PRIVATE KEY-----\n");
     const empty = renderToStaticMarkup(
       <GitHubSettings
@@ -414,6 +416,7 @@ describe("Settings sections", () => {
       />,
     );
     expect(empty).toContain("No SSH key stored.");
+    expect(empty).toContain('placeholder="bot@pi-bot.invalid"');
     expect(empty).toContain("Generate a key");
   });
 

@@ -184,15 +184,15 @@ export function GitHubSettings({
               autoComplete="off"
               value={value.email}
               disabled={off}
-              placeholder="Automatic GitHub noreply email"
+              placeholder={status.automaticEmail ?? "bot@pi-bot.invalid"}
               onChange={(event) => setIdentity({ ...value, email: event.target.value })}
             />
           </label>
         </div>
         <p className="muted">
-          Leave email blank to use the GitHub noreply address for the account linked to your SSH
-          key. If the account cannot be resolved, bots use bot@pi-bot.invalid until it can be
-          resolved.
+          {status.automaticEmail
+            ? "Leave blank to use the address shown, linked to your GitHub SSH key. Enter an email to override it."
+            : "GitHub account could not be resolved. Leave blank to use bot@pi-bot.invalid, or enter an email to override it."}
         </p>
         <div className="settings-actions">
           <button
