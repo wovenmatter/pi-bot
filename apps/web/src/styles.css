@@ -2599,8 +2599,8 @@ details.account-api-key > .settings-list {
   flex-shrink: 0;
 }
 
-/* Shared control contract: quiet actions, pickers and disclosures use identical
- * geometry and interaction fills. Primary/selected states retain their meaning. */
+/* Shared action geometry excludes navigation rows and segmented selectors,
+ * which retain their compact Woven Matter sizing. Feedback stays shared below. */
 :root {
   --action-height: 36px;
   --action-padding: 12px;
@@ -2619,10 +2619,7 @@ details.account-api-key > .settings-list {
   .profile-section > summary,
   .profile-model-facts > summary,
   details.account-help > summary,
-  .tabs > button,
-  .tabs > a,
-  .thread-reply-link,
-  .nav-link
+  .thread-reply-link
 ) {
   min-height: var(--action-height);
   padding: 0 var(--action-padding);
@@ -2640,10 +2637,8 @@ details.account-api-key > .settings-list {
   background: transparent;
 }
 :is(
-  .icon-button,
-  .icon-button.small,
-  .rail-action,
-  .icon-button.rail-action,
+  .icon-button:not(.rail-action),
+  .icon-button.small:not(.rail-action),
   .send-button,
   .stop-button,
   .composer-attachment button
@@ -2734,7 +2729,6 @@ details.account-api-key > .settings-list {
 /* Containers must accommodate the same targets without clipping their feedback. */
 .code-block-header,
 .markdown-table-footer,
-.disclosure-heading,
 .thread-header {
   min-height: var(--action-height);
 }

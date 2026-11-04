@@ -128,8 +128,13 @@ These timing/scale values are a web approximation, not exported native system co
 
 ### Shared control sizing and feedback
 
-At Treys request, the shared web control rules now supersede the reference tables
-mixed button, icon, segment, navigation and disclosure sizes. Actions use a 36px minimum
+Shared action rules apply to buttons, ordinary icon actions, pickers and settings
+disclosures. Sidebar rows, rail actions/headings and segmented selectors retain the
+compact Woven Matter dimensions in the reference table above: 28px rows, 24 × 28px
+rail actions, 26px headings and 27px segments with 4px shell inset. Segments retain
+12px labels, 14px horizontal padding and 6px corners; navigation retains 13px labels
+and 8px corners. Coarse-pointer navigation/segments retain their 44px targets.
+Actions use a 36px minimum
 height (44px with a coarse pointer), 12px horizontal text padding, 12.5px medium labels,
 and the shared control radius. Icon-only actions use a square of the same height; native
 selects reserve an additional 20px on the right for their chevron.
