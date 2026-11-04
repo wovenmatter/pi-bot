@@ -66,7 +66,6 @@ export function AccountRow({
   apiKeys?: readonly AccountStatus[];
 }) {
   const keyed = account.method !== "oauth";
-  const alternates = account.loginMethods?.slice(1) ?? [];
   return (
     <li className="settings-row account-row">
       <div className="account-row-main">
@@ -121,25 +120,11 @@ export function AccountRow({
           onSave={(key) => actions.onSaveKey(account, key)}
         />
       ) : null}
-      <div className="account-meta">
-        {keyed ? <AccountHelp help={account.help} link={account.link} /> : null}
-        {!keyed && !login && alternates.length ? (
-          <span className="account-alternates">
-            Or sign in with
-            {alternates.map((method) => (
-              <button
-                key={method.id}
-                type="button"
-                className="link-button"
-                disabled={disabled}
-                onClick={() => actions.onSignIn(account, method.id)}
-              >
-                {method.label}
-              </button>
-            ))}
-          </span>
-        ) : null}
-      </div>
+      {keyed ? (
+        <div className="account-meta">
+          <AccountHelp help={account.help} link={account.link} />
+        </div>
+      ) : null}
       {login ? (
         <LoginPanel
           login={login}

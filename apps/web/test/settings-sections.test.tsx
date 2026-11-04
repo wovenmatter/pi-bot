@@ -511,9 +511,27 @@ describe("Settings sections", () => {
       ],
     };
     const row = renderToStaticMarkup(<AccountsList accounts={[chatgpt]} actions={actions} />);
-    expect(row).toContain("Or sign in with");
-    expect(row).toContain("Browser, then paste the redirect URL");
+    expect(row).not.toContain("Or sign in with");
+    expect(row).not.toContain("Browser, then paste the redirect URL");
     expect(row).not.toContain(">Device code<");
+
+    for (const configured of [false, true]) {
+      const idle = renderToStaticMarkup(
+        <AccountsList accounts={[{ ...chatgpt, configured }]} actions={actions} />,
+      );
+      expect(idle).not.toContain("Or sign in with");
+      expect(idle).toContain(configured ? ">Sign in again<" : ">Sign in<");
+      const active = renderToStaticMarkup(
+        <AccountsList
+          accounts={[{ ...chatgpt, configured }]}
+          actions={actions}
+          login={{ loginId: "test", accountId: chatgpt.id, label: chatgpt.label, events: [] }}
+        />,
+      );
+      expect(active).toContain("Or sign in with");
+      expect(active).toContain("Browser, then paste the redirect URL");
+      expect(active).not.toContain(">Device code<");
+    }
 
     const claude = (placeholder: string) =>
       renderToStaticMarkup(

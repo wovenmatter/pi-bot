@@ -134,7 +134,7 @@ export function LoginPanel({
   onRetry,
 }: {
   login: LoginState;
-  /** Other sign-in variants, offered when this one fails. */
+  /** Other sign-in variants, offered while signing in or after a failure. */
   alternates?: readonly { id: string; label: string }[];
   onRespond: (promptId: string, value: string) => void;
   onCancel: () => void;
@@ -231,9 +231,9 @@ export function LoginPanel({
           <span>{view.error}</span>
         </div>
       ) : null}
-      {view.status === "error" && onRetry && alternates.length ? (
+      {view.status !== "done" && onRetry && alternates.length ? (
         <p className="account-alternates">
-          Try instead
+          {view.status === "error" ? "Try instead" : "Or sign in with"}
           {alternates.map((method) => (
             <button
               key={method.id}
