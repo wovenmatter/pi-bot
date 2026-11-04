@@ -474,7 +474,7 @@ input[type="file"] {
   gap: 8px;
   margin: 0 0 16px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--control-radius);
   background: var(--whisper);
   color: var(--ink);
@@ -1847,7 +1847,7 @@ details.account-api-key > .settings-list {
 .icon-button.danger {
   color: var(--danger-ink);
 }
-/* The editor is a card; each part folds to a one-line summary. */
+/* Each editor part folds to a one-line summary. */
 .profile-editing {
   margin: 6px 0;
   list-style: none;
@@ -1858,7 +1858,7 @@ details.account-api-key > .settings-list {
   min-width: 0;
   gap: 2px;
   padding: 16px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--card-radius);
   background: var(--workspace);
 }
@@ -2070,7 +2070,7 @@ details.account-api-key > .settings-list {
   gap: 12px;
   margin-top: 6px;
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--control-radius);
   background: var(--whisper);
 }
@@ -2266,7 +2266,7 @@ details.account-api-key > .settings-list {
 }
 .onboarding-card {
   padding: 22px 24px 24px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--card-radius);
   background: var(--surface);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent);
