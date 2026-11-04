@@ -116,3 +116,13 @@ and shadow interpolation approximate the system-owned Liquid Glass interaction; 
 cannot reproduce its native refraction exactly. Reduced motion disables animation,
 and reduced transparency uses each material's opaque equivalent. The always-condensed
 layout and automatic text growth remain unchanged.
+
+The interaction material now has a distinct press/release response, reflecting the native
+`.regular.interactive()` effect rather than only interpolating a focus shadow. The glass
+layer gently swells on press (110ms) and settles with a damped spring (460ms); a localized
+highlight appears under the pointer and fades on release. Each click responds, including
+clicks in an already-focused editor. Only the material layer transforms: content, caret,
+hit targets, and layout remain stationary. CSS `:active` releases naturally on pointer-up
+or cancellation without capturing text selection or scrolling. Keyboard focus retains the
+focus glow without a press animation. Reduced motion removes deformation and shimmer.
+These timing/scale values are a web approximation, not exported native system constants.

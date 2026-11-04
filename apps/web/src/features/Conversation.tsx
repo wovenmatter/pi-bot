@@ -405,6 +405,12 @@ export function Conversation({
           <form
             onSubmit={(event) => void send(event)}
             onPointerDown={(event) => {
+              const bounds = event.currentTarget.getBoundingClientRect();
+              event.currentTarget.style.setProperty(
+                "--press-x",
+                `${event.clientX - bounds.left}px`,
+              );
+              event.currentTarget.style.setProperty("--press-y", `${event.clientY - bounds.top}px`);
               if (
                 event.target instanceof Element &&
                 !event.target.closest("button, input, textarea, a")
