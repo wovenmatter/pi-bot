@@ -507,7 +507,9 @@ describe("profiles", () => {
     );
     // Metadata is present for inspection, but all four model disclosures start closed.
     const metadata = [...html.matchAll(/<details class="profile-model-facts"( open="")?>/g)];
-    expect(metadata).toHaveLength(4);
+    expect(metadata).toHaveLength(1);
+    expect([...html.matchAll(/aria-expanded="false" aria-controls="([^"]+)"/g)]).toHaveLength(3);
+    expect([...html.matchAll(/<div id="[^"]+" hidden="">/g)]).toHaveLength(3);
     expect(metadata.every((match) => match[1] === undefined)).toBe(true);
     expect(html).toContain('<summary aria-label="Model details for GPT X">Model details</summary>');
     expect(html).toContain(

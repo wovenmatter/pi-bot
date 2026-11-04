@@ -2027,7 +2027,20 @@ details.account-api-key > .settings-list {
   width: 100%;
 }
 .profile-pool-row.profile-pool-self {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.profile-pool-model {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.profile-pool-model > select {
+  min-width: 0;
+  flex: 1;
+}
+.profile-pool-self > .profile-model-facts {
+  grid-column: auto;
 }
 .profile-pool-self-label {
   font-size: 12px;
@@ -2041,6 +2054,7 @@ details.account-api-key > .settings-list {
   font-size: 11.5px;
   line-height: 1.4;
 }
+.model-details-toggle,
 .profile-model-facts > summary {
   display: flex;
   align-items: center;
@@ -2051,9 +2065,21 @@ details.account-api-key > .settings-list {
   color: var(--muted);
   cursor: pointer;
 }
+.available-model-name {
+  order: -1;
+  margin-right: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.model-details-toggle::before,
+.profile-model-facts > summary::before {
+  flex-shrink: 0;
+}
 .profile-model-facts > summary:hover {
   background: color-mix(in srgb, var(--soft) 72%, transparent);
 }
+.model-details-toggle::before,
 .profile-model-facts > summary::before {
   content: "";
   width: 5px;
@@ -2062,6 +2088,7 @@ details.account-api-key > .settings-list {
   border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg);
 }
+.model-details-toggle[aria-expanded="true"]::before,
 .profile-model-facts[open] > summary::before {
   transform: rotate(45deg);
 }
@@ -2086,7 +2113,7 @@ details.account-api-key > .settings-list {
   .profile-pool-row {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .profile-pool-row:not(.profile-fallback-row) > select {
+  .profile-pool-row > .inline-model-facts {
     grid-column: 1 / -1;
   }
 }
@@ -2503,10 +2530,19 @@ details.account-api-key > .settings-list {
 }
 .disclosure > summary,
 .profile-section > summary,
+.model-details-toggle,
 .profile-model-facts > summary {
   width: fit-content;
   max-width: 100%;
 }
 .profile-section-title {
   width: auto;
+}
+
+.model-details-toggle {
+  border: 0;
+  background: transparent;
+  font-size: 11.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }

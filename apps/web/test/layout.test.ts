@@ -42,7 +42,7 @@ describe("profile editor layout", () => {
       /\.profile-pool-row\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/,
     );
     expect(media).toMatch(
-      /\.profile-pool-row:not\(\.profile-fallback-row\)\s*>\s*select\s*\{\s*grid-column:\s*1\s*\/\s*-1;/,
+      /\.profile-pool-row\s*>\s*\.inline-model-facts\s*\{\s*grid-column:\s*1\s*\/\s*-1;/,
     );
   });
 });

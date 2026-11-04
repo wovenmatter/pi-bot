@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { Icon } from "../../components/Icon.tsx";
 import { Loading } from "../../components/ui.tsx";
 import type {
@@ -208,33 +208,65 @@ export function priceTierTexts(pricing: ModelPricing | undefined): string[] {
 export function ModelFacts({
   providers,
   model,
+  name,
+  control,
 }: {
   providers: readonly ProviderModels[];
   model: string;
+  name?: string;
+  control?: ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
   const found = findModel(providers, model);
   const pricing = found?.model.pricing;
   const tiers = priceTierTexts(pricing);
+  const content = (
+    <div className="profile-model-details-content">
+      <small className="muted">
+        <code>{model}</code>
+      </small>
+      <small className="muted">{modelFactsText(providers, model)}</small>
+      {tiers.length ? (
+        <ul>
+          {tiers.map((tier) => (
+            <li key={tier}>
+              <small className="muted">{tier}</small>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+  if (control) {
+    return (
+      <div className="inline-model-facts">
+        <div className="profile-pool-model">
+          {control}
+          <button
+            type="button"
+            className="model-details-toggle"
+            aria-label={`Model details for ${found?.model.name ?? model}`}
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            onClick={() => setExpanded(!expanded)}
+          >
+            Model details
+          </button>
+        </div>
+        <div id={detailsId} hidden={!expanded}>
+          {content}
+        </div>
+      </div>
+    );
+  }
   return (
     <details className="profile-model-facts" key={model}>
       <summary aria-label={`Model details for ${found?.model.name ?? model}`}>
+        {name ? <strong className="available-model-name">{name}</strong> : null}
         Model details
       </summary>
-      <div className="profile-model-details-content">
-        <small className="muted">
-          <code>{model}</code>
-        </small>
-        <small className="muted">{modelFactsText(providers, model)}</small>
-        {tiers.length ? (
-          <ul>
-            {tiers.map((tier) => (
-              <li key={tier}>
-                <small className="muted">{tier}</small>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+      {content}
     </details>
   );
 }
@@ -492,12 +524,18 @@ export function ProfileEditor({
           ) : null}
           {draft.pool.map((entry, index) => (
             <div key={entry.key} className="profile-pool-row">
-              <ModelSelect
+              <ModelFacts
                 providers={providers}
-                value={entry.model}
-                label={`Pool model ${index + 1}`}
-                disabled={busy}
-                onChange={(model) => setPool(index, { model })}
+                model={entry.model}
+                control={
+                  <ModelSelect
+                    providers={providers}
+                    value={entry.model}
+                    label={`Pool model ${index + 1}`}
+                    disabled={busy}
+                    onChange={(model) => setPool(index, { model })}
+                  />
+                }
               />
               <input
                 aria-label={`Notes on pool model ${index + 1}`}
@@ -517,7 +555,6 @@ export function ProfileEditor({
               >
                 <Icon icon={Trash2} size={13} />
               </button>
-              {entry.model ? <ModelFacts providers={providers} model={entry.model} /> : null}
             </div>
           ))}
           <button

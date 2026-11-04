@@ -105,8 +105,11 @@ function AvailableModels({ providers }: { providers: readonly ProviderModels[] }
                 {provider.models.map((model) => (
                   <li key={model.id} className="settings-row compact">
                     <div className="settings-row-text">
-                      <strong>{model.name}</strong>
-                      <ModelFacts providers={providers} model={`${provider.id}/${model.id}`} />
+                      <ModelFacts
+                        providers={providers}
+                        model={`${provider.id}/${model.id}`}
+                        name={model.name}
+                      />
                     </div>
                   </li>
                 ))}
