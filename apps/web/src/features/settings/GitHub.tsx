@@ -59,28 +59,9 @@ export function GitHubSettings({
     <>
       <section className="settings-section" aria-labelledby="ssh-heading">
         <h3 id="ssh-heading">Shared SSH key</h3>
-        <p className="muted">
-          One shared SSH key lets all your bots clone, pull, and push repositories. Generate a
-          dedicated key, then add its public half to GitHub to grant access. Pi Bot stores the
-          private half securely and never displays it.
-        </p>
+        <p className="muted">Shared by all your bots to clone, pull, and push repositories.</p>
         {status.sshKey ? (
           <div className="ssh-key">
-            <p className="muted">
-              Copy the public key below, then open{" "}
-              <a href="https://github.com/settings/ssh/new" target="_blank" rel="noreferrer">
-                GitHub → New SSH key
-              </a>{" "}
-              on the account your bots should use. Choose Authentication Key, paste it into Key, and
-              click Add SSH key. All your bots share that account's repository access.{" "}
-              <a
-                href="https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Setup guide
-              </a>
-            </p>
             <div className="settings-row-text">
               <strong>{status.sshKey.comment ?? status.sshKey.type}</strong>
               <small className="account-status configured">
@@ -107,6 +88,9 @@ export function GitHubSettings({
                 <Icon icon={Copy} size={13} />
                 Copy public key
               </button>
+              <a href="https://github.com/settings/ssh/new" target="_blank" rel="noreferrer">
+                Add key on GitHub ↗
+              </a>
               <button
                 type="button"
                 className="text-button danger"
@@ -178,9 +162,7 @@ export function GitHubSettings({
         onSubmit={saveIdentity}
       >
         <h3 id="git-identity-heading">Git identity</h3>
-        <p className="muted">
-          Author name on commits made by all your bots. This does not change GitHub notifications.
-        </p>
+        <p className="muted">Author name on commits made by all your bots.</p>
         <div className="settings-fields">
           <label className="settings-field">
             <span>Name</span>
