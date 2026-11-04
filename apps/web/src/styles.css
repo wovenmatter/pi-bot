@@ -2778,3 +2778,34 @@ details.account-api-key > .settings-list {
     right: auto;
   }
 }
+
+/* Sidebar visibility is not a selected-button state. Match DashboardIconButtonStyle. */
+.sidebar-toggle[aria-expanded] {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 8px;
+  transition:
+    background-color 0.12s ease-out,
+    transform 0.12s ease-out;
+}
+.sidebar-collapsed .sidebar-toggle {
+  color: var(--muted);
+}
+@media (hover: hover) {
+  .sidebar-toggle:hover:not(:disabled) {
+    background: var(--whisper);
+  }
+}
+.sidebar-toggle:active:not(:disabled) {
+  background: var(--soft);
+  transform: scale(0.94);
+}
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-toggle:active:not(:disabled) {
+    transform: none;
+  }
+}
