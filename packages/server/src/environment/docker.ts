@@ -408,7 +408,7 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
         ? exec('git config --global "$1" "$2"', undefined, key, value)
         : exec('git config --global --unset "$1" || true', undefined, key);
     await identity("user.name", material.name);
-    await identity("user.email", material.email);
+    await identity("user.email", material.email ?? "bot@pi-bot.invalid");
   }
 
   /** Stop every agent connection (server shutdown); containers keep running. */

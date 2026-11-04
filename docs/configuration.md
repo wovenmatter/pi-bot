@@ -198,3 +198,9 @@ loginctl enable-linger $USER
 sudo systemctl enable docker                                   # only with backend = "docker"
 tailscale serve --bg --https=10443 http://127.0.0.1:4317       # tailnet only; never funnel
 ```
+
+GitHub settings use one shared SSH key for all bots and show account setup links alongside
+its public key. The identity form edits only the shared author name; saving it preserves any
+configured `git.user_email`. Containers use `bot@pi-bot.invalid` when no commit email is
+configured. This fallback does not claim GitHub author attribution and does not affect account
+notifications. An explicit `git.user_email` remains supported in config and the API.

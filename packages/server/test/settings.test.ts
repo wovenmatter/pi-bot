@@ -777,9 +777,12 @@ describe("settings over the websocket", () => {
       }),
     ).rejects.toThrow(/passphrase/);
 
+    await client.request("github.setIdentity", { name: "Pi Bot" });
+    expect(parseToml(await readFile(configPath, "utf8")).git).toEqual({ user_name: "Pi Bot" });
     expect(
       await client.request("github.setIdentity", { name: "Pi Bot", email: "bot@example.com" }),
     ).toEqual({ saved: true, restartRequired: true });
+    await client.request("github.setIdentity", { name: "Pi Bot" });
     const toml = await readFile(configPath, "utf8");
     expect(toml).toContain("# my settings");
     expect(parseToml(toml).git).toEqual({ user_name: "Pi Bot", user_email: "bot@example.com" });

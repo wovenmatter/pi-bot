@@ -18,19 +18,17 @@ export function GitHubSettings({
   onGenerate: () => Promise<void>;
   onPaste: (privateKey: string) => Promise<boolean>;
   onRemove: () => void;
-  onSaveIdentity: (identity: { name: string; email: string }) => Promise<boolean>;
+  onSaveIdentity: (identity: { name: string }) => Promise<boolean>;
 }) {
   const [pasting, setPasting] = useState(false);
   const [privateKey, setPrivateKey] = useState("");
   const [busy, setBusy] = useState(false);
-  const [identity, setIdentity] = useState<{ name: string; email: string }>();
+  const [identity, setIdentity] = useState<{ name: string }>();
   if (!status) return <Loading />;
   const value = identity ?? {
     name: status.identity.name ?? "",
-    email: status.identity.email ?? "",
   };
-  const identityChanged =
-    value.name !== (status.identity.name ?? "") || value.email !== (status.identity.email ?? "");
+  const identityChanged = value.name !== (status.identity.name ?? "");
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -52,8 +50,7 @@ export function GitHubSettings({
   function saveIdentity(event: FormEvent) {
     event.preventDefault();
     void run(async () => {
-      if (await onSaveIdentity({ name: value.name.trim(), email: value.email.trim() }))
-        setIdentity(undefined);
+      if (await onSaveIdentity({ name: value.name.trim() })) setIdentity(undefined);
     });
   }
   const off = disabled || busy;
@@ -61,17 +58,29 @@ export function GitHubSettings({
   return (
     <>
       <section className="settings-section" aria-labelledby="ssh-heading">
-        <h3 id="ssh-heading">SSH key</h3>
+        <h3 id="ssh-heading">Shared SSH key</h3>
         <p className="muted">
-          Lets bots clone and push over SSH. Use a dedicated key without a passphrase. The private
-          key stays in the credential store and is never shown again; add the public key below to{" "}
-          <a href="https://github.com/settings/ssh/new" target="_blank" rel="noreferrer">
-            GitHub → SSH keys
-          </a>{" "}
-          (or a repository's deploy keys).
+          One shared SSH key lets all your bots clone, pull, and push repositories. Generate a
+          dedicated key, then add its public half to GitHub to grant access. Pi Bot stores the
+          private half securely and never displays it.
         </p>
         {status.sshKey ? (
           <div className="ssh-key">
+            <p className="muted">
+              Copy the public key below, then open{" "}
+              <a href="https://github.com/settings/ssh/new" target="_blank" rel="noreferrer">
+                GitHub → New SSH key
+              </a>{" "}
+              on the account your bots should use. Choose Authentication Key, paste it into Key, and
+              click Add SSH key. All your bots share that account's repository access.{" "}
+              <a
+                href="https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Setup guide
+              </a>
+            </p>
             <div className="settings-row-text">
               <strong>{status.sshKey.comment ?? status.sshKey.type}</strong>
               <small className="account-status configured">
@@ -169,7 +178,9 @@ export function GitHubSettings({
         onSubmit={saveIdentity}
       >
         <h3 id="git-identity-heading">Git identity</h3>
-        <p className="muted">Author name and email on commits bots make. Saved to config.toml.</p>
+        <p className="muted">
+          Author name on commits made by all your bots. This does not change GitHub notifications.
+        </p>
         <div className="settings-fields">
           <label className="settings-field">
             <span>Name</span>
@@ -181,22 +192,12 @@ export function GitHubSettings({
               onChange={(event) => setIdentity({ ...value, name: event.target.value })}
             />
           </label>
-          <label className="settings-field">
-            <span>Email</span>
-            <input
-              type="email"
-              autoComplete="off"
-              value={value.email}
-              disabled={off}
-              onChange={(event) => setIdentity({ ...value, email: event.target.value })}
-            />
-          </label>
         </div>
         <div className="settings-actions">
           <button
             type="submit"
             className="primary"
-            disabled={off || !identityChanged || !value.name.trim() || !value.email.trim()}
+            disabled={off || !identityChanged || !value.name.trim()}
           >
             Save identity
           </button>

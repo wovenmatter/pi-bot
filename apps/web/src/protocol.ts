@@ -368,7 +368,7 @@ export type Requests = {
   "github.generateSshKey": { body: { comment?: string }; result: { sshKey: SshPublicKey } };
   "github.removeSshKey": { body: Record<never, never>; result: { removed: true } };
   "github.setIdentity": {
-    body: { name: string; email: string };
+    body: { name: string; email?: string };
     result: { saved: true; restartRequired: true };
   };
   "server.restart": {

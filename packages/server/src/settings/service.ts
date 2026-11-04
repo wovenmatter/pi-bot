@@ -748,10 +748,12 @@ export class SettingsService {
     };
   }
 
-  async setGitIdentity(identity: { name: string; email: string }): Promise<void> {
+  async setGitIdentity(identity: { name: string; email?: string }): Promise<void> {
     await this.updateConfig([
       { path: ["git", "user_name"], value: identity.name.trim() },
-      { path: ["git", "user_email"], value: identity.email.trim() },
+      ...(identity.email === undefined
+        ? []
+        : [{ path: ["git", "user_email"], value: identity.email.trim() }]),
     ]);
     this.#onGitChanged?.();
   }
