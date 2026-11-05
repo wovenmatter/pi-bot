@@ -536,22 +536,16 @@ class Connection {
       }
       case "message.send": {
         const target = await manager.get(request.botId);
-        if (request.deliveryId && !(await manager.registry.claimDelivery(request.deliveryId))) {
-          return { duplicate: true };
-        }
-        try {
+        const submit = async () => {
           const { conversation, submission } = await target.send(
             request.text,
             request.conversationId,
             0,
             request.context,
           );
-          if (request.deliveryId) await manager.registry.acceptDelivery(request.deliveryId);
           return { conversationId: conversation.id, submissionId: submission.id };
-        } catch (error) {
-          if (request.deliveryId) await manager.registry.releaseDelivery(request.deliveryId);
-          throw error;
-        }
+        };
+        return request.deliveryId ? this.#server.delivery(request.deliveryId, submit) : submit();
       }
       case "conversation.abort": {
         const target = await manager.get(request.botId);
@@ -700,11 +694,35 @@ class Connection {
 }
 
 class Server {
+  /**
+   * One submission per host delivery id. A retry that overlaps the original joins it, a later one
+   * finds it accepted, and only a retry after a crash in between can repeat it.
+   */
+  delivery(id: string, submit: () => Promise<unknown>): Promise<unknown> {
+    const running = this.#deliveries.get(id);
+    if (running) return running;
+    const registry = this.manager.registry;
+    const work = (async () => {
+      if (!(await registry.claimDelivery(id))) return { duplicate: true };
+      try {
+        const result = await submit();
+        await registry.acceptDelivery(id);
+        return result;
+      } catch (error) {
+        await registry.releaseDelivery(id);
+        throw error;
+      }
+    })().finally(() => this.#deliveries.delete(id));
+    this.#deliveries.set(id, work);
+    return work;
+  }
+
   readonly manager: BotManager;
   readonly settings: SettingsService | undefined;
   readonly restart: (() => Promise<RestartAccepted>) | undefined;
   readonly connections = new Set<Connection>();
   readonly identity: { protocol: number; installationId: string; capabilities: string[] };
+  readonly #deliveries = new Map<string, Promise<unknown>>();
   readonly woven: WovenMCP | undefined;
 
   constructor(

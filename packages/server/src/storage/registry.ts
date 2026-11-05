@@ -237,6 +237,14 @@ export class BotRegistry {
       await this.#db.exec(`ALTER TABLE ${BOTS_TABLE} RENAME COLUMN is_top TO is_orchestrator`);
       columns.add("is_orchestrator");
     }
+    const deliveryColumns = await this.#db.all<{ name: string }>(
+      `PRAGMA table_info(${DELIVERIES_TABLE})`,
+    );
+    if (!deliveryColumns.some((column) => column.name === "accepted")) {
+      await this.#db.exec(
+        `ALTER TABLE ${DELIVERIES_TABLE} ADD COLUMN accepted INTEGER NOT NULL DEFAULT 0`,
+      );
+    }
     const added: [string, string][] = [
       ["deleted_at", "TEXT"],
       ["kind", "TEXT NOT NULL DEFAULT 'bot'"],

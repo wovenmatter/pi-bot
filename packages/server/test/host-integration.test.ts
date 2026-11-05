@@ -51,6 +51,18 @@ describe("Woven host protocol", () => {
     expect(retry).toEqual({ duplicate: true });
   });
 
+  it("joins a retry that overlaps the original delivery", async () => {
+    const { bots } = (await client.request("bots.list")) as { bots: BotSummary[] };
+    const botId = bots[0]?.id as string;
+    const body = { botId, text: "session finished", deliveryId: "delivery-3" };
+    const [first, retry] = (await Promise.all([
+      client.request("message.send", body),
+      client.request("message.send", body),
+    ])) as [{ submissionId?: unknown }, { submissionId?: unknown }];
+    expect(first.submissionId).toBeDefined();
+    expect(retry.submissionId).toBe(first.submissionId);
+  });
+
   it("lets a retry through when a delivery was claimed but never accepted", async () => {
     const { bots } = (await client.request("bots.list")) as { bots: BotSummary[] };
     const botId = bots[0]?.id as string;
@@ -63,6 +75,24 @@ describe("Woven host protocol", () => {
     })) as { submissionId?: unknown };
     expect(retry.submissionId).toBeDefined();
     expect(await app.manager.registry.claimDelivery("delivery-2")).toBe(false);
+  });
+
+  it("adds the accepted column to a deliveries table from an earlier revision", async () => {
+    const db = await openSharedDatabase(":memory:");
+    await db.exec(
+      "CREATE TABLE pibot_host_deliveries (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL) STRICT",
+    );
+    await db.run(
+      "INSERT INTO pibot_host_deliveries (id, created_at) VALUES ('old', ?)",
+      Date.now(),
+    );
+    const registry = new BotRegistry(db);
+    await registry.migrate();
+    await registry.migrate();
+    expect(await registry.claimDelivery("old")).toBe(true);
+    await registry.acceptDelivery("old");
+    expect(await registry.claimDelivery("old")).toBe(false);
+    await db.close();
   });
 
   it("publishes the same persisted UUID and capabilities on health and hello after restart", async () => {
