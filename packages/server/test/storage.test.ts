@@ -8,6 +8,7 @@ import {
   BOTS_TABLE,
   BotRegistry,
   botPrefix,
+  DELIVERIES_TABLE,
   GROUPS_TABLE,
   LIMITS_TABLE,
   MEMORY_TABLE,
@@ -136,6 +137,7 @@ describe("shared storage", () => {
             LIMITS_TABLE,
             MEMORY_TABLE,
             GROUPS_TABLE,
+            DELIVERIES_TABLE,
           ].includes(name)
         )
           continue;
