@@ -158,6 +158,13 @@ export const requestSchema = z.discriminatedUnion("type", [
     entryId: z.number().int().nonnegative(),
     // Strict: threads cannot be named or renamed (`title` is rejected).
   }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("thread.setPinned"),
+    botId,
+    conversationId,
+    pinned: z.boolean(),
+  }),
   z.object({
     id: requestId,
     type: z.literal("threads.list"),
@@ -314,6 +321,7 @@ export type OnboardingStatus = {
 };
 export type DeletedBotSummary = BotSummary & { deletedAt: string };
 export type ThreadSummary = {
+  pinned?: true;
   conversationId: number;
   parentConversationId: number;
   forkedAt: number;
@@ -327,6 +335,8 @@ export type ConversationSnapshot = {
   botId: string;
   conversationId: number;
   mainConversationId: number;
+  /** The starting message, also included when it falls outside the recent history window. */
+  threadOrigin?: DisplayEntry;
   /** Oldest first; inherited entries carry their parent's conversationId. */
   entries: DisplayEntry[];
   running: boolean;

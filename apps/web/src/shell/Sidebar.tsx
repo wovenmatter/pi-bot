@@ -2,6 +2,8 @@ import {
   Bot,
   MessageSquare,
   MessageSquareReply,
+  Pin,
+  PinOff,
   Plus,
   Settings,
   SlidersHorizontal,
@@ -9,11 +11,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { ConnectionState } from "../api.ts";
 import { Brand } from "../components/Brand.tsx";
 import { Icon } from "../components/Icon.tsx";
-import { threadLabel } from "../features/conversation-state.ts";
+import { sortThreads, threadLabel } from "../features/conversation-state.ts";
 import type { BotSummary, ThreadSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
 import { groupBots } from "./bot-groups.ts";
@@ -29,6 +31,7 @@ export function Sidebar({
   connection,
   onCreate,
   onDelete,
+  onPin,
 }: {
   collapsed?: boolean;
   bots: BotSummary[];
@@ -41,7 +44,40 @@ export function Sidebar({
   connection: ConnectionState;
   onCreate: (name: string) => Promise<void>;
   onDelete: (bot: BotSummary) => void;
+  onPin?: (thread: ThreadSummary, pinned: boolean) => Promise<void>;
 }) {
+  const [pinBusy, setPinBusy] = useState<number>();
+  const [menuThread, setMenuThread] = useState<number>();
+  const pinMenu = useRef<HTMLDivElement>(null);
+  const menuOpener = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (menuThread === undefined) return;
+    pinMenu.current?.querySelector("button")?.focus();
+    const close = (event: PointerEvent) => {
+      if (event.target instanceof Node && !pinMenu.current?.contains(event.target))
+        setMenuThread(undefined);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuThread(undefined);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+      if (menuOpener.current?.isConnected) menuOpener.current.focus();
+    };
+  }, [menuThread]);
+  async function togglePin(thread: ThreadSummary) {
+    if (!onPin || pinBusy !== undefined) return;
+    setMenuThread(undefined);
+    setPinBusy(thread.conversationId);
+    try {
+      await onPin(thread, !thread.pinned);
+    } finally {
+      setPinBusy(undefined);
+    }
+  }
   const [creatingOpen, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -197,19 +233,77 @@ export function Sidebar({
                 <Icon icon={MessageSquare} />
                 <span className="rail-title">Main</span>
               </a>
-              {threads.map((thread) => {
+              {sortThreads(threads).map((thread) => {
                 const active = thread.conversationId === conversationId;
                 return (
-                  <a
-                    key={thread.conversationId}
-                    href={routeHref({ botId: selected.id, conversationId: thread.conversationId })}
-                    className={`nav-link thread-link${active ? " active" : ""}${thread.title ? "" : " untitled"}`}
-                    aria-current={active ? "page" : undefined}
-                    title={threadLabel(thread)}
-                  >
-                    <Icon icon={MessageSquareReply} />
-                    <span className="rail-title">{threadLabel(thread)}</span>
-                  </a>
+                  <div key={thread.conversationId} className="rail-row thread-row">
+                    <a
+                      onContextMenu={
+                        onPin
+                          ? (event) => {
+                              event.preventDefault();
+                              menuOpener.current = event.currentTarget;
+                              setMenuThread(thread.conversationId);
+                            }
+                          : undefined
+                      }
+                      onKeyDown={
+                        onPin
+                          ? (event) => {
+                              if (
+                                event.key === "ContextMenu" ||
+                                (event.shiftKey && event.key === "F10")
+                              ) {
+                                event.preventDefault();
+                                menuOpener.current = event.currentTarget;
+                                setMenuThread(thread.conversationId);
+                              }
+                            }
+                          : undefined
+                      }
+                      href={routeHref({
+                        botId: selected.id,
+                        conversationId: thread.conversationId,
+                      })}
+                      className={`nav-link thread-link${active ? " active" : ""}${thread.title ? "" : " untitled"}`}
+                      aria-current={active ? "page" : undefined}
+                      title={threadLabel(thread)}
+                    >
+                      <Icon icon={MessageSquareReply} />
+                      <span className="rail-title">{threadLabel(thread)}</span>
+                    </a>
+                    {onPin ? (
+                      <button
+                        type="button"
+                        className={`rail-action${thread.pinned ? " thread-pin" : " reveal"}`}
+                        aria-label={`${thread.pinned ? "Unpin" : "Pin"} ${threadLabel(thread)}`}
+                        title={thread.pinned ? "Unpin thread" : "Pin thread"}
+                        aria-pressed={Boolean(thread.pinned)}
+                        disabled={connection !== "open" || pinBusy !== undefined}
+                        onClick={() => void togglePin(thread)}
+                      >
+                        <Icon icon={Pin} size={11} weight="control" />
+                      </button>
+                    ) : null}
+                    {onPin && menuThread === thread.conversationId ? (
+                      <div
+                        className="thread-pin-menu"
+                        ref={pinMenu}
+                        role="menu"
+                        aria-label="Thread actions"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={connection !== "open" || pinBusy !== undefined}
+                          onClick={() => void togglePin(thread)}
+                        >
+                          <Icon icon={thread.pinned ? PinOff : Pin} size={13} />
+                          {thread.pinned ? "Unpin thread" : "Pin thread"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>

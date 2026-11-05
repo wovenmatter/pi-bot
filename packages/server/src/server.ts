@@ -9,6 +9,7 @@ import { type RawData, WebSocket, WebSocketServer } from "ws";
 import type { BotManager, ModelStatus } from "./bots.ts";
 import { NotFoundError } from "./bots.ts";
 import { isAllowedBindHost } from "./config.ts";
+import { entryId as toEntryId } from "./ids.ts";
 import { editFacts, type MemoryEdit } from "./memory.ts";
 import { describeProfile, type ProfileStore } from "./profiles.ts";
 import {
@@ -111,6 +112,7 @@ const thread = (record: ThreadRecord): ThreadSummary => ({
   forkedAt: record.forkedAt,
   ...(record.title ? { title: record.title } : {}),
   createdAt: record.createdAt,
+  ...(record.pinned ? { pinned: true as const } : {}),
 });
 
 /** Hostnames a browser may use to reach us: loopback, the tailnet, MagicDNS names. */
@@ -492,6 +494,17 @@ class Connection {
             : { fromConversationId: request.conversationId }),
           entryId: request.entryId,
         });
+        this.#server.threadsChanged(request.botId);
+        return { thread: thread(record) };
+      }
+      case "thread.setPinned": {
+        await manager.get(request.botId);
+        const record = await manager.registry.setThreadPinned(
+          request.botId,
+          request.conversationId,
+          request.pinned,
+        );
+        this.#server.threadsChanged(request.botId);
         return { thread: thread(record) };
       }
       case "message.send": {
@@ -547,8 +560,26 @@ class Connection {
     this.#subscriptions.set(key, stream);
     this.#subscriptionIds.set(key, subscriptionId);
     await prior?.stop();
-    const page = await conversation
-      .entries({}, HISTORY_LIMIT, undefined, ctx)
+    const { page, origin } = await Promise.all([
+      conversation.entries({}, HISTORY_LIMIT, undefined, ctx),
+      conversation.id === main.id
+        ? undefined
+        : this.#server.manager.registry.getThread(botId, conversation.id),
+    ])
+      .then(async ([page, record]) => {
+        let origin = record ? page.items.find((entry) => entry.id === record.forkedAt) : undefined;
+        if (record && !origin) {
+          origin = (
+            await conversation.entries(
+              { minEntryId: toEntryId(record.forkedAt), maxEntryId: toEntryId(record.forkedAt) },
+              1,
+              undefined,
+              ctx,
+            )
+          ).items[0];
+        }
+        return { page, origin: origin ? displayEntry(origin) : undefined };
+      })
       .catch(async (error) => {
         await stream.stop();
         if (this.#subscriptions.get(key) === stream) {
@@ -622,6 +653,7 @@ class Connection {
       conversationId,
       subscriptionId,
       mainConversationId: main.id,
+      ...(origin ? { threadOrigin: origin } : {}),
       entries,
       running: (stream.value.docs["pi.live"] as LiveState | undefined)?.run !== undefined,
       ...(streaming ? { streaming } : {}),
@@ -643,6 +675,10 @@ class Server {
     this.manager = manager;
     this.settings = settings;
     this.restart = restart;
+  }
+
+  threadsChanged(botId: string): void {
+    for (const connection of this.connections) connection.send({ type: "threads.changed", botId });
   }
 
   memoryChanged(botId: string): void {
@@ -711,11 +747,7 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
     botsChanged() {
       for (const connection of state.connections) connection.send({ type: "bots.changed" });
     },
-    threadsChanged(botId) {
-      for (const connection of state.connections) {
-        connection.send({ type: "threads.changed", botId });
-      }
-    },
+    threadsChanged: (botId) => state.threadsChanged(botId),
     memoryChanged: (botId) => state.memoryChanged(botId),
     async close() {
       await Promise.all([...state.connections].map((connection) => connection.dispose()));

@@ -94,6 +94,7 @@ export type OnboardingStatus = {
 };
 
 export type ThreadSummary = {
+  pinned?: true;
   conversationId: number;
   parentConversationId: number;
   forkedAt: number;
@@ -107,6 +108,8 @@ export type ConversationSnapshot = {
   botId: string;
   conversationId: number;
   mainConversationId: number;
+  /** The starting message, also included when it falls outside the recent history window. */
+  threadOrigin?: DisplayEntry;
   entries: DisplayEntry[];
   running: boolean;
   streaming?: string;
@@ -315,6 +318,10 @@ export type Requests = {
   };
   "thread.fork": {
     body: { botId: string; conversationId?: number; entryId: number };
+    result: { thread: ThreadSummary };
+  };
+  "thread.setPinned": {
+    body: { botId: string; conversationId: number; pinned: boolean };
     result: { thread: ThreadSummary };
   };
   "threads.list": { body: { botId: string }; result: { threads: ThreadSummary[] } };

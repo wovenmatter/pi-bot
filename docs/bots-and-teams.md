@@ -84,3 +84,17 @@ entries, tasks, documents), its thread rows and its registry row (profile assign
 orchestrator flags); then it removes its Docker container and workspace volume and forgets its
 bot-to-bot message counts. Usage limits are per model, not per bot, so nothing there changes. Other
 bots' conversations (messages they received from it) are theirs and stay. It can't be undone.
+
+## Thread navigation and pins
+
+Threads sit under Main with the desktop sidebar's 8-point indent. Pinned threads appear first;
+each group is newest creation first (replies do not reorder it). Pin/unpin using the row action
+or its context menu. Pins live in the shared database and update connected clients.
+
+Opening from the sidebar (or an existing direct link) fills the chat area. Starting or opening
+from a message uses a resizable right pane alongside Main when there is enough room. The header
+switches between full width and side by side; Close returns to Main. Narrow layouts show one
+conversation at a time. Both panes retain their drafts and scrolling through layout changes.
+The thread shows its starting message and its own replies, without faded inherited history.
+Its model still inherits the conversation up to the starting message; later Main messages and
+thread replies do not automatically copy between conversations. Existing threads remain intact.

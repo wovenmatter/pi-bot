@@ -63,6 +63,7 @@ export type ThreadRecord = {
    */
   readonly title: string;
   readonly createdAt: string;
+  readonly pinned?: true;
 };
 
 type BotRow = {
@@ -86,6 +87,7 @@ type ThreadRow = {
   forked_at_entry: number;
   title: string;
   created_at: string;
+  is_pinned: number;
 };
 
 const BOT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -121,6 +123,7 @@ function toThread(row: ThreadRow): ThreadRecord {
     forkedAt: row.forked_at_entry,
     title: row.title,
     createdAt: row.created_at,
+    ...(row.is_pinned === 1 ? { pinned: true as const } : {}),
   };
 }
 
@@ -197,6 +200,13 @@ export class BotRegistry {
         updated_at TEXT NOT NULL
       ) STRICT;
     `);
+    const threadColumns = await this.#db.all<{ name: string }>(
+      `PRAGMA table_info(${THREADS_TABLE})`,
+    );
+    if (!threadColumns.some((column) => column.name === "is_pinned"))
+      await this.#db.exec(
+        `ALTER TABLE ${THREADS_TABLE} ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0`,
+      );
     // Older databases lack later columns: add each missing one (existing bots are plain bots).
     const columns = new Set(
       (await this.#db.all<{ name: string }>(`PRAGMA table_info(${BOTS_TABLE})`)).map(
@@ -530,10 +540,25 @@ export class BotRegistry {
 
   async listThreads(botId: string): Promise<ThreadRecord[]> {
     const rows = await this.#db.all<ThreadRow>(
-      `SELECT * FROM ${THREADS_TABLE} WHERE bot_id = ? ORDER BY created_at DESC, conversation_id`,
+      `SELECT * FROM ${THREADS_TABLE} WHERE bot_id = ? ORDER BY is_pinned DESC, created_at DESC, conversation_id DESC`,
       botId,
     );
     return rows.map(toThread);
+  }
+
+  async setThreadPinned(
+    botId: string,
+    conversationId: number,
+    pinned: boolean,
+  ): Promise<ThreadRecord> {
+    const row = await this.#db.get<ThreadRow>(
+      `UPDATE ${THREADS_TABLE} SET is_pinned = ? WHERE bot_id = ? AND conversation_id = ? RETURNING *`,
+      pinned ? 1 : 0,
+      botId,
+      conversationId,
+    );
+    if (!row) throw new Error("Thread not found");
+    return toThread(row);
   }
 
   /** Woven's `updateConversationTitleIfCurrent`: set the title only while it is still empty. */
@@ -561,7 +586,7 @@ export class BotRegistry {
     const rows = await this.#db.all<ThreadRow>(
       `SELECT * FROM ${THREADS_TABLE} WHERE bot_id = ? ${terms
         .map(() => "AND lower(title) LIKE ? ESCAPE '\\'")
-        .join(" ")} ORDER BY created_at DESC, conversation_id`,
+        .join(" ")} ORDER BY is_pinned DESC, created_at DESC, conversation_id DESC`,
       botId,
       ...terms.map((term) => `%${likeEscape(term)}%`),
     );

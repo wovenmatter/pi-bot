@@ -1499,25 +1499,6 @@ html[data-theme="dark"] .composer-area .send-button:disabled {
 .message-user .notice.message-error {
   margin-left: auto;
 }
-/* Inherited history in a thread reads as context, not as the thread's own messages. */
-.message.inherited {
-  opacity: 0.62;
-}
-.fork-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 28px;
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.fork-divider::before,
-.fork-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
 .message .response-actions {
   min-height: 24px;
   opacity: 0;
@@ -2811,4 +2792,107 @@ details.account-api-key > .settings-list {
   .icon-button.sidebar-toggle:active:not(:disabled) {
     transform: none;
   }
+}
+
+/* Main and thread stay mounted while the reader changes presentation. */
+.conversation-workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.conversation-pane {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.conversation-pane[hidden],
+.thread-resizer[hidden] {
+  display: none;
+}
+.conversation-workspace.split .thread-pane {
+  flex: 0 0 clamp(340px, var(--thread-width), calc(100% - 360px));
+  background: var(--whisper);
+  border-radius: 12px;
+}
+.thread-resizer {
+  border: 0;
+  margin: 0;
+  align-self: stretch;
+  flex: 0 0 12px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.thread-resizer:hover,
+.thread-resizer:focus-visible {
+  background: var(--soft);
+  border-radius: 8px;
+}
+.thread-pane .thread-subtitle {
+  display: none;
+}
+.conversation-workspace.split .transcript {
+  padding-inline: 20px;
+}
+.conversation-workspace.split .composer-area {
+  padding-inline: 16px;
+}
+.conversation-workspace.split .thread-header {
+  padding-inline: 16px 8px;
+}
+.sidebar-collapsed .conversation-workspace.split .thread-pane .thread-header {
+  padding-left: 16px;
+}
+.thread-origin {
+  padding: 12px;
+  margin-bottom: 24px;
+  border-radius: 12px;
+  background: var(--soft);
+}
+.thread-origin-label {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.thread-origin .message {
+  margin-bottom: 0;
+}
+.thread-origin .message-user .message-content {
+  margin-left: 0;
+}
+.thread-row {
+  position: relative;
+  margin-left: 8px;
+}
+.thread-row .thread-pin {
+  color: var(--muted);
+}
+.thread-pin-menu {
+  position: absolute;
+  z-index: 4;
+  top: 100%;
+  right: 0;
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: var(--popup-shadow);
+}
+.thread-pin-menu button {
+  white-space: nowrap;
+  width: 100%;
+}
+@media (pointer: coarse) {
+  .thread-row .rail-action.reveal {
+    opacity: 1;
+  }
+}
+
+.thread-row > .nav-link {
+  padding-right: 32px;
+}
+.thread-row > .rail-action {
+  position: absolute;
+  right: 4px;
 }

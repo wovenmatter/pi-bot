@@ -4,6 +4,15 @@ import type { DisplayEntry, StreamEvent, ThreadSummary } from "../protocol.ts";
 export const threadLabel = (thread: ThreadSummary | undefined): string =>
   thread?.title || "Untitled thread";
 
+/** Pins first; newest creation first inside each group. Replies never reshuffle the list. */
+export const sortThreads = (threads: readonly ThreadSummary[]): ThreadSummary[] =>
+  [...threads].sort(
+    (a, b) =>
+      Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+      b.createdAt.localeCompare(a.createdAt) ||
+      b.conversationId - a.conversationId,
+  );
+
 export type PendingMessage = { key: number; text: string };
 
 export type ConversationState = {

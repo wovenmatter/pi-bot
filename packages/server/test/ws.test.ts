@@ -71,6 +71,73 @@ describe("websocket server", () => {
     }
   });
 
+  it("keeps Main and a thread subscribed independently, and broadcasts persistent pin changes", async () => {
+    const client = await Client.open(wsUrl);
+    const other = await Client.open(wsUrl);
+    try {
+      const { bot } = await client.request<{ bot: { id: string } }>("bots.create", {
+        name: "Two panes",
+      });
+      const main = await client.request<ConversationSnapshot>("conversation.open", {
+        botId: bot.id,
+      });
+      await client.request("message.send", { botId: bot.id, text: "root" });
+      await client.waitFor(isFinalEntry(main.conversationId, "echo: root (n1)"));
+      const loaded = await client.request<ConversationSnapshot>("conversation.open", {
+        botId: bot.id,
+      });
+      const root = loaded.entries[1];
+      if (!root) throw new Error("missing root");
+      const { thread } = await client.request<{ thread: { conversationId: number } }>(
+        "thread.fork",
+        { botId: bot.id, entryId: root.id },
+      );
+      const opened = await client.request<ConversationSnapshot>("conversation.open", {
+        botId: bot.id,
+        conversationId: thread.conversationId,
+      });
+      expect(opened.threadOrigin).toEqual(root);
+      await client.request("message.send", { botId: bot.id, text: "main live" });
+      await client.waitFor(isFinalEntry(main.conversationId, "echo: main live (n2)"));
+      await client.request("message.send", {
+        botId: bot.id,
+        conversationId: thread.conversationId,
+        text: "thread live",
+      });
+      await client.waitFor(isFinalEntry(thread.conversationId, "echo: thread live (n2)"));
+      expect(
+        await client.request("thread.setPinned", {
+          botId: bot.id,
+          conversationId: thread.conversationId,
+          pinned: true,
+        }),
+      ).toMatchObject({ thread: { pinned: true } });
+      await other.waitFor(
+        (message) => message.type === "threads.changed" && message.botId === bot.id,
+      );
+      expect(await other.request("threads.list", { botId: bot.id })).toMatchObject({
+        threads: [{ conversationId: thread.conversationId, pinned: true }],
+      });
+      await expect(
+        client.request("thread.setPinned", {
+          botId: bot.id,
+          conversationId: main.conversationId,
+          pinned: true,
+        }),
+      ).rejects.toThrow("Thread not found");
+      await client.request("conversation.close", {
+        botId: bot.id,
+        conversationId: thread.conversationId,
+        subscriptionId: opened.subscriptionId,
+      });
+      await client.request("message.send", { botId: bot.id, text: "main still live" });
+      await client.waitFor(isFinalEntry(main.conversationId, "echo: main still live (n3)"));
+    } finally {
+      client.close();
+      other.close();
+    }
+  });
+
   it("streams replies, reloads history, and forks threads", async () => {
     const client = await Client.open(wsUrl);
     await client.waitFor((message) => message.type === "hello");

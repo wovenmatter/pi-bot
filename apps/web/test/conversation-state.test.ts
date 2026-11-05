@@ -38,6 +38,12 @@ describe("conversation state", () => {
 });
 
 describe("routes", () => {
+  it("distinguishes full-width sidebar links from in-chat split links", () => {
+    expect(routeHref({ botId: "b", conversationId: 7 })).toBe("#/b/7");
+    const split = { botId: "b", conversationId: 7, threadView: "split" as const };
+    expect(parseRoute(routeHref(split))).toEqual(split);
+    expect(parseRoute("#/b/7?view=invalid")).toEqual({ botId: "b", conversationId: 7 });
+  });
   it("round-trips bot and thread routes", () => {
     expect(parseRoute("")).toEqual({});
     expect(parseRoute(routeHref({ botId: "b" }))).toEqual({ botId: "b" });

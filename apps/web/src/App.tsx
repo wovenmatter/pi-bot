@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ConnectionState, defaultSocketUrl, errorMessage, PiBotClient } from "./api.ts";
 import { Empty, ErrorNotice } from "./components/ui.tsx";
-import { Conversation } from "./features/Conversation.tsx";
+import { ConversationWorkspace } from "./features/ConversationWorkspace.tsx";
+import { sortThreads } from "./features/conversation-state.ts";
 import { Onboarding } from "./features/Onboarding.tsx";
 import { Settings } from "./features/Settings.tsx";
 import type { BotSummary, OnboardingStatus, ThreadSummary } from "./protocol.ts";
@@ -155,11 +156,36 @@ export function App() {
 
   const onForked = useCallback(
     (thread: ThreadSummary) => {
-      setThreads((current) => [...current, thread]);
-      if (route.botId) navigate({ botId: route.botId, conversationId: thread.conversationId });
+      setThreads((current) =>
+        sortThreads([
+          ...current.filter((item) => item.conversationId !== thread.conversationId),
+          thread,
+        ]),
+      );
+      if (route.botId)
+        navigate({
+          botId: route.botId,
+          conversationId: thread.conversationId,
+          threadView: "split",
+        });
     },
     [route.botId],
   );
+
+  async function pinThread(thread: ThreadSummary, pinned: boolean) {
+    const botId = route.botId;
+    if (!botId) return;
+    try {
+      await client.request("thread.setPinned", {
+        botId,
+        conversationId: thread.conversationId,
+        pinned,
+      });
+      await refreshThreads(botId);
+    } catch (error) {
+      setError(errorMessage(error));
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -176,6 +202,7 @@ export function App() {
           connection={connection}
           onCreate={createBot}
           onDelete={(target) => void deleteBot(target)}
+          onPin={pinThread}
         />
         <main
           id="main"
@@ -204,12 +231,13 @@ export function App() {
               onRestored={onRestored}
             />
           ) : bot ? (
-            <Conversation
+            <ConversationWorkspace
               key={bot.id}
               client={client}
               connected={connection === "open"}
               bot={bot}
               conversationId={route.conversationId}
+              threadView={route.threadView}
               threads={threads}
               onMainConversation={setMainConversationId}
               onForked={onForked}

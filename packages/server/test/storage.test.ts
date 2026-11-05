@@ -41,6 +41,58 @@ describe("shared storage", () => {
     }
   });
 
+  it("migrates legacy threads, persists pins, and keeps newest-first order within each group", async () => {
+    const path = join(dir.path, "pins.sqlite");
+    let db = await openSharedDatabase(path);
+    let registry = new BotRegistry(db);
+    await registry.migrate();
+    const botId = "0b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4";
+    await db.run(
+      `INSERT INTO ${BOTS_TABLE} (id, name, schema_prefix, created_at) VALUES (?, ?, ?, ?)`,
+      botId,
+      "Test",
+      botPrefix(botId),
+      "2026-01-01",
+    );
+    // Reproduce a pre-pin table with real existing thread rows.
+    await db.exec(`ALTER TABLE ${THREADS_TABLE} DROP COLUMN is_pinned`);
+    for (const [id, created] of [
+      [2, "2026-01-01"],
+      [3, "2026-01-02"],
+      [4, "2026-01-03"],
+    ] as const)
+      await registry.addThread({
+        botId,
+        conversationId: id,
+        parentConversationId: 1,
+        forkedAt: 1,
+        title: `Thread ${id}`,
+        createdAt: created,
+      });
+    await registry.migrate();
+    await registry.migrate();
+    expect((await registry.listThreads(botId)).map((t) => t.conversationId)).toEqual([4, 3, 2]);
+    expect(await registry.setThreadPinned(botId, 2, true)).toMatchObject({ pinned: true });
+    await registry.setThreadPinned(botId, 3, true);
+    await expect(registry.setThreadPinned("another-bot", 2, true)).rejects.toThrow(
+      "Thread not found",
+    );
+    await db.close();
+    db = await openSharedDatabase(path);
+    registry = new BotRegistry(db);
+    try {
+      expect((await registry.listThreads(botId)).map((t) => t.conversationId)).toEqual([3, 2, 4]);
+      expect((await registry.searchThreads(botId, "Thread")).map((t) => t.conversationId)).toEqual([
+        3, 2, 4,
+      ]);
+      await registry.setThreadPinned(botId, 2, false);
+      expect((await registry.listThreads(botId)).map((t) => t.conversationId)).toEqual([3, 4, 2]);
+      expect((await registry.getThread(botId, 2))?.pinned).toBeUndefined();
+    } finally {
+      await db.close();
+    }
+  });
+
   it("derives Woven-style per-bot prefixes", () => {
     expect(botPrefix("0b9e1c2d-3f4a-4b5c-8d6e-7f8091a2b3c4")).toBe(
       "pibot_0b9e1c2d3f4a4b5c8d6e7f8091a2b3c4_",

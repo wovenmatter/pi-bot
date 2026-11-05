@@ -1,7 +1,6 @@
 import {
   ArrowDown,
   ArrowUp,
-  CornerUpLeft,
   GitBranch,
   MessageSquareReply,
   Mic,
@@ -9,7 +8,14 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { errorMessage, type PiBotClient } from "../api.ts";
 import { Icon } from "../components/Icon.tsx";
 import { ModelStatusBanner } from "../components/ModelStatusBanner.tsx";
@@ -35,6 +41,8 @@ export function Conversation({
   onMainConversation,
   onForked,
   onRunEnd,
+  headerActions,
+  visible = true,
 }: {
   client: PiBotClient;
   connected: boolean;
@@ -46,10 +54,13 @@ export function Conversation({
   onForked: (thread: ThreadSummary) => void;
   /** A reply finished: thread titles may have been generated meanwhile. */
   onRunEnd?: () => void;
+  headerActions?: ReactNode;
+  visible?: boolean;
 }) {
   const runEnd = useRef(onRunEnd);
   runEnd.current = onRunEnd;
   const [state, setState] = useState<ConversationState>(emptyConversation);
+  const [origin, setOrigin] = useState<DisplayEntry>();
   const [viewed, setViewed] = useState<number | undefined>(undefined);
   const [mainId, setMainId] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -138,6 +149,11 @@ export function Conversation({
   const [following, setFollowing] = useState(true);
   const follow = useRef(true);
   const scroll = useRef<HTMLDivElement>(null);
+  const savedScroll = useRef(0);
+  useLayoutEffect(() => {
+    if (visible && scroll.current)
+      scroll.current.scrollTop = follow.current ? scroll.current.scrollHeight : savedScroll.current;
+  }, [visible]);
   const pendingKey = useRef(0);
   /** Model-status notices the reader dismissed, by bot and change time. */
   const [dismissed, setDismissed] = useState<string>();
@@ -153,6 +169,7 @@ export function Conversation({
     setLoading(true);
     setError(undefined);
     setState(emptyConversation);
+    setOrigin(undefined);
     const stop = client.onEvent((message) => {
       if (cancelled || message.botId !== bot.id || message.conversationId !== opened) return;
       if (message.event.kind === "error") setError(message.event.message);
@@ -177,6 +194,7 @@ export function Conversation({
             .catch(() => undefined);
           return;
         }
+        setOrigin(snapshot.threadOrigin);
         setViewed(snapshot.conversationId);
         setMainId(snapshot.mainConversationId);
         onMainConversation(snapshot.mainConversationId);
@@ -210,8 +228,8 @@ export function Conversation({
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run whenever content grows
   useEffect(() => {
     const element = scroll.current;
-    if (element && follow.current) element.scrollTop = element.scrollHeight;
-  }, [state]);
+    if (visible && element && follow.current) element.scrollTop = element.scrollHeight;
+  }, [state, visible]);
 
   async function send(event?: FormEvent) {
     event?.preventDefault();
@@ -293,12 +311,11 @@ export function Conversation({
         item.forkedAt === entry.id &&
         item.conversationId !== viewed,
     );
-  let lastInherited = -1;
-  if (isThread) {
-    state.entries.forEach((entry, index) => {
-      if (entry.conversationId !== viewed) lastInherited = index;
-    });
-  }
+  const entries = isThread
+    ? state.entries.filter((entry) => entry.conversationId === viewed)
+    : state.entries;
+  const startingMessage =
+    origin ?? (thread ? state.entries.find((entry) => entry.id === thread.forkedAt) : undefined);
   const ready =
     connected &&
     !loading &&
@@ -319,12 +336,7 @@ export function Conversation({
             <span className="thread-subtitle" title="Profile">
               {bot.profileName}
             </span>
-            {isThread ? (
-              <a className="text-button" href={routeHref({ botId: bot.id })}>
-                <Icon icon={CornerUpLeft} size={13} weight="control" />
-                Main
-              </a>
-            ) : null}
+            {headerActions}
           </div>
         </header>
         <ModelStatusBanner
@@ -338,14 +350,21 @@ export function Conversation({
           ref={scroll}
           onScroll={() => {
             const element = scroll.current;
-            if (!element) return;
+            if (!element || !visible) return;
+            savedScroll.current = element.scrollTop;
             follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 90;
             setFollowing(follow.current);
           }}
         >
-          {loading && state.entries.length === 0 ? (
+          {isThread && startingMessage ? (
+            <div className="thread-origin">
+              <div className="thread-origin-label">Started from</div>
+              <Message entry={startingMessage} botName={bot.name} replies={[]} botId={bot.id} />
+            </div>
+          ) : null}
+          {loading && entries.length === 0 ? (
             <Loading />
-          ) : state.entries.length === 0 && state.pending.length === 0 && !state.running ? (
+          ) : entries.length === 0 && state.pending.length === 0 && !state.running ? (
             <Empty title={isThread ? "New thread" : `Say hello to ${bot.name}`}>
               {isThread
                 ? "It picks up from the message you chose."
@@ -353,13 +372,11 @@ export function Conversation({
             </Empty>
           ) : (
             <>
-              {state.entries.map((entry, index) => (
+              {entries.map((entry) => (
                 <Message
                   key={entry.id}
                   entry={entry}
                   botName={bot.name}
-                  inherited={index <= lastInherited}
-                  divider={index === lastInherited}
                   replies={repliesTo(entry)}
                   botId={bot.id}
                   onFork={ready ? () => void fork(entry) : undefined}
@@ -453,9 +470,11 @@ export function Conversation({
               </button>
               <textarea
                 ref={editor}
-                aria-label={`Message ${bot.name}`}
+                aria-label={isThread ? `Reply in ${threadLabel(thread)}` : `Message ${bot.name}`}
                 rows={1}
-                placeholder={ready ? `Message ${bot.name}…` : "Connecting…"}
+                placeholder={
+                  ready ? (isThread ? "Reply in thread…" : `Message ${bot.name}…`) : "Connecting…"
+                }
                 value={draft}
                 maxLength={100000}
                 disabled={!ready}
@@ -565,59 +584,56 @@ export function ComposerActions({
 function Message({
   entry,
   botName,
-  inherited,
-  divider,
   replies,
   botId,
   onFork,
 }: {
   entry: DisplayEntry;
   botName: string;
-  inherited: boolean;
-  divider: boolean;
   replies: ThreadSummary[];
   botId: string;
   onFork?: () => void;
 }) {
   return (
-    <>
-      <article className={`message message-${entry.role}${inherited ? " inherited" : ""}`}>
-        {entry.role === "assistant" ? (
-          <div className="message-meta">
-            <strong>{botName}</strong>
-          </div>
-        ) : null}
-        {entry.text ? (
-          <div className="message-content">
-            {entry.role === "assistant" ? <RichText>{entry.text}</RichText> : entry.text}
-          </div>
-        ) : null}
-        {entry.stopped ? <small className="muted">Stopped</small> : null}
-        {entry.error ? <MessageError message={entry.error} /> : null}
-        {replies.length > 0 ? (
-          <div className="thread-replies">
-            {replies.map((reply) => (
-              <a
-                key={reply.conversationId}
-                className={`thread-reply-link${reply.title ? "" : " untitled"}`}
-                href={routeHref({ botId, conversationId: reply.conversationId })}
-              >
-                <Icon icon={MessageSquareReply} size={12} weight="control" />
-                <span>{threadLabel(reply)}</span>
-              </a>
-            ))}
-          </div>
-        ) : null}
-        {onFork ? (
-          <div className="response-actions">
-            <button type="button" className="utility-button" onClick={onFork}>
-              <Icon icon={GitBranch} size={12} weight="control" />
-              <span>Start thread</span>
-            </button>
-          </div>
-        ) : null}
-      </article>
-      {divider ? <div className="fork-divider">Thread starts here</div> : null}
-    </>
+    <article className={`message message-${entry.role}`}>
+      {entry.role === "assistant" ? (
+        <div className="message-meta">
+          <strong>{botName}</strong>
+        </div>
+      ) : null}
+      {entry.text ? (
+        <div className="message-content">
+          {entry.role === "assistant" ? <RichText>{entry.text}</RichText> : entry.text}
+        </div>
+      ) : null}
+      {entry.stopped ? <small className="muted">Stopped</small> : null}
+      {entry.error ? <MessageError message={entry.error} /> : null}
+      {replies.length > 0 ? (
+        <div className="thread-replies">
+          {replies.map((reply) => (
+            <a
+              key={reply.conversationId}
+              className={`thread-reply-link${reply.title ? "" : " untitled"}`}
+              href={routeHref({
+                botId,
+                conversationId: reply.conversationId,
+                threadView: "split",
+              })}
+            >
+              <Icon icon={MessageSquareReply} size={12} weight="control" />
+              <span>{threadLabel(reply)}</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
+      {onFork ? (
+        <div className="response-actions">
+          <button type="button" className="utility-button" onClick={onFork}>
+            <Icon icon={GitBranch} size={12} weight="control" />
+            <span>Start thread</span>
+          </button>
+        </div>
+      ) : null}
+    </article>
   );
 }

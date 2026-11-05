@@ -22,13 +22,15 @@ const MOVED_SECTIONS = new Map<string, SettingsSection>([
 export type Route = {
   botId?: string;
   conversationId?: number;
+  threadView?: "split";
   settings?: true;
   /** Settings tab; absent means the first one (General). */
   section?: SettingsSection;
 };
 
 export function parseRoute(hash: string): Route {
-  const [botId, conversation] = hash.replace(/^#\/?/, "").split("/");
+  const [path, query] = hash.replace(/^#\/?/, "").split("?");
+  const [botId, conversation] = (path ?? "").split("/");
   if (!botId) return {};
   if (botId === "settings") {
     const section =
@@ -38,7 +40,13 @@ export function parseRoute(hash: string): Route {
   }
   const conversationId = conversation ? Number(conversation) : undefined;
   return conversationId !== undefined && Number.isInteger(conversationId) && conversationId >= 0
-    ? { botId, conversationId }
+    ? {
+        botId,
+        conversationId,
+        ...(new URLSearchParams(query).get("view") === "split"
+          ? { threadView: "split" as const }
+          : {}),
+      }
     : { botId };
 }
 
@@ -51,5 +59,5 @@ export function routeHref(route: Route): string {
   if (!route.botId) return "#/";
   return route.conversationId === undefined
     ? `#/${route.botId}`
-    : `#/${route.botId}/${route.conversationId}`;
+    : `#/${route.botId}/${route.conversationId}${route.threadView === "split" ? "?view=split" : ""}`;
 }
