@@ -11,8 +11,9 @@ For normal implementation requests, complete the tested change and update that s
 without requiring Trey to repeat the deployment request. This remains the default until Trey
 changes it. Investigation-only and documentation-only tasks do not require a service restart.
 
-- This is rapid Linux development: deploy validated changes promptly. Deployment locks and
-  macOS support/testing are deferred until explicitly requested; validate on the workstation.
+- This is rapid Linux development: deploy validated changes promptly. Deployment locks are
+  deferred until explicitly requested; validate on the workstation.
+  A Mac host with backend "none" and encrypted SQLite is now validated for Woven Matter use.
 - Host: `workstation-home-1` (Mac SSH alias `workstation`, user `trey`).
 - Runtime checkout: `/home/trey/Projects/pi-bot`, branch `main`.
 - Service: `systemctl --user … pi-bot`.
@@ -162,3 +163,26 @@ rows in all three themes whenever shared interaction styles change.
 - Use the real Pi Durable / pi-ai APIs from the pinned versions; read their `.d.ts` files rather
   than guessing. Record any deviation from the design in the matching
   `docs/*.md` file (keep `README.md` short).
+
+## Woven Matter host integration
+
+- Protocol 1: `hello` and `/health` expose a UUID persisted once in the database and capabilities
+  `host.embed`, `groups`, `woven.mcp`, `message.context`; gate integration features on capabilities.
+- Sidebar groups (`pibot_groups`, `pibot_bots.group_id`) are separate from teams, roles and messaging.
+  Admin Bot cannot be grouped. `groups.*` and `bots.setGroup` are user/host requests; changes push
+  `groups.changed`, membership also `bots.changed`. Purging removes membership. Pin changes push
+  `threads.changed`.
+- `woven-mcp.ts` restores cached definitions without network access at startup. User/host-only
+  `woven.connect/status/disconnect` update every live bot's tool registry without a restart.
+  Its dedicated `woven-mcp` credential slot must never enter the settings account catalog, config,
+  prompts, logs or responses. Managed instances explicitly use encrypted SQLite, not shared Keychain.
+- Woven tools belong to every main channel/thread (Admin Bot included), never `run_subagent`
+  children. Keep Claude's inventory-only MCP path working. Preserve text/images/errors/structured
+  results, task-stable request IDs, read-only/idempotent replay rules and interactive cancellation.
+- `?host=woven` hides sidebar/toggle/brand and settings tabs/theme controls. Keep standalone
+  routes/layout unchanged. Host theme writes no localStorage; drafts survive bot switches in memory.
+  `setContext` feeds only composer sends (max 4000 characters); bot messages cannot supply it.
+- `pnpm package:woven --out <file>` emits deterministic built assets and target-install manifests,
+  never dependencies or runtime data. Packaging skips the preview counter; normal builds retain it.
+- Application test fixtures explicitly use encrypted SQLite so Mac runs never use the shared
+  Keychain. Authentication tests use fakes and never perform a real login.

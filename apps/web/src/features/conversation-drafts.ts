@@ -2,10 +2,10 @@ import { type SetStateAction, useCallback, useState, useSyncExternalStore } from
 
 export type DraftAttachment = { id: number; name: string; text: string };
 type Draft = { text: string; attachments: DraftAttachment[] };
-type DraftKey = number | "main";
+type DraftKey = number | string;
 const emptyDraft: Draft = { text: "", attachments: [] };
 
-/** In-memory drafts for one bot workspace; closing a pane must not discard unsent content. */
+/** In-memory drafts keyed by bot and conversation; closing a pane must not discard unsent content. */
 export class ConversationDrafts {
   readonly #drafts = new Map<DraftKey, Draft>();
   readonly #listeners = new Map<DraftKey, Set<() => void>>();
@@ -40,9 +40,10 @@ export class ConversationDrafts {
 export function useConversationDrafts(
   shared: ConversationDrafts | undefined,
   conversationId?: number,
+  botId?: string,
 ) {
   const [store] = useState(() => shared ?? new ConversationDrafts());
-  const key = conversationId ?? "main";
+  const key = draftKey(botId, conversationId);
   const subscribe = useCallback((notify: () => void) => store.subscribe(key, notify), [store, key]);
   const snapshot = useCallback(() => store.read(key), [store, key]);
   const draft = useSyncExternalStore(subscribe, snapshot, snapshot);
@@ -65,4 +66,8 @@ export function useConversationDrafts(
     [store, key],
   );
   return [draft, setText, setAttachments, store.nextAttachmentId] as const;
+}
+
+export function draftKey(botId: string | undefined, conversationId?: number): DraftKey {
+  return botId ? `${botId}:${conversationId ?? "main"}` : (conversationId ?? "main");
 }

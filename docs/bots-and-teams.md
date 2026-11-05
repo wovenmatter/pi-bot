@@ -19,6 +19,18 @@ Roles describe what a bot does and are separate from its name.
 The sidebar pins Admin Bot, then the orchestrator, then nests members under their manager.
 Manage all of this in Settings → Bots, by asking Admin Bot, or by telling a bot itself.
 
+## Sidebar groups
+
+Sidebar groups are placement only, separate from teams, roles and messaging. The server stores
+an ordered list of `{ id, name, position }` records and an optional `groupId` on each bot.
+Admin Bot cannot join a group. Deleting a group leaves its members ungrouped; purging a bot
+removes its membership. Soft deletion preserves placement for restoration.
+
+Hosts manage groups through `groups.list/create/rename/delete/reorder` and `bots.setGroup`
+(`groupId: null` clears placement). Reordering supplies every group id exactly once. Changes
+push `groups.changed`; membership changes also push `bots.changed`. Woven Matter provides the
+group sidebar; the standalone sidebar keeps its existing team layout.
+
 ## Bot tools
 
 | Who                 | Tools                                                                                                                                                                                                                                                                                                                                        |
@@ -102,6 +114,54 @@ Its model still inherits the conversation up to the starting message; later Main
 thread replies do not automatically copy between conversations. Existing threads remain intact.
 
 Unsent text and text-file attachments also survive closing and switching threads within the
-open bot workspace. Drafts stay in memory, are isolated per conversation, and are cleared after
-an accepted send; navigating to another bot or reloading the page ends that workspace. New
+client. Drafts stay in memory, are isolated by bot and conversation, and survive switching
+bots and settings in both standalone and embedded mode. An accepted send clears its draft;
+reloading the page clears all drafts. New
 threads open at the top so their starting message remains visible before the first reply.
+
+
+## Woven Matter host
+
+`/?host=woven&theme=green` (also `cognac` or `dark`) embeds the normal hash routes without
+Pi Bot's sidebar, toggle or branding. Settings display only the routed section, with no tab
+row or theme selector; General retains the build label. The host theme is authoritative and
+never writes browser theme storage. Standalone routes and layout are unchanged.
+
+`window.wovenPiBotHost` exposes `setTheme(theme)`, `navigate(hashRoute)`,
+`setContext(string | null)` and `focusComposer()`. The optional native handler
+`window.webkit.messageHandlers.wovenBots.postMessage` receives versioned (`v: 1`) `ready`
+(protocol and installation UUID), `route`, `connection`, and `openExternal` messages. HTTP(S)
+links in chat post `openExternal` instead of opening a new window. The bridge exposes no server
+RPC, credentials or files. Native hosts must validate the main frame and origin.
+
+Host context is at most 4000 characters and is attached only by the composer to `message.send`.
+The model sees it before that user turn; displayed transcripts strip it, as with fallback notes.
+Bot-to-bot messages cannot set host context. Woven notifications use ordinary `message.send`
+to a bot's main channel, with text labelled as coming from Woven Matter.
+
+`woven.connect { endpointURL, bearerToken }` configures a Woven MCP endpoint without restarting;
+`woven.status` reports `disconnected`, `connecting`, `ready` or `unavailable`, endpoint and tool
+count, and `woven.disconnect` removes the connection and credential. These requests are
+user/host-only. The token is write-only in a dedicated credential slot, never a Settings account.
+The endpoint and last good tool inventory persist in the database; startup restores them without
+network discovery. Connecting refreshes the list for existing bots and threads. Failed discovery
+keeps the last good list; calls return a clear error when Woven is unavailable. Calls time out
+after two minutes and support user cancellation.
+
+Every bot, including Admin Bot, gets the `woven_*` tools on its main channel and threads;
+`run_subagent` children do not. Claude uses the same inventory through its existing inventory-only
+MCP server. Text, images, errors and structured results are retained. Only server-declared,
+idempotent reads may replay; missing request IDs are persisted per tool task. Browser, computer
+and HTML preview cancellation is forwarded to Woven's cancellation tools. Bots can launch and
+manage agent sessions with `woven_sessions_*`, including coding when Docker is disabled.
+
+`hello` and `/health` advertise protocol 1, a database-persisted installation UUID and capabilities
+`host.embed`, `groups`, `woven.mcp`, `message.context`. Hosts should gate each feature on them.
+
+`pnpm package:woven --out <file>` builds a deterministic gzip tar containing `manifest.json`
+(commit, server version, protocol and lockfile SHA-256), the root manifests/lockfile/LICENSE,
+server manifest/dist/docker and web manifest/dist. It contains no dependencies or runtime data.
+Install dependencies on the target with
+`pnpm install --prod --frozen-lockfile --filter @wovenmatter/pi-bot...`.
+Packaging uses `PI_BOT_PACKAGE_WOVEN=1` internally and never advances `.preview-build-number`;
+normal preview builds retain their existing counter behavior.

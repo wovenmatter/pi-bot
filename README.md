@@ -18,6 +18,10 @@ under his direction.
 - **Bots with roles.** **Admin Bot** is created on first start; it sets up accounts, profiles
   and other bots for you. An optional **Orchestrator** oversees everything. **Managers** lead
   one-level teams of regular **bots**. Bots can create bots and message each other.
+- **Woven Matter integration.** Embed chat and settings behind Woven Matter’s native sidebar,
+  organize bots into sidebar groups, and give bots Woven MCP tools for agent sessions and other
+  app actions. Standalone routes and layout remain available. See
+  [host integration](docs/bots-and-teams.md#woven-matter-host).
 - **Model profiles.** Each bot runs one profile: a main model, 0–5 fallback models, a model pool
   and model preferences for subagents (`run_subagent`; the main model can always use itself),
   and an optional memory extraction model.
@@ -105,10 +109,13 @@ below are development tools, not a replacement for updating that preview.
 pnpm dev:server   # server with --watch on 127.0.0.1:4317
 pnpm dev:web      # Vite on http://127.0.0.1:5173, proxies /ws and /health
 pnpm check        # build, typecheck, lint (Biome) and tests (Vitest)
+pnpm package:woven --out /tmp/pi-bot-bundle.tar.gz  # deterministic host bundle
 ```
 
 Tests never call a real provider: they use pi-ai's faux provider, fake provider HTTP endpoints
-and placeholder credentials, so no API keys are needed. The screenshots in `docs/images` come
+and placeholder credentials in isolated encrypted SQLite stores, so no API keys are needed.
+A Mac host with `[environment] backend = "none"` and encrypted SQLite is validated for
+Woven Matter use; Docker remains optional. The screenshots in `docs/images` come
 from a throwaway instance with a faux "demo" provider and sample bots.
 
 ## Credits and caveats

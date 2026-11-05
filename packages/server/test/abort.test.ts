@@ -47,7 +47,7 @@ describe("conversation.abort", () => {
   beforeEach(async () => {
     dir = await tempDir();
     const config = parseConfig(
-      `[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[storage]\ndata_dir = "${dir.path}"\n`,
+      `[credentials]\nbackend = "encrypted-sqlite"\n[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[storage]\ndata_dir = "${dir.path}"\n`,
     );
     app = await startPiBot(config, { models: slowModels(), port: 0, log: () => {} });
     client = await Client.open(`${app.server.url.replace("http", "ws")}/ws`);

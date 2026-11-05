@@ -16,6 +16,8 @@ export class PiBotClient {
   #socket: WebSocket | undefined;
   #nextId = 1;
   #pending = new Map<number, Pending>();
+  #hello = new Set<(hello: Extract<ServerMessage, { type: "hello" }>) => void>();
+  #groupsChanged = new Set<() => void>();
   #events = new Set<(message: EventMessage) => void>();
   #states = new Set<(state: ConnectionState) => void>();
   #botsChanged = new Set<() => void>();
@@ -102,7 +104,9 @@ export class PiBotClient {
         },
         ["bots.restore", "bots.purge", "bots.delete", "conversation.abort"].includes(type)
           ? 600_000
-          : REQUEST_TIMEOUT_MS,
+          : type === "woven.connect"
+            ? 60_000
+            : REQUEST_TIMEOUT_MS,
       );
       this.#pending.set(id, {
         resolve: (data) => {
@@ -116,6 +120,16 @@ export class PiBotClient {
       });
       socket.send(JSON.stringify({ ...body, id, type }));
     });
+  }
+
+  onHello(listener: (hello: Extract<ServerMessage, { type: "hello" }>) => void): () => void {
+    this.#hello.add(listener);
+    return () => this.#hello.delete(listener);
+  }
+
+  onGroupsChanged(listener: () => void): () => void {
+    this.#groupsChanged.add(listener);
+    return () => this.#groupsChanged.delete(listener);
   }
 
   onEvent(listener: (message: EventMessage) => void): () => void {
@@ -168,6 +182,14 @@ export class PiBotClient {
     try {
       message = JSON.parse(raw) as ServerMessage;
     } catch {
+      return;
+    }
+    if (message.type === "hello") {
+      for (const listener of this.#hello) listener(message);
+      return;
+    }
+    if (message.type === "groups.changed") {
+      for (const listener of this.#groupsChanged) listener();
       return;
     }
     if (message.type === "login") {

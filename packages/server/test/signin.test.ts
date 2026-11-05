@@ -9,6 +9,7 @@ import {
   claudeSetupTokenAuth,
   type SetupTokenProcess,
   type SetupTokenSpawn,
+  setupTokenArgv,
   terminalText,
 } from "../src/claude/setup-token.ts";
 import { EncryptedSqliteCredentialStore } from "../src/credentials/index.ts";
@@ -245,4 +246,13 @@ describe("an expired Claude token", () => {
       await db.close();
     }
   });
+});
+
+it("selects BSD script on Darwin and util-linux script on Linux without running either", () => {
+  const darwin = setupTokenArgv("darwin");
+  expect(darwin.slice(0, 4)).toEqual(["-q", "/dev/null", "/bin/sh", "-c"]);
+  expect(darwin[4]).toContain('exec "$PIBOT_CLAUDE_BIN" setup-token');
+  const linux = setupTokenArgv("linux");
+  expect(linux[0]).toBe("-qfec");
+  expect(linux[2]).toBe("/dev/null");
 });

@@ -32,6 +32,7 @@ import type { BotRecord } from "./storage/registry.ts";
 import { type SubagentLog, subagentExtension } from "./subagent.ts";
 import { type BotPlatform, botTools } from "./tools.ts";
 import { type WebToolsOptions, webTools } from "./web.ts";
+import type { WovenMCP } from "./woven-mcp.ts";
 
 export type CompactionConfig = RawConfig["compaction"];
 
@@ -83,6 +84,7 @@ export type BotAgentOptions = {
   /** `web_search` and `fetch_url` (the app always passes it); omitted: no web tools. */
   readonly web?: WebToolsOptions;
   readonly env?: BotEnvironmentAdapter;
+  readonly woven?: WovenMCP;
   readonly onReport?: (error: unknown, info: unknown) => void;
   readonly compaction?: CompactionConfig;
   /** Fetch for provider requests (native compaction and generation); tests inject a fake. */
@@ -262,6 +264,9 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     ],
   });
   const tools = options.platform ? botTools(options.bot, options.platform) : undefined;
+  const woven = options.woven?.extension(async () =>
+    options.platform ? options.platform.manager().record(options.bot.id) : options.bot,
+  );
   const web = options.web ? webTools(options.web) : undefined;
   // What a subagent keeps: coding tools (with a container) and web tools; nothing bot-specific.
   const childTools = [...(options.env ? [CodingTools] : []), ...(web ? [web] : [])].flatMap(
@@ -274,12 +279,13 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
     ...(options.modelLimit ? { limit: options.modelLimit } : {}),
     botMessaging: tools !== undefined,
     // Subagents never get the bot's tools (bot-to-bot messaging, Admin Bot's) or its preamble.
-    removeFromChild: [identity, ...(tools ? [tools] : [])],
+    removeFromChild: [identity, ...(tools ? [tools] : []), ...(woven ? [woven] : [])],
     ...(options.onSubagent ? { log: options.onSubagent } : {}),
   });
   const extensions = [
     identity,
     extension,
+    ...(woven ? [woven] : []),
     ...(options.env ? [CodingTools] : []),
     ...(tools ? [tools] : []),
     // Subagents keep the web tools: research is typical delegated work.
@@ -298,7 +304,20 @@ export function createBotHarnessOptions(options: BotAgentOptions): BotHarnessOpt
       stream: { transport: "sse", maxRetries: 0 },
       compaction: compactionSettings(options.compaction),
     },
-    attach: (harness) => native.harness.attach(harness),
+    attach: (harness) => {
+      native.harness.attach(harness);
+      if (options.woven) {
+        const client = options.woven;
+        const stop = client.subscribe(() =>
+          registry.install(
+            client.extension(async () =>
+              options.platform ? options.platform.manager().record(options.bot.id) : options.bot,
+            ),
+          ),
+        );
+        void harness.closed.then(stop);
+      }
+    },
     conversationCreated: (tx, conversation) =>
       conversation.owner === undefined && conversation.parent === undefined
         ? configure(tx, conversation.id, defaultAgent(parseModelRef(profile().main)))

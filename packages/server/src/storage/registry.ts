@@ -1,8 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { validateSqliteSchemaPrefix } from "@earendil-works/chord/sqlite";
 import type { SqliteDatabase, SqliteExecutor } from "@earendil-works/pi-durable/storage/sqlite";
 import type { LimitEntry } from "../limits.ts";
 
 /** Shared tables. Bot tables all start with `pibot_<32 hex>_`, so these can never collide. */
+export type SidebarGroup = { id: string; name: string; position: number };
+export const GROUPS_TABLE = "pibot_groups";
+
 export const BOTS_TABLE = "pibot_bots";
 export const THREADS_TABLE = "pibot_threads";
 /** Free-text notes, e.g. the user's plans and comfort spend (`account`), which Admin Bot reads. */
@@ -37,6 +41,8 @@ export type BotRecord = {
    * own). Never Admin Bot.
    */
   readonly orchestrator: boolean;
+  /** Sidebar placement, independent of teams and authority. */
+  readonly groupId?: string;
   /** The model profile the bot runs (`[profiles.<id>]`); unset: the default profile. */
   readonly profile?: string;
   /**
@@ -77,9 +83,10 @@ type BotRow = {
   is_orchestrator: number;
   model: string | null;
   profile: string | null;
+  group_id: string | null;
 };
 const BOT_COLUMNS =
-  "id, name, schema_prefix, created_at, kind, is_manager, manager_id, is_orchestrator, model, profile";
+  "id, name, schema_prefix, created_at, kind, is_manager, manager_id, is_orchestrator, model, profile, group_id";
 type ThreadRow = {
   bot_id: string;
   conversation_id: number;
@@ -110,6 +117,7 @@ function toBot(row: BotRow): BotRecord {
     manager: row.is_manager === 1,
     ...(row.manager_id ? { managerId: row.manager_id } : {}),
     orchestrator: row.is_orchestrator === 1,
+    ...(row.group_id ? { groupId: row.group_id } : {}),
     ...(row.profile ? { profile: row.profile } : {}),
     ...(row.model ? { legacyModel: row.model } : {}),
   };
@@ -168,6 +176,9 @@ export class BotRegistry {
 
   async migrate(): Promise<void> {
     await this.#db.exec(`
+      CREATE TABLE IF NOT EXISTS ${GROUPS_TABLE} (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS ${BOTS_TABLE} (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -227,6 +238,7 @@ export class BotRegistry {
       ["manager_id", "TEXT"],
       ["model", "TEXT"],
       ["profile", "TEXT"],
+      ["group_id", `TEXT REFERENCES ${GROUPS_TABLE}(id) ON DELETE SET NULL`],
       ["is_orchestrator", "INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [name, type] of added) {
@@ -241,6 +253,71 @@ export class BotRegistry {
     await this.#db.exec(
       `CREATE UNIQUE INDEX IF NOT EXISTS pibot_bots_one_orchestrator ON ${BOTS_TABLE}(is_orchestrator) WHERE is_orchestrator = 1`,
     );
+  }
+
+  async installationId(): Promise<string> {
+    await this.#db.run(
+      `INSERT OR IGNORE INTO ${NOTES_TABLE} (name, text, updated_at) VALUES ('installationId', ?, ?)`,
+      randomUUID(),
+      new Date().toISOString(),
+    );
+    const stored = await this.note("installationId");
+    if (!stored) throw new Error("installation identity was not persisted");
+    return stored.text;
+  }
+
+  async listGroups(): Promise<SidebarGroup[]> {
+    return this.#db.all<SidebarGroup>(
+      `SELECT id, name, position FROM ${GROUPS_TABLE} ORDER BY position, id`,
+    );
+  }
+
+  async createGroup(name: string): Promise<SidebarGroup> {
+    const id = randomUUID();
+    await this.#db.run(
+      `INSERT INTO ${GROUPS_TABLE} (id, name, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM ${GROUPS_TABLE}))`,
+      id,
+      name,
+    );
+    const group = (await this.listGroups()).find((group) => group.id === id);
+    if (!group) throw new Error("group was not persisted");
+    return group;
+  }
+
+  async renameGroup(id: string, name: string): Promise<SidebarGroup> {
+    const row = await this.#db.get<SidebarGroup>(
+      `UPDATE ${GROUPS_TABLE} SET name = ? WHERE id = ? RETURNING id, name, position`,
+      name,
+      id,
+    );
+    if (!row) throw new Error("no such group");
+    return row;
+  }
+
+  async deleteGroup(id: string): Promise<void> {
+    await this.#db.transaction(async (tx) => {
+      await tx.run(`UPDATE ${BOTS_TABLE} SET group_id = NULL WHERE group_id = ?`, id);
+      await tx.run(`DELETE FROM ${GROUPS_TABLE} WHERE id = ?`, id);
+    });
+  }
+
+  async reorderGroups(ids: readonly string[]): Promise<SidebarGroup[]> {
+    await this.#db.transaction(async (tx) => {
+      const rows = await tx.all<{ id: string }>(`SELECT id FROM ${GROUPS_TABLE}`);
+      if (
+        new Set(ids).size !== ids.length ||
+        rows.length !== ids.length ||
+        rows.some((row) => !ids.includes(row.id))
+      )
+        throw new Error("groupIds must contain every group exactly once");
+      for (const [position, id] of ids.entries())
+        await tx.run(`UPDATE ${GROUPS_TABLE} SET position = ? WHERE id = ?`, position, id);
+    });
+    return this.listGroups();
+  }
+
+  async setGroup(botId: string, groupId: string | null): Promise<void> {
+    await this.#db.run(`UPDATE ${BOTS_TABLE} SET group_id = ? WHERE id = ?`, groupId, botId);
   }
 
   /** The Admin Bot, live or not; undefined before it is created. */

@@ -69,3 +69,30 @@ With Docker on ([environments](environments.md)):
 Deleting a bot is a soft delete, and compaction never deletes history, so everything bots have
 seen stays in `pi-bot.sqlite` until you permanently delete a deleted bot (which drops its tables
 but not copies in backups or freed SQLite pages). Protect the data dir and its backups accordingly.
+
+
+## Woven Matter integration
+
+Woven-managed instances use their own config and data directory and explicitly select
+`[credentials] backend = "encrypted-sqlite"`; the per-user Keychain service would share
+credentials across instances. A Mac host with `[environment] backend = "none"` is validated
+for this mode. Provider credentials stay in Pi Bot and never pass through the host bridge.
+
+The Woven MCP bearer grant is stored in the dedicated `woven-mcp` credential slot. It is
+write-only and absent from the Settings account catalog, config, prompts, logs and web/tool
+responses. Only `woven.connect`, `woven.status` and `woven.disconnect` manage it; bots get no
+connection-management tools. The endpoint must be HTTPS or HTTP on exactly `127.0.0.1`, `::1`
+or `localhost`; URL credentials and fragments are refused, as are redirects. Requests send
+`authorization: Bearer`, the bot UUID in `x-woven-bot-id`, and a percent-encoded bot name in
+`x-woven-bot-name`, without an `origin` header. Attribution headers do not isolate bots from
+one another: all bots in an installation share one trust domain.
+
+Woven tools go only to bots' main channels and threads, including Admin Bot, and never to
+subagent children. Woven controls tool authorization. Its principal identifies the installation
+and bot without creating a Woven conversation. Only tools marked read-only and not explicitly
+non-idempotent may replay. Local cache restoration makes startup independent of Woven availability.
+
+Embedded mode has the same network trust boundary as standalone mode. Its JavaScript bridge
+accepts navigation, theme, composer focus and bounded turn context; it exposes no arbitrary RPC,
+files or secrets. Hosts validate frame and origin before accepting messages. Sidebar groups
+change placement only and grant no additional authority.

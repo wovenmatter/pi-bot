@@ -17,7 +17,9 @@ export function Onboarding({
   connected,
   status,
   onStatus,
+  host = false,
 }: {
+  host?: boolean;
   client: PiBotClient;
   connected: boolean;
   status: OnboardingStatus;
@@ -49,11 +51,13 @@ export function Onboarding({
 
   return (
     <div className="onboarding">
-      <header className="onboarding-hero">
-        <PiLogo className="onboarding-mark" />
-        <h1>Welcome to Pi Bot</h1>
-        <p className="muted">Connect a model provider. Admin Bot takes it from there.</p>
-      </header>
+      {host ? null : (
+        <header className="onboarding-hero">
+          <PiLogo className="onboarding-mark" />
+          <h1>Welcome to Pi Bot</h1>
+          <p className="muted">Connect a model provider. Admin Bot takes it from there.</p>
+        </header>
+      )}
       <ol className="onboarding-steps" aria-label="Setup steps">
         {steps.map((step, index) => (
           <li

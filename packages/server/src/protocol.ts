@@ -13,6 +13,38 @@ const factText = z.string().min(1).max(MAX_EDITED_FACT_CHARS);
 
 /** Client → server requests. Every request carries an `id` echoed in its result or error. */
 export const requestSchema = z.discriminatedUnion("type", [
+  z.strictObject({ id: requestId, type: z.literal("groups.list") }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("groups.create"),
+    name: z.string().trim().min(1).max(80),
+  }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("groups.rename"),
+    groupId: botId,
+    name: z.string().trim().min(1).max(80),
+  }),
+  z.strictObject({ id: requestId, type: z.literal("groups.delete"), groupId: botId }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("groups.reorder"),
+    groupIds: z.array(botId).max(1000),
+  }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("bots.setGroup"),
+    botId,
+    groupId: botId.nullable(),
+  }),
+  z.strictObject({ id: requestId, type: z.literal("woven.status") }),
+  z.strictObject({
+    id: requestId,
+    type: z.literal("woven.connect"),
+    endpointURL: z.string().min(1).max(2048),
+    bearerToken: z.string().min(1).max(8192),
+  }),
+  z.strictObject({ id: requestId, type: z.literal("woven.disconnect") }),
   z.object({ id: requestId, type: z.literal("bots.list") }),
   z.object({
     id: requestId,
@@ -149,6 +181,7 @@ export const requestSchema = z.discriminatedUnion("type", [
     botId,
     conversationId: conversationId.optional(),
     text: z.string().min(1).max(100_000),
+    context: z.string().max(4000).optional(),
   }),
   z.strictObject({
     id: requestId,
@@ -260,6 +293,7 @@ export type BotSummary = {
   kind: "admin" | "bot";
   manager: boolean;
   managerId?: string;
+  groupId?: string;
   /** The one optional orchestrator, above every team. */
   orchestrator: boolean;
   /** The profile this bot runs (its own or the default). */
@@ -353,12 +387,19 @@ export type StreamEvent =
 
 /** Server → client messages. */
 export type ServerMessage =
-  | { type: "hello"; version: string }
+  | {
+      type: "hello";
+      version: string;
+      protocol: number;
+      installationId: string;
+      capabilities: string[];
+    }
   | { type: "result"; id: string | number; data: unknown }
   | { type: "error"; id?: string | number; message: string }
   | { type: "event"; botId: string; conversationId: number; event: StreamEvent }
   /** The bot list changed (a bot created one, a team changed): clients refetch `bots.list`. */
   | { type: "bots.changed" }
+  | { type: "groups.changed" }
   /** A bot's thread list changed (a title was generated): clients refetch `threads.list`. */
   | { type: "threads.changed"; botId: string }
   /** A bot's memory changed (a user edit or an extraction): clients refetch `memory.list`. */

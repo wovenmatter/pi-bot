@@ -21,7 +21,7 @@ describe("websocket server", () => {
   beforeEach(async () => {
     dir = await tempDir();
     const config = parseConfig(
-      `[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[storage]\ndata_dir = "${dir.path}"\n`,
+      `[credentials]\nbackend = "encrypted-sqlite"\n[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[storage]\ndata_dir = "${dir.path}"\n`,
     );
     app = await startPiBot(config, { models: echoModels(15).models, port: 0, log: () => {} });
     wsUrl = `${app.server.url.replace("http", "ws")}/ws`;
@@ -550,7 +550,13 @@ describe("websocket server", () => {
 
   it("serves health on loopback", async () => {
     const response = await fetch(`${app.server.url}/health`);
-    expect(await response.json()).toEqual({ ok: true, version: "0.1.0" });
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      version: "0.1.0",
+      protocol: 1,
+      installationId: expect.any(String),
+      capabilities: ["host.embed", "groups", "woven.mcp", "message.context"],
+    });
   });
 });
 
@@ -558,7 +564,7 @@ describe("websocket thread titles", () => {
   it("pushes threads.changed when a thread is titled", async () => {
     const dir = await tempDir();
     const config = parseConfig(
-      `[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[models.titles]\nmodel = "faux-titles/t1"\n[storage]\ndata_dir = "${dir.path}"\n`,
+      `[credentials]\nbackend = "encrypted-sqlite"\n[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[models.titles]\nmodel = "faux-titles/t1"\n[storage]\ndata_dir = "${dir.path}"\n`,
     );
     // Replies echo; titles come from their own faux provider.
     const { models } = echoModels(2000);

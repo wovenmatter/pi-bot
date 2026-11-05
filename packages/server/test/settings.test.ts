@@ -167,6 +167,8 @@ describe("settings over the websocket", () => {
       configPath,
       [
         "# my settings",
+        "[credentials]",
+        'backend = "encrypted-sqlite"',
         "[models]",
         'orchestrator = "faux/faux-1"   # main',
         'background = "faux/faux-1"',
@@ -911,6 +913,8 @@ describe("legacy background flags on start", () => {
       configPath,
       [
         "# my settings",
+        "[credentials]",
+        'backend = "encrypted-sqlite"',
         "[profiles.default]",
         'name = "Default"',
         'main = "faux/faux-1"   # main',
@@ -936,6 +940,8 @@ describe("legacy background flags on start", () => {
       expect(text).toBe(
         [
           "# my settings",
+          "[credentials]",
+          'backend = "encrypted-sqlite"',
           "[profiles.default]",
           'name = "Default"',
           'main = "faux/faux-1"   # main',

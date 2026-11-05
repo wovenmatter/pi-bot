@@ -17,12 +17,14 @@ import { openSharedDatabase } from "./storage/database.ts";
 import { BotRegistry } from "./storage/registry.ts";
 import { TitleGenerator } from "./titles.ts";
 import { type BotPlatform, forgetBotMessages } from "./tools.ts";
+import { WovenMCP } from "./woven-mcp.ts";
 
 export type PiBotApp = {
   readonly db: SqliteDatabase;
   readonly credentials: OpenedCredentialStore;
   readonly models: Models;
   readonly manager: BotManager;
+  readonly woven: WovenMCP;
   /** Marked main-model usage limits (persisted in `pibot_limits`). */
   readonly availability: ModelAvailability;
   readonly server: PiBotServer;
@@ -147,6 +149,12 @@ export async function startPiBot(
     // Marked usage limits outlive a restart: restore the live ones before any bot opens.
     const registry = new BotRegistry(db);
     await registry.migrate();
+    const woven = new WovenMCP(registry, credentials.store, async () => {
+      const admin = await manager?.admin();
+      if (!admin) throw new Error("bots are still starting");
+      return admin;
+    });
+    await woven.load();
     availability = new ModelAvailability({
       store: registry,
       onError: (error) => log(`usage limits: could not save: ${String(error)}`),
@@ -160,6 +168,7 @@ export async function startPiBot(
       db,
       ensureAdmin: true,
       onBotsChanged: () => server?.botsChanged(),
+      onGroupsChanged: () => server?.groupsChanged(),
       onThreadsChanged: (botId) => server?.threadsChanged(botId),
       availability,
       onModelStatus: () => server?.botsChanged(),
@@ -169,6 +178,7 @@ export async function startPiBot(
         manager ??= self;
         return createBotHarnessOptions({
           bot,
+          woven,
           models,
           profile: () => profiles.resolve(self.assignedProfile(bot.id)),
           onSubagent: (event) =>
@@ -260,6 +270,7 @@ export async function startPiBot(
     server = await startServer({
       manager: opened,
       settings,
+      woven,
       host: config.server.host,
       port: options.port ?? config.server.port,
       ...(webDir ? { webDir } : {}),
@@ -282,6 +293,7 @@ export async function startPiBot(
       credentials,
       models,
       manager: opened,
+      woven,
       availability,
       server,
       ...(env ? { env } : {}),

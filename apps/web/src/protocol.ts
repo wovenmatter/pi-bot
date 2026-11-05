@@ -21,6 +21,7 @@ export type BotSummary = {
   /** A manager: leads a team (one level: managers have no manager). */
   manager: boolean;
   managerId?: string;
+  groupId?: string;
   /** The optional orchestrator: at most one, above every team, never Admin Bot. It may lead a team. */
   orchestrator: boolean;
   /** The model profile this bot runs (its own or the default). Models stay server-side. */
@@ -237,11 +238,18 @@ export type GitHubStatus = {
 export type ConfigEdit = { path: string[]; value: string | number | boolean };
 
 export type ServerMessage =
-  | { type: "hello"; version: string }
+  | {
+      type: "hello";
+      version: string;
+      protocol: number;
+      installationId: string;
+      capabilities: string[];
+    }
   | { type: "result"; id: string | number; data: unknown }
   | { type: "error"; id?: string | number; message: string }
   /** The bot list changed (a bot created one, a team changed): refetch `bots.list`. */
   | { type: "bots.changed" }
+  | { type: "groups.changed" }
   /** A bot's thread list changed (a title was generated): refetch `threads.list`. */
   | { type: "threads.changed"; botId: string }
   /** A bot's memory changed (a user edit or an extraction): refetch `memory.list`. */
@@ -250,7 +258,24 @@ export type ServerMessage =
   | LoginMessage;
 
 /** Request bodies (without `id`) and the result each one resolves to. */
+export type SidebarGroup = { id: string; name: string; position: number };
+export type WovenStatus = {
+  state: "disconnected" | "connecting" | "ready" | "unavailable";
+  endpointURL?: string;
+  toolCount: number;
+  error?: string;
+};
+
 export type Requests = {
+  "groups.list": { body: Record<never, never>; result: { groups: SidebarGroup[] } };
+  "groups.create": { body: { name: string }; result: { group: SidebarGroup } };
+  "groups.rename": { body: { groupId: string; name: string }; result: { group: SidebarGroup } };
+  "groups.delete": { body: { groupId: string }; result: { deleted: true } };
+  "groups.reorder": { body: { groupIds: string[] }; result: { groups: SidebarGroup[] } };
+  "bots.setGroup": { body: { botId: string; groupId: string | null }; result: { bot: BotSummary } };
+  "woven.status": { body: Record<never, never>; result: WovenStatus };
+  "woven.connect": { body: { endpointURL: string; bearerToken: string }; result: WovenStatus };
+  "woven.disconnect": { body: Record<never, never>; result: WovenStatus };
   "bots.list": { body: Record<never, never>; result: { bots: BotSummary[] } };
   "bots.create": { body: { name: string; managerId?: string }; result: { bot: BotSummary } };
   "bots.delete": { body: { botId: string }; result: { deleted: boolean } };
@@ -313,7 +338,7 @@ export type Requests = {
     result: { conversationId: number; stopped: true };
   };
   "message.send": {
-    body: { botId: string; conversationId?: number; text: string };
+    body: { botId: string; conversationId?: number; text: string; context?: string };
     result: { conversationId: number; submissionId: number };
   };
   "thread.fork": {

@@ -12,6 +12,7 @@ import { type BotHarnessOptions, defaultAgent } from "./agent.ts";
 import { type ModelRef, type Profile, parseModelRef } from "./config.ts";
 import { conversationId as toConversationId, entryId as toEntryId } from "./ids.ts";
 import { fallbackNote, type Limit, type LimitEntry, type ModelAvailability } from "./limits.ts";
+import { contextNote } from "./message-context.ts";
 import type { ProfileStore } from "./profiles.ts";
 import { sharedDatabaseView } from "./storage/database.ts";
 import {
@@ -152,13 +153,15 @@ export class Bot {
    * as Woven titles a conversation from its first prompt. While the bot runs a fallback main model,
    * the stored input starts with the fallback note (the chat hides it).
    */
-  async send(text: string, conversationId?: number, round = 0) {
+  async send(text: string, conversationId?: number, round = 0, context?: string) {
     const conversation = await this.conversation(conversationId);
     const note = this.#note();
     const submission = await conversation.submit(
       {
         type: "input",
-        content: note ? `${note}\n\n${text}` : text,
+        content: [note, round === 0 && context ? contextNote(context) : undefined, text]
+          .filter(Boolean)
+          .join("\n\n"),
         whenBusy: "followUp",
         entry: { kind: "pibot.input", data: { round } },
       },
@@ -400,6 +403,7 @@ export type BotManagerOptions = {
   readonly ensureAdmin?: boolean;
   /** A bot was created, deleted, restored or moved between teams (pushes a refresh to clients). */
   readonly onBotsChanged?: () => void;
+  readonly onGroupsChanged?: () => void;
   /** A thread of this bot was titled (pushes a thread-list refresh to clients). */
   readonly onThreadsChanged?: (botId: string) => void;
   /**
@@ -944,6 +948,7 @@ export class BotManager {
       `bot ${id}: purged (${tables.length} tables)${environment && !environment.removed ? `; environment not removed: ${environment.error}` : ""}`,
     );
     this.#options.onBotsChanged?.();
+    this.#options.onGroupsChanged?.();
     return { tables: tables.length, ...(environment ? { environment } : {}) };
   }
 
@@ -1045,6 +1050,48 @@ export class BotManager {
     await this.registry.setOrchestrator(id);
     this.#options.onBotsChanged?.();
     return id === undefined ? undefined : this.record(id);
+  }
+
+  listGroups() {
+    return this.registry.listGroups();
+  }
+
+  async createGroup(name: string) {
+    const group = await this.registry.createGroup(checkName(name));
+    this.#options.onGroupsChanged?.();
+    return group;
+  }
+
+  async renameGroup(id: string, name: string) {
+    const group = await this.registry.renameGroup(id, checkName(name));
+    this.#options.onGroupsChanged?.();
+    return group;
+  }
+
+  async deleteGroup(id: string) {
+    await this.registry.deleteGroup(id);
+    this.#options.onGroupsChanged?.();
+    this.#options.onBotsChanged?.();
+  }
+
+  async reorderGroups(ids: readonly string[]) {
+    const groups = await this.registry.reorderGroups(ids);
+    this.#options.onGroupsChanged?.();
+    return groups;
+  }
+
+  async setGroup(id: string, groupId: string | null): Promise<BotRecord> {
+    const record = await this.record(id);
+    if (record.kind === "admin") throw new BotRuleError("the Admin Bot cannot be grouped");
+    if (
+      groupId !== null &&
+      !(await this.registry.listGroups()).some((group) => group.id === groupId)
+    )
+      throw new NotFoundError("no such group");
+    await this.registry.setGroup(id, groupId);
+    this.#options.onGroupsChanged?.();
+    this.#options.onBotsChanged?.();
+    return this.record(id);
   }
 
   /**

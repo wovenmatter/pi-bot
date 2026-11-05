@@ -9,6 +9,7 @@ import { ConversationDrafts } from "./conversation-drafts.ts";
 
 export function ConversationWorkspace({
   client,
+  drafts: sharedDrafts,
   connected,
   bot,
   conversationId,
@@ -18,6 +19,7 @@ export function ConversationWorkspace({
   onForked,
 }: {
   client: PiBotClient;
+  drafts?: ConversationDrafts;
   connected: boolean;
   bot: BotSummary;
   conversationId?: number;
@@ -27,7 +29,7 @@ export function ConversationWorkspace({
   onForked: (thread: ThreadSummary) => void;
 }) {
   const workspace = useRef<HTMLDivElement>(null);
-  const [drafts] = useState(() => new ConversationDrafts());
+  const [drafts] = useState(() => sharedDrafts ?? new ConversationDrafts());
   const [availableWidth, setAvailableWidth] = useState(0);
   const wide = availableWidth >= 760;
   const [width, setWidth] = useState(440);

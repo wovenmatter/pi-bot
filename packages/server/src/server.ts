@@ -9,6 +9,7 @@ import { type RawData, WebSocket, WebSocketServer } from "ws";
 import type { BotManager, ModelStatus } from "./bots.ts";
 import { NotFoundError } from "./bots.ts";
 import { isAllowedBindHost } from "./config.ts";
+import { CAPABILITIES, PROTOCOL } from "./identity.ts";
 import { entryId as toEntryId } from "./ids.ts";
 import { editFacts, type MemoryEdit } from "./memory.ts";
 import { describeProfile, type ProfileStore } from "./profiles.ts";
@@ -28,6 +29,7 @@ import type { BotRecord, ThreadRecord } from "./storage/registry.ts";
 import { ACCOUNT_NOTES } from "./tools.ts";
 import { assistantText, type DisplayEntry, displayEntry } from "./transcript.ts";
 import { VERSION } from "./version.ts";
+import type { WovenMCP } from "./woven-mcp.ts";
 
 const ctx = BACKGROUND_CONTEXT;
 const HISTORY_LIMIT = 200;
@@ -42,6 +44,7 @@ export type PiBotServerOptions = {
   readonly log?: (message: string) => void;
   /** Settings backend; without it the settings requests fail. */
   readonly settings?: SettingsService;
+  readonly woven?: WovenMCP;
   /**
    * Schedules a graceful restart (Settings → Config → Restart Pi Bot, or Restart and apply). Resolves once the restart is
    * accepted, before this server closes; rejects (and nothing stops) when it cannot happen.
@@ -61,6 +64,7 @@ export type PiBotServer = {
   readonly port: number;
   /** Tell every client the bot list changed. */
   botsChanged(): void;
+  groupsChanged(): void;
   /** Tell every client a bot's thread list changed (a thread was titled). */
   threadsChanged(botId: string): void;
   /** Tell every client a bot's memory changed (an extraction added facts). */
@@ -83,6 +87,7 @@ const botSummary = (
     manager: record.manager,
     ...(record.managerId ? { managerId: record.managerId } : {}),
     orchestrator: record.orchestrator,
+    ...(record.groupId ? { groupId: record.groupId } : {}),
     profileId: profile?.id ?? record.profile ?? "",
     profileName: profile?.name ?? "",
     defaultProfile: !record.profile || !profiles?.get(record.profile),
@@ -227,7 +232,7 @@ class Connection {
     this.#server = server;
     socket.on("message", (data, isBinary) => void this.#onMessage(data, isBinary));
     socket.on("close", () => void this.dispose());
-    this.send({ type: "hello", version: VERSION });
+    this.send({ type: "hello", version: VERSION, ...server.identity });
   }
 
   send(message: ServerMessage): void {
@@ -299,6 +304,28 @@ class Connection {
       };
     };
     switch (request.type) {
+      case "groups.list":
+        return { groups: await manager.listGroups() };
+      case "groups.create":
+        return { group: await manager.createGroup(request.name) };
+      case "groups.rename":
+        return { group: await manager.renameGroup(request.groupId, request.name) };
+      case "groups.delete":
+        await manager.deleteGroup(request.groupId);
+        return { deleted: true };
+      case "groups.reorder":
+        return { groups: await manager.reorderGroups(request.groupIds) };
+      case "bots.setGroup":
+        return { bot: bot(await manager.setGroup(request.botId, request.groupId)) };
+      case "woven.status":
+        return this.#server.woven?.status() ?? { state: "disconnected", toolCount: 0 };
+      case "woven.connect": {
+        if (!this.#server.woven) throw new Error("Woven MCP is not available");
+        return this.#server.woven.connect(request.endpointURL, request.bearerToken);
+      }
+      case "woven.disconnect":
+        return this.#server.woven?.disconnect() ?? { state: "disconnected", toolCount: 0 };
+
       case "bots.list":
         return { bots: (await manager.list()).map(bot) };
       case "bots.create":
@@ -512,6 +539,8 @@ class Connection {
         const { conversation, submission } = await target.send(
           request.text,
           request.conversationId,
+          0,
+          request.context,
         );
         return { conversationId: conversation.id, submissionId: submission.id };
       }
@@ -666,13 +695,19 @@ class Server {
   readonly settings: SettingsService | undefined;
   readonly restart: (() => Promise<RestartAccepted>) | undefined;
   readonly connections = new Set<Connection>();
+  readonly identity: { protocol: number; installationId: string; capabilities: string[] };
+  readonly woven: WovenMCP | undefined;
 
   constructor(
     manager: BotManager,
+    installationId: string,
+    woven: WovenMCP | undefined,
     settings?: SettingsService,
     restart?: () => Promise<RestartAccepted>,
   ) {
     this.manager = manager;
+    this.identity = { protocol: PROTOCOL, installationId, capabilities: [...CAPABILITIES] };
+    this.woven = woven;
     this.settings = settings;
     this.restart = restart;
   }
@@ -690,7 +725,13 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
   if (!isAllowedBindHost(options.host)) {
     throw new Error(`refusing to bind ${options.host}: use loopback or a tailnet address`);
   }
-  const state = new Server(options.manager, options.settings, options.restart);
+  const state = new Server(
+    options.manager,
+    await options.manager.registry.installationId(),
+    options.woven,
+    options.settings,
+    options.restart,
+  );
   const log = options.log ?? (() => {});
 
   const http = createServer((request, response) => {
@@ -702,7 +743,7 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
       }
       if (request.method === "GET" && url.pathname === "/health") {
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ ok: true, version: VERSION }));
+        response.end(JSON.stringify({ ok: true, version: VERSION, ...state.identity }));
         return;
       }
       if (request.method === "GET" && options.webDir) {
@@ -746,6 +787,9 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
     port,
     botsChanged() {
       for (const connection of state.connections) connection.send({ type: "bots.changed" });
+    },
+    groupsChanged() {
+      for (const connection of state.connections) connection.send({ type: "groups.changed" });
     },
     threadsChanged: (botId) => state.threadsChanged(botId),
     memoryChanged: (botId) => state.memoryChanged(botId),

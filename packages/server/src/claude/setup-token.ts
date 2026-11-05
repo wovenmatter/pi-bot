@@ -116,6 +116,13 @@ export function claudeTokenCredential(token: string, now = Date.now()): OAuthCre
   return { type: "oauth", access: token, refresh: "", expires: now + TOKEN_LIFETIME_MS };
 }
 
+export function setupTokenArgv(platform: NodeJS.Platform = process.platform): string[] {
+  const command = 'stty cols 1000 rows 50 2>/dev/null; exec "$PIBOT_CLAUDE_BIN" setup-token';
+  return platform === "darwin"
+    ? ["-q", "/dev/null", "/bin/sh", "-c", command]
+    : ["-qfec", command, "/dev/null"];
+}
+
 const defaultSpawn: SetupTokenSpawn = (command, args, options) =>
   nodeSpawn(command, args, { env: options.env, stdio: ["pipe", "pipe", "pipe"] });
 
@@ -256,15 +263,7 @@ async function runSetupToken(
       };
 
       try {
-        child = spawn(
-          "script",
-          [
-            "-qfec",
-            'stty cols 1000 rows 50 2>/dev/null; exec "$PIBOT_CLAUDE_BIN" setup-token',
-            "/dev/null",
-          ],
-          { env: childEnvironment(config, executable) },
-        );
+        child = spawn("script", setupTokenArgv(), { env: childEnvironment(config, executable) });
       } catch {
         return settle(new FallBack("Pi Bot couldn't start Claude Code here."));
       }

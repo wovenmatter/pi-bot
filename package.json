@@ -16,7 +16,8 @@
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
     "dev:server": "pnpm --filter @wovenmatter/pi-bot dev",
     "dev:web": "pnpm --filter @wovenmatter/pi-bot-web dev",
-    "start": "pnpm --filter @wovenmatter/pi-bot start"
+    "start": "pnpm --filter @wovenmatter/pi-bot start",
+    "package:woven": "node scripts/package-woven.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",

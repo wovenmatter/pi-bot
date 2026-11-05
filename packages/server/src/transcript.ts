@@ -2,6 +2,7 @@ import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { contentText } from "@earendil-works/pi-ai";
 import type { EntryRecord } from "@earendil-works/pi-durable";
 import { stripFallbackNote } from "./limits.ts";
+import { stripContextNote } from "./message-context.ts";
 
 /** What clients render for one durable entry. */
 export type DisplayEntry = {
@@ -18,8 +19,10 @@ export type DisplayEntry = {
 function messageText(message: Message): string {
   if (message.role === "user") {
     // A fallback note in front of a turn is for the model, not the chat.
-    return stripFallbackNote(
-      typeof message.content === "string" ? message.content : contentText(message.content),
+    return stripContextNote(
+      stripFallbackNote(
+        typeof message.content === "string" ? message.content : contentText(message.content),
+      ),
     );
   }
   if (message.role === "assistant") {

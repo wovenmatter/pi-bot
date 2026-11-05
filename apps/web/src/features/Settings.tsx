@@ -765,7 +765,9 @@ export function Settings({
   theme,
   onTheme,
   onRestored,
+  host = false,
 }: {
+  host?: boolean;
   client: PiBotClient;
   connected: boolean;
   section: SettingsSection;
@@ -833,8 +835,8 @@ export function Settings({
   const props: SectionProps = { client, connected, onError, onConfigSaved };
   return (
     <div className="settings-page">
-      <h2>Settings</h2>
-      <SettingsNav section={section} />
+      {host ? null : <h2>Settings</h2>}
+      {host ? null : <SettingsNav section={section} />}
       <div className="settings-notices">
         <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
         <RestartNotice
@@ -845,7 +847,9 @@ export function Settings({
         />
       </div>
       <div className="settings-body">
-        {section === "general" ? <GeneralSettings theme={theme} onTheme={onTheme} /> : null}
+        {section === "general" ? (
+          <GeneralSettings theme={theme} onTheme={onTheme} host={host} />
+        ) : null}
         {section === "accounts" ? <AccountsTab {...props} /> : null}
         {section === "profiles" ? <ProfilesSection {...props} /> : null}
         {section === "search" ? <SearchSection {...props} /> : null}
@@ -886,30 +890,34 @@ export function SettingsNav({ section }: { section: SettingsSection }) {
 export function GeneralSettings({
   theme,
   onTheme,
+  host = false,
 }: {
+  host?: boolean;
   theme: Theme;
   onTheme: (theme: Theme) => void;
 }) {
   return (
     <>
-      <section className="settings-section" aria-labelledby="theme-heading">
-        <h3 id="theme-heading">Theme</h3>
-        <div className="tabs general-theme" role="radiogroup" aria-label="Theme">
-          {THEMES.map((option) => (
-            // biome-ignore lint/a11y/useSemanticElements: segmented control, as in Enterprise
-            <button
-              key={option.id}
-              type="button"
-              role="radio"
-              aria-checked={theme === option.id}
-              className={theme === option.id ? "active" : undefined}
-              onClick={() => onTheme(option.id)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </section>
+      {host ? null : (
+        <section className="settings-section" aria-labelledby="theme-heading">
+          <h3 id="theme-heading">Theme</h3>
+          <div className="tabs general-theme" role="radiogroup" aria-label="Theme">
+            {THEMES.map((option) => (
+              // biome-ignore lint/a11y/useSemanticElements: segmented control, as in Enterprise
+              <button
+                key={option.id}
+                type="button"
+                role="radio"
+                aria-checked={theme === option.id}
+                className={theme === option.id ? "active" : undefined}
+                onClick={() => onTheme(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="settings-section" aria-labelledby="build-heading">
         <h3 id="build-heading">Build</h3>
         <p>

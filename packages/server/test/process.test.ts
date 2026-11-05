@@ -9,7 +9,7 @@ import { echoModels, tempDir } from "./helpers.ts";
 import { Client } from "./ws-client.ts";
 
 const configText = (dataDir: string, extra = "") =>
-  `[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[storage]\ndata_dir = "${dataDir}"\n${extra}`;
+  `[credentials]\nbackend = "encrypted-sqlite"\n[models]\norchestrator = "faux/faux-1"\nbackground = "faux/faux-1"\n[storage]\ndata_dir = "${dataDir}"\n${extra}`;
 
 describe("Restart and apply", () => {
   let dir: Awaited<ReturnType<typeof tempDir>>;
