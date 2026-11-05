@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import type { Api, AuthEvent, AuthPrompt, Model } from "@earendil-works/pi-ai";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLAUDE_SUBSCRIPTION_PROVIDER, claudeAgentProvider } from "../src/claude/provider.ts";
 import {
   CLAUDE_TERMINAL_STEPS,
@@ -173,7 +173,8 @@ describe("Sign in with Claude (server-driven claude setup-token)", () => {
     const fake = fakeSpawn(showSignIn);
     const run = interaction([]);
     const login = claudeSetupTokenAuth({ spawn: fake.spawn }).login(run.value, {});
-    await new Promise((done) => setTimeout(done, 10));
+    // Resolving the executable is asynchronous; cancel only once it has actually started.
+    await vi.waitFor(() => expect(fake.terminals.length).toBeGreaterThan(0));
     run.controller.abort();
     await expect(login).rejects.toThrow("Sign-in cancelled");
     expect(fake.terminals[0]?.signals).toContain("SIGTERM");
