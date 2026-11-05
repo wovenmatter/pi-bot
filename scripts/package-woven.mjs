@@ -17,7 +17,10 @@ execFileSync("pnpm", ["build"], {
   stdio: "inherit",
 });
 const manifest = {
-  commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+  // A Debug build of uncommitted source names its own content, since HEAD would not identify it.
+  commit:
+    process.env.PI_BOT_PACKAGE_COMMIT ??
+    execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
   version: JSON.parse(await readFile(resolve(root, "packages/server/package.json"), "utf8"))
     .version,
   protocol: 1,

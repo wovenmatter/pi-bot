@@ -183,7 +183,7 @@ export class BotRegistry {
         id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS ${DELIVERIES_TABLE} (
-        id TEXT PRIMARY KEY, created_at INTEGER NOT NULL
+        id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, accepted INTEGER NOT NULL DEFAULT 0
       ) STRICT;
       CREATE TABLE IF NOT EXISTS ${BOTS_TABLE} (
         id TEXT PRIMARY KEY,
@@ -272,19 +272,31 @@ export class BotRegistry {
     return stored.text;
   }
 
-  /** True the first time a host delivery id is seen. */
+  /**
+   * False once a host delivery id has been accepted. A crash before `acceptDelivery` lets the host's
+   * retry through: repeating a notification is better than losing it.
+   */
   async claimDelivery(id: string): Promise<boolean> {
     const now = Date.now();
     await this.#db.run(
       `DELETE FROM ${DELIVERIES_TABLE} WHERE created_at < ?`,
       now - DELIVERY_RETENTION_MS,
     );
-    const claimed = await this.#db.runCounted(
+    const seen = await this.#db.get<{ accepted: number }>(
+      `SELECT accepted FROM ${DELIVERIES_TABLE} WHERE id = ?`,
+      id,
+    );
+    if (seen?.accepted === 1) return false;
+    await this.#db.run(
       `INSERT OR IGNORE INTO ${DELIVERIES_TABLE} (id, created_at) VALUES (?, ?)`,
       id,
       now,
     );
-    return claimed > 0;
+    return true;
+  }
+
+  async acceptDelivery(id: string): Promise<void> {
+    await this.#db.run(`UPDATE ${DELIVERIES_TABLE} SET accepted = 1 WHERE id = ?`, id);
   }
 
   async releaseDelivery(id: string): Promise<void> {

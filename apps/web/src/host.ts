@@ -4,12 +4,13 @@ import { isTheme, type Theme } from "./theme.ts";
 
 type HostMessage =
   | { kind: "ready"; protocol: number; installationId: string }
-  | ({ kind: "route"; hash: string } & Route)
+  | ({ kind: "route"; hash: string; navigation: number } & Route)
   | { kind: "connection"; state: ConnectionState }
   | { kind: "openExternal"; url: string };
 type HostBridge = {
   setTheme(theme: Theme): void;
-  navigate(hashRoute: string): void;
+  /** `token` tells the host which of its requests a later route report follows. */
+  navigate(hashRoute: string, token?: number): void;
   setContext(context: string | null): void;
   focusComposer(): void;
   /** Room to leave in conversation headers for native controls floating over them. */
@@ -26,6 +27,10 @@ declare global {
 }
 
 let context: string | undefined;
+let navigation = 0;
+export function hostNavigation(): number {
+  return navigation;
+}
 export function isWovenHost(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -46,8 +51,10 @@ export function installHostBridge(setTheme: (theme: Theme) => void): () => void 
     setTheme: (theme) => {
       if (isTheme(theme)) setTheme(theme);
     },
-    navigate: (hash) => {
-      if (typeof hash === "string" && hash.startsWith("#/")) window.location.hash = hash;
+    navigate: (hash, token) => {
+      if (typeof hash !== "string" || !hash.startsWith("#/")) return;
+      if (Number.isSafeInteger(token)) navigation = token as number;
+      window.location.hash = hash;
     },
     setContext: (value) => {
       if (value === null || (typeof value === "string" && value.length <= 4000))
@@ -72,6 +79,7 @@ export function installHostBridge(setTheme: (theme: Theme) => void): () => void 
   return () => {
     if (window.wovenPiBotHost === bridge) delete window.wovenPiBotHost;
     context = undefined;
+    navigation = 0;
   };
 }
 

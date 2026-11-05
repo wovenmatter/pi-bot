@@ -546,6 +546,7 @@ class Connection {
             0,
             request.context,
           );
+          if (request.deliveryId) await manager.registry.acceptDelivery(request.deliveryId);
           return { conversationId: conversation.id, submissionId: submission.id };
         } catch (error) {
           if (request.deliveryId) await manager.registry.releaseDelivery(request.deliveryId);

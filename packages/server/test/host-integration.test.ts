@@ -51,6 +51,20 @@ describe("Woven host protocol", () => {
     expect(retry).toEqual({ duplicate: true });
   });
 
+  it("lets a retry through when a delivery was claimed but never accepted", async () => {
+    const { bots } = (await client.request("bots.list")) as { bots: BotSummary[] };
+    const botId = bots[0]?.id as string;
+    // A crash between claiming and accepting leaves exactly this row behind.
+    expect(await app.manager.registry.claimDelivery("delivery-2")).toBe(true);
+    const retry = (await client.request("message.send", {
+      botId,
+      text: "session finished",
+      deliveryId: "delivery-2",
+    })) as { submissionId?: unknown };
+    expect(retry.submissionId).toBeDefined();
+    expect(await app.manager.registry.claimDelivery("delivery-2")).toBe(false);
+  });
+
   it("publishes the same persisted UUID and capabilities on health and hello after restart", async () => {
     const health = (await (await fetch(`${app.server.url}/health`)).json()) as {
       protocol: number;

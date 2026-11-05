@@ -6,7 +6,7 @@ import { ConversationDrafts } from "./features/conversation-drafts.ts";
 import { sortThreads } from "./features/conversation-state.ts";
 import { Onboarding } from "./features/Onboarding.tsx";
 import { Settings } from "./features/Settings.tsx";
-import { installHostBridge, isWovenHost, postHost } from "./host.ts";
+import { hostNavigation, installHostBridge, isWovenHost, postHost } from "./host.ts";
 import type { BotSummary, OnboardingStatus, ThreadSummary } from "./protocol.ts";
 import { parseRoute, type Route, routeHref } from "./routes.ts";
 import { Sidebar } from "./shell/Sidebar.tsx";
@@ -50,7 +50,7 @@ export function App() {
     postHost({ kind: "connection", state: connection });
   }, [connection]);
   useEffect(() => {
-    postHost({ kind: "route", hash: window.location.hash, ...route });
+    postHost({ kind: "route", hash: window.location.hash, navigation: hostNavigation(), ...route });
   }, [route]);
 
   useEffect(() => {

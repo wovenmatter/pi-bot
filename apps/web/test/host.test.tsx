@@ -4,7 +4,13 @@ import { App } from "../src/App.tsx";
 import { PiBotClient } from "../src/api.ts";
 import { ConversationDrafts, draftKey } from "../src/features/conversation-drafts.ts";
 import { Settings } from "../src/features/Settings.tsx";
-import { hostContext, installHostBridge, openHostExternal, postHost } from "../src/host.ts";
+import {
+  hostContext,
+  hostNavigation,
+  installHostBridge,
+  openHostExternal,
+  postHost,
+} from "../src/host.ts";
 import { storedTheme } from "../src/theme.ts";
 
 function browser(search = "", hash = "#/settings") {
@@ -84,6 +90,10 @@ describe("Woven host mode", () => {
     expect(window.location.hash).toBe("#/settings/accounts");
     host?.navigate("https://example.com");
     expect(window.location.hash).toBe("#/settings/accounts");
+    expect(hostNavigation()).toBe(0);
+    host?.navigate("#/settings/profiles", 7);
+    expect(window.location.hash).toBe("#/settings/profiles");
+    expect(hostNavigation()).toBe(7);
     host?.setContext("selected file");
     expect(hostContext()).toBe("selected file");
     host?.setContext("x".repeat(4001));
