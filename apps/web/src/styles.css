@@ -2896,3 +2896,8 @@ details.account-api-key > .settings-list {
   position: absolute;
   right: 4px;
 }
+
+/* A new thread already has its starting message above the empty prompt. */
+.transcript > .thread-origin ~ .empty {
+  height: auto;
+}

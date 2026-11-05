@@ -96,5 +96,12 @@ from a message uses a resizable right pane alongside Main when there is enough r
 switches between full width and side by side; Close returns to Main. Narrow layouts show one
 conversation at a time. Both panes retain their drafts and scrolling through layout changes.
 The thread shows its starting message and its own replies, without faded inherited history.
+The **Started from** card contains that one original message in full, never a concatenation of
+earlier Main messages.
 Its model still inherits the conversation up to the starting message; later Main messages and
 thread replies do not automatically copy between conversations. Existing threads remain intact.
+
+Unsent text and text-file attachments also survive closing and switching threads within the
+open bot workspace. Drafts stay in memory, are isolated per conversation, and are cleared after
+an accepted send; navigating to another bot or reloading the page ends that workspace. New
+threads open at the top so their starting message remains visible before the first reply.

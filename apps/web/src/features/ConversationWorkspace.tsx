@@ -5,6 +5,7 @@ import { Icon } from "../components/Icon.tsx";
 import type { BotSummary, ThreadSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
 import { Conversation } from "./Conversation.tsx";
+import { ConversationDrafts } from "./conversation-drafts.ts";
 
 export function ConversationWorkspace({
   client,
@@ -26,6 +27,7 @@ export function ConversationWorkspace({
   onForked: (thread: ThreadSummary) => void;
 }) {
   const workspace = useRef<HTMLDivElement>(null);
+  const [drafts] = useState(() => new ConversationDrafts());
   const [availableWidth, setAvailableWidth] = useState(0);
   const wide = availableWidth >= 760;
   const [width, setWidth] = useState(440);
@@ -72,6 +74,7 @@ export function ConversationWorkspace({
       >
         <Conversation
           client={client}
+          drafts={drafts}
           connected={connected}
           bot={bot}
           threads={threads}
@@ -113,6 +116,7 @@ export function ConversationWorkspace({
             <Conversation
               key={conversationId}
               client={client}
+              drafts={drafts}
               connected={connected}
               bot={bot}
               conversationId={conversationId}

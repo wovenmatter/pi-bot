@@ -23,6 +23,7 @@ import { RichText } from "../components/RichText.tsx";
 import { Empty, ErrorNotice, Loading, MessageError } from "../components/ui.tsx";
 import type { BotSummary, DisplayEntry, ThreadSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
+import { type ConversationDrafts, useConversationDrafts } from "./conversation-drafts.ts";
 import {
   applyStreamEvent,
   type ConversationState,
@@ -43,6 +44,7 @@ export function Conversation({
   onRunEnd,
   headerActions,
   visible = true,
+  drafts,
 }: {
   client: PiBotClient;
   connected: boolean;
@@ -56,6 +58,7 @@ export function Conversation({
   onRunEnd?: () => void;
   headerActions?: ReactNode;
   visible?: boolean;
+  drafts?: ConversationDrafts;
 }) {
   const runEnd = useRef(onRunEnd);
   runEnd.current = onRunEnd;
@@ -65,12 +68,11 @@ export function Conversation({
   const [mainId, setMainId] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-  const [draft, setDraft] = useState("");
+  const [{ text: draft, attachments }, setDraft, setAttachments, nextAttachmentId] =
+    useConversationDrafts(drafts, conversationId);
   const editor = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [attachments, setAttachments] = useState<{ id: number; name: string; text: string }[]>([]);
   const [readingFiles, setReadingFiles] = useState(false);
-  const attachmentId = useRef(0);
   const dictation = useDictation(
     (text) => setDraft((value) => `${value}${value && !/\s$/.test(value) ? " " : ""}${text}`),
     setError,
@@ -134,7 +136,7 @@ export function Conversation({
         const text = await file.text();
         if (text.includes("\0"))
           throw new Error("This file contains binary data. Choose a text file.");
-        added.push({ id: ++attachmentId.current, name: file.name, text });
+        added.push({ id: nextAttachmentId(), name: file.name, text });
       }
       setAttachments((current) => [...current, ...added]);
     } catch (error) {
@@ -225,11 +227,20 @@ export function Conversation({
   }, [client, connected, bot.id, conversationId, onMainConversation]);
 
   // Keep the newest reply in view while the reader is at the bottom.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run whenever content grows
   useEffect(() => {
     const element = scroll.current;
-    if (visible && element && follow.current) element.scrollTop = element.scrollHeight;
-  }, [state, visible]);
+    if (visible && element && follow.current) {
+      const newThread =
+        viewed !== undefined &&
+        mainId !== undefined &&
+        viewed !== mainId &&
+        !state.entries.some((entry) => entry.conversationId === viewed) &&
+        state.pending.length === 0 &&
+        !state.running &&
+        state.streaming === null;
+      element.scrollTop = newThread ? 0 : element.scrollHeight;
+    }
+  }, [state, visible, viewed, mainId]);
 
   async function send(event?: FormEvent) {
     event?.preventDefault();
