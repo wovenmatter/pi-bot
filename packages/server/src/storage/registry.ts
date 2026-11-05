@@ -275,7 +275,10 @@ export class BotRegistry {
   /** True the first time a host delivery id is seen. */
   async claimDelivery(id: string): Promise<boolean> {
     const now = Date.now();
-    await this.#db.run(`DELETE FROM ${DELIVERIES_TABLE} WHERE created_at < ?`, now - DELIVERY_RETENTION_MS);
+    await this.#db.run(
+      `DELETE FROM ${DELIVERIES_TABLE} WHERE created_at < ?`,
+      now - DELIVERY_RETENTION_MS,
+    );
     const claimed = await this.#db.runCounted(
       `INSERT OR IGNORE INTO ${DELIVERIES_TABLE} (id, created_at) VALUES (?, ?)`,
       id,
