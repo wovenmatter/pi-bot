@@ -34,6 +34,23 @@ describe("Woven host protocol", () => {
     await dir.cleanup();
   });
 
+  it("accepts a retried host delivery without submitting it twice", async () => {
+    const { bots } = (await client.request("bots.list")) as { bots: BotSummary[] };
+    const botId = bots[0]?.id as string;
+    const first = (await client.request("message.send", {
+      botId,
+      text: "session finished",
+      deliveryId: "delivery-1",
+    })) as { submissionId?: unknown };
+    expect(first.submissionId).toBeDefined();
+    const retry = await client.request("message.send", {
+      botId,
+      text: "session finished",
+      deliveryId: "delivery-1",
+    });
+    expect(retry).toEqual({ duplicate: true });
+  });
+
   it("publishes the same persisted UUID and capabilities on health and hello after restart", async () => {
     const health = (await (await fetch(`${app.server.url}/health`)).json()) as {
       protocol: number;

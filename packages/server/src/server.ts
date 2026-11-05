@@ -536,13 +536,21 @@ class Connection {
       }
       case "message.send": {
         const target = await manager.get(request.botId);
-        const { conversation, submission } = await target.send(
-          request.text,
-          request.conversationId,
-          0,
-          request.context,
-        );
-        return { conversationId: conversation.id, submissionId: submission.id };
+        if (request.deliveryId && !(await manager.registry.claimDelivery(request.deliveryId))) {
+          return { duplicate: true };
+        }
+        try {
+          const { conversation, submission } = await target.send(
+            request.text,
+            request.conversationId,
+            0,
+            request.context,
+          );
+          return { conversationId: conversation.id, submissionId: submission.id };
+        } catch (error) {
+          if (request.deliveryId) await manager.registry.releaseDelivery(request.deliveryId);
+          throw error;
+        }
       }
       case "conversation.abort": {
         const target = await manager.get(request.botId);

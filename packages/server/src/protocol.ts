@@ -182,6 +182,8 @@ export const requestSchema = z.discriminatedUnion("type", [
     conversationId: conversationId.optional(),
     text: z.string().min(1).max(100_000),
     context: z.string().max(4000).optional(),
+    /** Set by the host: a retry with the same id is accepted without submitting again. */
+    deliveryId: z.string().min(1).max(128).optional(),
   }),
   z.strictObject({
     id: requestId,

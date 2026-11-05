@@ -6,6 +6,9 @@ import type { LimitEntry } from "../limits.ts";
 /** Shared tables. Bot tables all start with `pibot_<32 hex>_`, so these can never collide. */
 export type SidebarGroup = { id: string; name: string; position: number };
 export const GROUPS_TABLE = "pibot_groups";
+export const DELIVERIES_TABLE = "pibot_host_deliveries";
+/** Hosts retry within minutes; a month is far past any retry and bounds the table. */
+const DELIVERY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const BOTS_TABLE = "pibot_bots";
 export const THREADS_TABLE = "pibot_threads";
@@ -179,6 +182,9 @@ export class BotRegistry {
       CREATE TABLE IF NOT EXISTS ${GROUPS_TABLE} (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS ${DELIVERIES_TABLE} (
+        id TEXT PRIMARY KEY, created_at INTEGER NOT NULL
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS ${BOTS_TABLE} (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -264,6 +270,22 @@ export class BotRegistry {
     const stored = await this.note("installationId");
     if (!stored) throw new Error("installation identity was not persisted");
     return stored.text;
+  }
+
+  /** True the first time a host delivery id is seen. */
+  async claimDelivery(id: string): Promise<boolean> {
+    const now = Date.now();
+    await this.#db.run(`DELETE FROM ${DELIVERIES_TABLE} WHERE created_at < ?`, now - DELIVERY_RETENTION_MS);
+    const claimed = await this.#db.runCounted(
+      `INSERT OR IGNORE INTO ${DELIVERIES_TABLE} (id, created_at) VALUES (?, ?)`,
+      id,
+      now,
+    );
+    return claimed > 0;
+  }
+
+  async releaseDelivery(id: string): Promise<void> {
+    await this.#db.run(`DELETE FROM ${DELIVERIES_TABLE} WHERE id = ?`, id);
   }
 
   async listGroups(): Promise<SidebarGroup[]> {
