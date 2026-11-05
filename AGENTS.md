@@ -144,6 +144,17 @@ changes it. Investigation-only and documentation-only tasks do not require a ser
 - `apps/web` — `@wovenmatter/pi-bot-web`: minimal React client (Woven Matter Enterprise web
   stack, Woven Matter desktop themes).
 
+## Sidebar interaction contract
+
+Woven Matter desktop is the source of truth for sidebar behavior. Preserve it unless Trey
+explicitly requests a sidebar change; edits to other hover styles must not change navigation.
+Read [docs/desktop-style-parity.md](docs/desktop-style-parity.md#sidebar-interaction-contract)
+before changing shared hover/focus/pressed rules or sidebar styles. Selected bot, Main, thread,
+and Settings rows keep their strong selection fill on hover and keyboard focus. Only unselected
+rows get the soft hover fill; pressing a row changes opacity to 0.78 without replacing its fill.
+Keep sidebar navigation out of generic action feedback selectors. Verify selected and unselected
+rows in all three themes whenever shared interaction styles change.
+
 ## Conventions
 
 - Strict TypeScript, ES modules, relative imports with explicit `.ts` extensions.

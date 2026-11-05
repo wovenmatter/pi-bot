@@ -661,13 +661,17 @@ input[type="file"] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.nav-link:hover {
+/* Sidebar interaction contract: selection always wins over hover/focus.
+ * Match DashboardActiveConversationRowBackground and DashboardRailButtonStyle.
+ * Keep nav-link out of shared action feedback below; see docs/desktop-style-parity.md.
+ */
+.sidebar .nav-link:not(.active):is(:hover, :focus-visible) {
   background: var(--soft);
 }
-.nav-link:active {
+.sidebar .nav-link:active {
   opacity: 0.78;
 }
-.nav-link.active {
+.sidebar .nav-link.active {
   background: var(--strong);
   font-weight: 500;
 }
@@ -2600,7 +2604,8 @@ details.account-api-key > .settings-list {
 }
 
 /* Shared action geometry excludes navigation rows and segmented selectors,
- * which retain their compact Woven Matter sizing. Feedback stays shared below. */
+ * which retain their compact Woven Matter sizing. Sidebar rows also own their
+ * hover, selection and press feedback; shared action rules must not override it. */
 :root {
   --action-height: 36px;
   --action-padding: 12px;
@@ -2666,10 +2671,9 @@ details.account-api-key > .settings-list {
   .tabs > button,
   .tabs > a,
   .thread-reply-link,
-  .nav-link,
   .composer-attachment button
 ):hover:not(:disabled),
-:is(button, select, summary, .tabs > a, .nav-link):focus-visible {
+:is(button, select, summary, .tabs > a):focus-visible {
   background-color: var(--action-hover);
   text-decoration: none;
 }
@@ -2693,7 +2697,6 @@ details.account-api-key > .settings-list {
   .tabs > button,
   .tabs > a,
   .thread-reply-link,
-  .nav-link,
   .composer-attachment button
 ):active:not(:disabled) {
   background-color: var(--action-pressed);

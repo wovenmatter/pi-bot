@@ -22,6 +22,42 @@ At 100% browser zoom one CSS pixel corresponds to one macOS logical point.
 | Composer         | `DashboardComposer.swift`, `DashboardComposerTextEditor.swift`                         | 18 radius, 12 horizontal inset, 15 text with 4 extra points of line spacing, foreground .06 rim; neutral/focused shadow; translucent blurred surface                                             |
 | Send/stop        | `DashboardComposer.sendControl`                                                        | 36 circle, 16 send glyph, primary fill, dark ring, .4 disabled; no invented hover recoloring or press scale                                                                                      |
 
+## Sidebar interaction contract
+
+Preserve this behavior unless Trey explicitly asks to change the sidebar. Work on buttons,
+settings, composer controls or other hover effects does not authorize sidebar changes.
+The native reference at the revision above is:
+
+- `DashboardDesign.swift` / `DashboardActiveConversationRowBackground`: selection wins
+  unconditionally (`selected ? themeStrong : hovered ? themeSoft : clear`).
+- `DashboardSharedViews.swift` / `DashboardRailRow`: medium selected labels and regular
+  unselected labels, with the row background supplied by that native component.
+- `DashboardSharedViews.swift` / `DashboardRailButtonStyle`: pressed opacity 0.78 only.
+
+| Row state                 | Fill                                 | Opacity |
+| ------------------------- | ------------------------------------ | ------- |
+| Unselected, idle          | Transparent                          | 1       |
+| Unselected, hovered       | `--soft`                             | 1       |
+| Selected, idle or hovered | `--strong`, unchanged                | 1       |
+| Any row, pressed          | Keep the current selected/hover fill | 0.78    |
+
+This applies to bots, Main, threads and Settings in Green, Cognac and Dark. Selected rows
+must never lighten, gain another overlay/shadow, or lose their selection when hovered.
+Web keyboard focus remains visible: unselected rows use the soft fill; selected rows keep
+their strong fill. Keep the rail container itself fixed on hover and preserve row geometry,
+scrolling, action reveal and the separate hide/reveal control.
+
+Sidebar `.nav-link` rules own this feedback. Do not include them in shared action hover,
+focus or pressed selectors. The selected rule is scoped to `.sidebar` so the general link
+focus treatment cannot replace it. An earlier shared `--action-hover` rule overrode selection
+and caused the unwanted lightening; preserving row dimensions alone did not prevent it.
+
+Whenever shared interaction CSS changes, verify rendered bot, Main, thread and Settings rows
+at desktop and narrow widths in all three themes: compare selected idle with hover and focus
+(the fill must be identical), verify soft hover on unselected rows, and verify pressed opacity
+without recoloring. Also check that the sidebar hide/reveal control still works. Use disposable
+faux-provider data rather than the live user's conversations.
+
 ## Corrections from the inherited stylesheet
 
 Reduced oversized/heavy sidebar glyphs; matched vector stroke roles; prevented flex compression
