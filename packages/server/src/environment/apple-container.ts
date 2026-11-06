@@ -6,6 +6,7 @@ import {
   type ContainerSpec,
   type ContainerState,
   type DockerCli,
+  type DockerResult,
   nodeDockerCli,
   type RunOptions,
 } from "./engine.ts";
@@ -143,7 +144,7 @@ export class AppleContainerEngine implements ContainerEngine {
       if (ours) {
         writeFileSync(marker, "");
         await this.#cli.run(["builder", "delete", "--force"]);
-        const started = await this.#cli.run(
+        const started = await this.#withKernel(
           ["builder", "start", "--cpus", String(this.#cpus), "--memory", "4g"],
           { timeoutMs: 10 * 60_000, signal },
         );
@@ -280,10 +281,32 @@ export class AppleContainerEngine implements ContainerEngine {
   }
 
   async #must(args: readonly string[], what: string): Promise<void> {
-    const result = await this.#cli.run(args);
+    const result = await this.#withKernel(args);
     if (result.code !== 0) {
       throw new Error(`container ${what}: ${result.stderr.trim() || "failed"}`);
     }
+  }
+
+  /**
+   * The first start downloads the kernel, and a server stopped during that leaves the services
+   * running without one, so a later start can't tell. The command that needs it can.
+   */
+  async #withKernel(args: readonly string[], options?: RunOptions): Promise<DockerResult> {
+    const result = await this.#cli.run(args, options);
+    if (result.code === 0 || !/kernel not configured/i.test(result.stderr + result.stdout)) {
+      return result;
+    }
+    this.#options.log?.("installing the Apple container kernel");
+    const installed = await this.#cli.run(["system", "kernel", "set", "--recommended"], {
+      timeoutMs: 15 * 60_000,
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    if (installed.code !== 0) {
+      throw new Error(
+        `container kernel: ${(installed.stderr || installed.stdout).trim().slice(-400)}`,
+      );
+    }
+    return this.#cli.run(args, options);
   }
 }
 

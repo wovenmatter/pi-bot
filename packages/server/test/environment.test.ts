@@ -595,6 +595,33 @@ describe("AppleContainerEngine", () => {
     ]);
   });
 
+  it("installs a kernel a stopped server never finished installing, then carries on", async () => {
+    let kernel = false;
+    const { cli, calls } = appleCli((args) => {
+      if (args[0] === "system" && args[1] === "kernel") {
+        kernel = true;
+        return undefined;
+      }
+      if (args[0] === "run" && !kernel) {
+        return { code: 1, stderr: "Error: default kernel not configured for architecture arm64" };
+      }
+      return undefined;
+    });
+    const spec = {
+      name: "n",
+      hostname: "h",
+      labelKey: "k",
+      labelValue: "v",
+      volume: "v",
+      target: "/w",
+      image: "i",
+      owner: "bot",
+    };
+    await new AppleContainerEngine({ cli }).create(spec);
+    expect(calls).toContainEqual(["system", "kernel", "set", "--recommended"]);
+    expect(calls.filter((call) => call[0] === "run")).toHaveLength(2);
+  });
+
   it("fails clearly when its services can't start", async () => {
     const { cli } = appleCli((args) =>
       args[0] === "system" ? { code: 1, stderr: "no kernel available" } : undefined,
