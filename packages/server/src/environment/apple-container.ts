@@ -49,6 +49,7 @@ export class AppleContainerEngine implements ContainerEngine {
   readonly #memory: string;
   readonly #cpus: number;
   #starting: Promise<void> | undefined;
+  #installingKernel: Promise<DockerResult> | undefined;
   #building: { readonly abort: AbortController; readonly done: Promise<void> } | undefined;
 
   constructor(options: AppleContainerOptions = {}) {
@@ -296,11 +297,17 @@ export class AppleContainerEngine implements ContainerEngine {
     if (result.code === 0 || !/kernel not configured/i.test(result.stderr + result.stdout)) {
       return result;
     }
-    this.#options.log?.("installing the Apple container kernel");
-    const installed = await this.#cli.run(["system", "kernel", "set", "--recommended"], {
-      timeoutMs: 15 * 60_000,
-      ...(options?.signal ? { signal: options.signal } : {}),
-    });
+    if (!this.#installingKernel) {
+      this.#options.log?.("installing the Apple container kernel");
+      // Forced: a stopped install can leave the file without the link that makes it the default.
+      const pending = this.#cli
+        .run(["system", "kernel", "set", "--recommended", "--force"], { timeoutMs: 15 * 60_000 })
+        .finally(() => {
+          this.#installingKernel = undefined;
+        });
+      this.#installingKernel = pending;
+    }
+    const installed = await this.#installingKernel;
     if (installed.code !== 0) {
       throw new Error(
         `container kernel: ${(installed.stderr || installed.stdout).trim().slice(-400)}`,

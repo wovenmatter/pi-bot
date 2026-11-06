@@ -618,7 +618,7 @@ describe("AppleContainerEngine", () => {
       owner: "bot",
     };
     await new AppleContainerEngine({ cli }).create(spec);
-    expect(calls).toContainEqual(["system", "kernel", "set", "--recommended"]);
+    expect(calls).toContainEqual(["system", "kernel", "set", "--recommended", "--force"]);
     expect(calls.filter((call) => call[0] === "run")).toHaveLength(2);
   });
 
