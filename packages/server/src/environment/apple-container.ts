@@ -5,6 +5,7 @@ import {
   type ContainerState,
   type DockerCli,
   nodeDockerCli,
+  type RunOptions,
 } from "./engine.ts";
 import type { AgentProcess } from "./remote.ts";
 
@@ -45,6 +46,7 @@ export class AppleContainerEngine implements ContainerEngine {
   readonly #memory: string;
   readonly #cpus: number;
   #starting: Promise<void> | undefined;
+  #building: { readonly abort: AbortController; readonly done: Promise<void> } | undefined;
 
   constructor(options: AppleContainerOptions = {}) {
     this.#options = options;
@@ -53,7 +55,7 @@ export class AppleContainerEngine implements ContainerEngine {
     this.#cpus = options.cpus ?? availableParallelism();
   }
 
-  run(args: readonly string[], options?: { readonly input?: string; readonly timeoutMs?: number }) {
+  run(args: readonly string[], options?: RunOptions) {
     return this.#cli.run(args, options);
   }
 
@@ -75,20 +77,35 @@ export class AppleContainerEngine implements ContainerEngine {
   async #ensureServices(): Promise<void> {
     if ((await this.#cli.run(["system", "status"])).code === 0) return;
     this.#options.log?.("starting Apple container services");
+    const location = [
+      ...(this.#options.installRoot ? ["--install-root", this.#options.installRoot] : []),
+      ...(this.#options.appRoot ? ["--app-root", this.#options.appRoot] : []),
+    ];
     const started = await this.#cli.run(
-      [
-        "system",
-        "start",
-        "--enable-kernel-install",
-        ...(this.#options.installRoot ? ["--install-root", this.#options.installRoot] : []),
-        ...(this.#options.appRoot ? ["--app-root", this.#options.appRoot] : []),
-      ],
-      { timeoutMs: 15 * 60_000 },
+      ["system", "start", "--enable-kernel-install", ...location],
+      {
+        timeoutMs: 15 * 60_000,
+      },
     );
     if (started.code !== 0) {
       throw new Error(
         `container is not reachable: ${(started.stderr || started.stdout).trim().slice(-400)}`,
       );
+    }
+    // Installing the kernel leaves about 750 MB in the API server until it restarts.
+    if (/installing kernel/i.test(started.stdout + started.stderr)) {
+      await this.#cli.run(["system", "stop"]);
+      const again = await this.#cli.run(
+        ["system", "start", "--disable-kernel-install", ...location],
+        {
+          timeoutMs: 5 * 60_000,
+        },
+      );
+      if (again.code !== 0) {
+        throw new Error(
+          `container is not reachable: ${(again.stderr || again.stdout).trim().slice(-400)}`,
+        );
+      }
     }
   }
 
@@ -100,15 +117,27 @@ export class AppleContainerEngine implements ContainerEngine {
   /** Its builder VM would otherwise keep 2 GB or more after the build. */
   async build(tags: readonly string[], dir: string): Promise<void> {
     await this.ping();
+    const abort = new AbortController();
+    const done = this.#buildWith(tags, dir, abort.signal);
+    const building = { abort, done: done.catch(() => {}) };
+    this.#building = building;
+    try {
+      await done;
+    } finally {
+      if (this.#building === building) this.#building = undefined;
+    }
+  }
+
+  async #buildWith(tags: readonly string[], dir: string, signal: AbortSignal): Promise<void> {
+    // A private copy's builder can only be left from a build that was interrupted.
     const status = await this.#cli.run(["builder", "status"]);
-    const ours = !/\brunning\b/i.test(status.stdout);
+    const ours = this.#options.installRoot !== undefined || !/\brunning\b/i.test(status.stdout);
     if (ours) {
+      await this.#cli.run(["builder", "stop"]);
       await this.#cli.run(["builder", "delete"]);
       const started = await this.#cli.run(
         ["builder", "start", "--cpus", String(this.#cpus), "--memory", "4g"],
-        {
-          timeoutMs: 10 * 60_000,
-        },
+        { timeoutMs: 10 * 60_000, signal },
       );
       if (started.code !== 0) {
         throw new Error(`container builder: ${started.stderr.trim().slice(-400) || "failed"}`);
@@ -117,7 +146,7 @@ export class AppleContainerEngine implements ContainerEngine {
     try {
       const built = await this.#cli.run(
         ["build", "--progress", "plain", ...tags.flatMap((tag) => ["-t", tag]), dir],
-        { timeoutMs: 60 * 60_000 },
+        { timeoutMs: 60 * 60_000, signal },
       );
       if (built.code !== 0) {
         throw new Error(
@@ -130,6 +159,13 @@ export class AppleContainerEngine implements ContainerEngine {
         await this.#cli.run(["builder", "delete"]);
       }
     }
+  }
+
+  async cancel(): Promise<void> {
+    const building = this.#building;
+    if (!building) return;
+    building.abort.abort();
+    await building.done;
   }
 
   async state(name: string): Promise<ContainerState> {

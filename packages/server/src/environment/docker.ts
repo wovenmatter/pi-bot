@@ -419,7 +419,10 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
     this.#lastUse.clear();
     this.#ready.clear();
     await Promise.race([
-      Promise.allSettled(bots.map((botId) => this.#engine.stop(containerName(botId)))),
+      Promise.allSettled([
+        ...bots.map((botId) => this.#engine.stop(containerName(botId))),
+        this.#engine.cancel?.(),
+      ]),
       new Promise((resolve) => setTimeout(resolve, 15_000).unref()),
     ]);
   }

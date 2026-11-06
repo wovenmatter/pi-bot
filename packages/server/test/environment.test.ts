@@ -574,6 +574,25 @@ describe("AppleContainerEngine", () => {
     ]);
   });
 
+  it("restarts its services after installing the kernel, which frees the memory that took", async () => {
+    let up = false;
+    const { cli, calls } = appleCli((args) => {
+      if (args[1] === "status") return up ? undefined : { code: 1 };
+      if (args[1] === "start") {
+        up = true;
+        return { stdout: args.includes("--enable-kernel-install") ? "Installing kernel...\n" : "" };
+      }
+      return undefined;
+    });
+    await new AppleContainerEngine({ cli }).ping();
+    expect(calls.map((call) => call.slice(0, 3).join(" "))).toEqual([
+      "system status",
+      "system start --enable-kernel-install",
+      "system stop",
+      "system start --disable-kernel-install",
+    ]);
+  });
+
   it("fails clearly when its services can't start", async () => {
     const { cli } = appleCli((args) =>
       args[0] === "system" ? { code: 1, stderr: "no kernel available" } : undefined,
@@ -609,7 +628,7 @@ describe("AppleContainerEngine", () => {
       /apt failed/,
     );
     const words = calls.map((call) => call.slice(0, 2).join(" "));
-    expect(words.indexOf("builder stop")).toBeGreaterThan(
+    expect(words.lastIndexOf("builder stop")).toBeGreaterThan(
       words.findIndex((w) => w.startsWith("build ")),
     );
     expect(words).toContain("builder delete");
@@ -621,6 +640,39 @@ describe("AppleContainerEngine", () => {
     );
     await new AppleContainerEngine({ cli }).build(["a:1"], "/ctx");
     expect(calls.some((call) => call[0] === "builder" && call[1] !== "status")).toBe(false);
+  });
+
+  it("clears a builder an interrupted build left, in a private copy", async () => {
+    const { cli, calls } = appleCli((args) =>
+      args[0] === "builder" && args[1] === "status" ? { stdout: "buildkit running" } : undefined,
+    );
+    await new AppleContainerEngine({ cli, installRoot: "/r" }).build(["a:1"], "/ctx");
+    const words = calls.map((call) => call.slice(0, 2).join(" "));
+    expect(words.filter((word) => word === "builder delete")).toHaveLength(2);
+    expect(words).toContain("builder start");
+  });
+
+  it("cancels a build when the server stops, and still removes the builder", async () => {
+    const calls: string[][] = [];
+    const cli: DockerCli = {
+      run(args, options) {
+        calls.push([...args]);
+        if (args[0] !== "build") return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+        return new Promise((_, reject) =>
+          options?.signal?.addEventListener("abort", () => reject(new Error("aborted"))),
+        );
+      },
+      spawn() {
+        throw new Error("not used");
+      },
+    };
+    const engine = new AppleContainerEngine({ cli });
+    const build = engine.build(["a:1"], "/ctx");
+    build.catch(() => {});
+    while (!calls.some((call) => call[0] === "build")) await new Promise((r) => setTimeout(r, 1));
+    await engine.cancel();
+    await expect(build).rejects.toThrow("aborted");
+    expect(calls.at(-1)).toEqual(["builder", "delete"]);
   });
 
   it("lists only its own running containers", async () => {

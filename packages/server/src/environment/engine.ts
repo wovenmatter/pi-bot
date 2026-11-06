@@ -7,12 +7,15 @@ export type DockerResult = {
   readonly stderr: string;
 };
 
+export type RunOptions = {
+  readonly input?: string;
+  readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
+};
+
 /** The `docker` CLI. Tests substitute a fake; nothing here talks to the Docker socket directly. */
 export interface DockerCli {
-  run(
-    args: readonly string[],
-    options?: { readonly input?: string; readonly timeoutMs?: number },
-  ): Promise<DockerResult>;
+  run(args: readonly string[], options?: RunOptions): Promise<DockerResult>;
   /** A long-lived `docker exec -i …` whose stdio carries the environment agent. */
   spawn(args: readonly string[]): AgentProcess;
 }
@@ -32,7 +35,11 @@ export function nodeDockerCli(binary = "docker"): DockerCli {
   return {
     run(args, options = {}) {
       return new Promise((resolve, reject) => {
-        const child = spawn(binary, args, { env: cliEnv(), stdio: "pipe" });
+        const child = spawn(binary, args, {
+          env: cliEnv(),
+          stdio: "pipe",
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
         let stdout = "";
         let stderr = "";
         const timer = options.timeoutMs
@@ -82,11 +89,10 @@ export interface ContainerEngine {
   readonly kind: string;
   /** The CLI's name, for messages. */
   readonly cliName: string;
-  run(
-    args: readonly string[],
-    options?: { readonly input?: string; readonly timeoutMs?: number },
-  ): Promise<DockerResult>;
+  run(args: readonly string[], options?: RunOptions): Promise<DockerResult>;
   spawn(args: readonly string[]): AgentProcess;
+  /** Server shutdown: end a build in progress and whatever it holds. */
+  cancel?(): Promise<void>;
   /** Throws when the runtime can't be reached. */
   ping(): Promise<void>;
   imageExists(tag: string): Promise<boolean>;
@@ -115,7 +121,7 @@ export class DockerEngine implements ContainerEngine {
     this.#cli = cli;
   }
 
-  run(args: readonly string[], options?: { readonly input?: string; readonly timeoutMs?: number }) {
+  run(args: readonly string[], options?: RunOptions) {
     return this.#cli.run(args, options);
   }
 
