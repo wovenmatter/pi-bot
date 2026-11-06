@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { cp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT, withCancel } from "@earendil-works/chord/context";
@@ -628,18 +630,30 @@ describe("AppleContainerEngine", () => {
       /apt failed/,
     );
     const words = calls.map((call) => call.slice(0, 2).join(" "));
-    expect(words.lastIndexOf("builder stop")).toBeGreaterThan(
+    expect(words.lastIndexOf("builder delete")).toBeGreaterThan(
       words.findIndex((w) => w.startsWith("build ")),
     );
-    expect(words).toContain("builder delete");
+    expect(calls.at(-1)).toEqual(["builder", "delete", "--force"]);
   });
 
   it("leaves a builder that was already running alone", async () => {
+    rmSync(join(tmpdir(), "pi-bot-container-builder"), { force: true });
     const { cli, calls } = appleCli((args) =>
       args[0] === "builder" && args[1] === "status" ? { stdout: "buildkit running" } : undefined,
     );
     await new AppleContainerEngine({ cli }).build(["a:1"], "/ctx");
     expect(calls.some((call) => call[0] === "builder" && call[1] !== "status")).toBe(false);
+  });
+
+  it("clears a builder its own interrupted build left on an installed container", async () => {
+    const marker = join(tmpdir(), "pi-bot-container-builder");
+    writeFileSync(marker, "");
+    const { cli, calls } = appleCli((args) =>
+      args[0] === "builder" && args[1] === "status" ? { stdout: "buildkit running" } : undefined,
+    );
+    await new AppleContainerEngine({ cli }).build(["a:1"], "/ctx");
+    expect(calls.map((call) => call[1])).toContain("start");
+    expect(existsSync(marker)).toBe(false);
   });
 
   it("clears a builder an interrupted build left, in a private copy", async () => {
@@ -672,7 +686,35 @@ describe("AppleContainerEngine", () => {
     while (!calls.some((call) => call[0] === "build")) await new Promise((r) => setTimeout(r, 1));
     await engine.cancel();
     await expect(build).rejects.toThrow("aborted");
-    expect(calls.at(-1)).toEqual(["builder", "delete"]);
+    expect(calls.at(-1)).toEqual(["builder", "delete", "--force"]);
+  });
+
+  it("removes the builder when a build is cancelled while it starts", async () => {
+    const calls: string[][] = [];
+    const cli: DockerCli = {
+      run(args, options) {
+        calls.push([...args]);
+        if (args[0] === "builder" && args[1] === "start") {
+          return new Promise((_, reject) =>
+            options?.signal?.addEventListener("abort", () => reject(new Error("aborted"))),
+          );
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      spawn() {
+        throw new Error("not used");
+      },
+    };
+    const engine = new AppleContainerEngine({ cli });
+    const build = engine.build(["a:1"], "/ctx");
+    build.catch(() => {});
+    while (!calls.some((call) => call[1] === "start" && call[0] === "builder")) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    await engine.cancel();
+    await expect(build).rejects.toThrow("aborted");
+    expect(calls.at(-1)).toEqual(["builder", "delete", "--force"]);
+    expect(calls.some((call) => call[0] === "build")).toBe(false);
   });
 
   it("lists only its own running containers", async () => {

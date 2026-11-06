@@ -1,4 +1,6 @@
-import { availableParallelism, totalmem } from "node:os";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { availableParallelism, tmpdir, totalmem } from "node:os";
+import { join } from "node:path";
 import {
   type ContainerEngine,
   type ContainerSpec,
@@ -129,21 +131,26 @@ export class AppleContainerEngine implements ContainerEngine {
   }
 
   async #buildWith(tags: readonly string[], dir: string, signal: AbortSignal): Promise<void> {
-    // A private copy's builder can only be left from a build that was interrupted.
+    // A builder already running is someone else's on an installed `container`, unless the marker
+    // says an interrupted build of ours left it. A private copy has no one else to leave one.
     const status = await this.#cli.run(["builder", "status"]);
-    const ours = this.#options.installRoot !== undefined || !/\brunning\b/i.test(status.stdout);
-    if (ours) {
-      await this.#cli.run(["builder", "stop"]);
-      await this.#cli.run(["builder", "delete"]);
-      const started = await this.#cli.run(
-        ["builder", "start", "--cpus", String(this.#cpus), "--memory", "4g"],
-        { timeoutMs: 10 * 60_000, signal },
-      );
-      if (started.code !== 0) {
-        throw new Error(`container builder: ${started.stderr.trim().slice(-400) || "failed"}`);
-      }
-    }
+    const marker = join(tmpdir(), "pi-bot-container-builder");
+    const ours =
+      this.#options.installRoot !== undefined ||
+      !/\brunning\b/i.test(status.stdout) ||
+      existsSync(marker);
     try {
+      if (ours) {
+        writeFileSync(marker, "");
+        await this.#cli.run(["builder", "delete", "--force"]);
+        const started = await this.#cli.run(
+          ["builder", "start", "--cpus", String(this.#cpus), "--memory", "4g"],
+          { timeoutMs: 10 * 60_000, signal },
+        );
+        if (started.code !== 0) {
+          throw new Error(`container builder: ${started.stderr.trim().slice(-400) || "failed"}`);
+        }
+      }
       const built = await this.#cli.run(
         ["build", "--progress", "plain", ...tags.flatMap((tag) => ["-t", tag]), dir],
         { timeoutMs: 60 * 60_000, signal },
@@ -155,8 +162,9 @@ export class AppleContainerEngine implements ContainerEngine {
       }
     } finally {
       if (ours) {
-        await this.#cli.run(["builder", "stop"]);
-        await this.#cli.run(["builder", "delete"]);
+        // Forced: a builder still starting when its start was cancelled can't be stopped first.
+        const removed = await this.#cli.run(["builder", "delete", "--force"]);
+        if (removed.code === 0) rmSync(marker, { force: true });
       }
     }
   }
