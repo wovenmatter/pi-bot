@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { cp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT, withCancel } from "@earendil-works/chord/context";
@@ -17,7 +16,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createBotHarnessOptions } from "../src/agent.ts";
 import { BotManager } from "../src/bots.ts";
 import type { BotEnvironmentAdapter } from "../src/env.ts";
-import { AppleContainerEngine, defaultMemory } from "../src/environment/apple-container.ts";
+import {
+  AppleContainerEngine,
+  builderMarker,
+  defaultMemory,
+} from "../src/environment/apple-container.ts";
 import {
   containerName,
   type DockerCli,
@@ -664,7 +667,7 @@ describe("AppleContainerEngine", () => {
   });
 
   it("leaves a builder that was already running alone", async () => {
-    rmSync(join(tmpdir(), "pi-bot-container-builder"), { force: true });
+    rmSync(builderMarker(), { force: true });
     const { cli, calls } = appleCli((args) =>
       args[0] === "builder" && args[1] === "status" ? { stdout: "buildkit running" } : undefined,
     );
@@ -672,9 +675,29 @@ describe("AppleContainerEngine", () => {
     expect(calls.some((call) => call[0] === "builder" && call[1] !== "status")).toBe(false);
   });
 
+  it("waits for another live server's build instead of deleting its builder", async () => {
+    writeFileSync(builderMarker(), String(process.ppid));
+    let built = false;
+    const { cli, calls } = appleCli((args) => {
+      if (args[0] === "image") {
+        const answer = built ? undefined : { code: 1 };
+        built = true;
+        return answer;
+      }
+      return undefined;
+    });
+    await new AppleContainerEngine({ cli, installRoot: "/r", builderPollMs: 1 }).build(
+      ["a:1"],
+      "/ctx",
+    );
+    expect(calls.some((call) => call[0] === "builder")).toBe(false);
+    expect(calls.some((call) => call[0] === "build")).toBe(false);
+    rmSync(builderMarker(), { force: true });
+  });
+
   it("clears a builder its own interrupted build left on an installed container", async () => {
-    const marker = join(tmpdir(), "pi-bot-container-builder");
-    writeFileSync(marker, "");
+    const marker = builderMarker();
+    writeFileSync(marker, "2147483647");
     const { cli, calls } = appleCli((args) =>
       args[0] === "builder" && args[1] === "status" ? { stdout: "buildkit running" } : undefined,
     );

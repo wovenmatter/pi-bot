@@ -58,9 +58,16 @@ describe("Woven host protocol", () => {
     const [first, retry] = (await Promise.all([
       client.request("message.send", body),
       client.request("message.send", body),
-    ])) as [{ submissionId?: unknown }, { submissionId?: unknown }];
+    ])) as [{ submissionId?: unknown }, { submissionId?: unknown; duplicate?: unknown }];
     expect(first.submissionId).toBeDefined();
-    expect(retry.submissionId).toBe(first.submissionId);
+    // Whichever arrives second joins the first, or finds it already finished. Neither submits.
+    if (retry.duplicate !== true) expect(retry.submissionId).toBe(first.submissionId);
+    const { entries } = (await client.request("conversation.open", { botId })) as {
+      entries: { role: string; text?: string }[];
+    };
+    expect(
+      entries.filter((entry) => entry.role === "user" && entry.text === body.text),
+    ).toHaveLength(1);
   });
 
   it("lets a retry through when a delivery was claimed but never accepted", async () => {

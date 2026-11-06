@@ -1,6 +1,7 @@
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   type ContainerEngine,
   type ContainerSpec,
@@ -34,7 +35,34 @@ export type AppleContainerOptions = {
   readonly memory?: string;
   readonly cpus?: number;
   readonly log?: (message: string) => void;
+  /** How often to look again while another server has the builder. */
+  readonly builderPollMs?: number;
 };
+
+export function builderMarker(): string {
+  return join(tmpdir(), "pi-bot-container-builder");
+}
+
+/** Takes the builder for this server, unless another live server has it. */
+function claimBuilder(): "claimed" | "interrupted" | "busy" {
+  const marker = builderMarker();
+  try {
+    writeFileSync(marker, String(process.pid), { flag: "wx" });
+    return "claimed";
+  } catch {
+    const owner = Number(readFileSync(marker, "utf8"));
+    if (Number.isInteger(owner) && owner > 0 && owner !== process.pid) {
+      try {
+        process.kill(owner, 0);
+        return "busy";
+      } catch {
+        // Its server is gone.
+      }
+    }
+    writeFileSync(marker, String(process.pid));
+    return "interrupted";
+  }
+}
 
 /**
  * Apple's `container`: one lightweight VM per container, and no shared VM to keep running, so with
@@ -133,17 +161,24 @@ export class AppleContainerEngine implements ContainerEngine {
   }
 
   async #buildWith(tags: readonly string[], dir: string, signal: AbortSignal): Promise<void> {
-    // A builder already running is someone else's on an installed `container`, unless the marker
-    // says an interrupted build of ours left it. A private copy has no one else to leave one.
+    // Apple has one builder per user, so a second server waits for the first and may find the
+    // image already built. A marker whose server is gone means its build was interrupted.
+    let claim = claimBuilder();
+    while (claim === "busy") {
+      await delay(this.#options.builderPollMs ?? 5000, undefined, { signal });
+      if ((await this.#cli.run(["image", "inspect", tags[0] ?? ""])).code === 0) return;
+      claim = claimBuilder();
+    }
+    // A builder already running is someone else's on an installed `container`. A private copy
+    // has no one else to leave one.
     const status = await this.#cli.run(["builder", "status"]);
-    const marker = join(tmpdir(), "pi-bot-container-builder");
     const ours =
       this.#options.installRoot !== undefined ||
       !/\brunning\b/i.test(status.stdout) ||
-      existsSync(marker);
+      claim === "interrupted";
+    let released = !ours;
     try {
       if (ours) {
-        writeFileSync(marker, "");
         await this.#cli.run(["builder", "delete", "--force"]);
         const started = await this.#withKernel(
           ["builder", "start", "--cpus", String(this.#cpus), "--memory", "4g"],
@@ -165,9 +200,9 @@ export class AppleContainerEngine implements ContainerEngine {
     } finally {
       if (ours) {
         // Forced: a builder still starting when its start was cancelled can't be stopped first.
-        const removed = await this.#cli.run(["builder", "delete", "--force"]);
-        if (removed.code === 0) rmSync(marker, { force: true });
+        released = (await this.#cli.run(["builder", "delete", "--force"])).code === 0;
       }
+      if (released) rmSync(builderMarker(), { force: true });
     }
   }
 
