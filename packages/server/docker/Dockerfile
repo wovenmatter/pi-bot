@@ -35,6 +35,8 @@ RUN (userdel -r ubuntu 2>/dev/null || true) \
 COPY package.json package-lock.json /opt/pibot-env/
 RUN cd /opt/pibot-env && npm ci --omit=dev --no-audit --no-fund && rm -rf /root/.npm
 COPY agent.mjs /opt/pibot-env/agent.mjs
+# A build context can come from a private directory, whose modes COPY would keep.
+RUN chmod -R a+rX /opt/pibot-env
 
 USER bot
 WORKDIR /workspace
