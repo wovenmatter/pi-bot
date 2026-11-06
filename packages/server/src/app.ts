@@ -6,7 +6,12 @@ import { createBotHarnessOptions } from "./agent.ts";
 import { BotManager } from "./bots.ts";
 import { type ModelRef, type PiBotConfig, parseModelRef } from "./config.ts";
 import { type OpenedCredentialStore, openCredentialStore } from "./credentials/index.ts";
-import { type BotEnvironmentAdapter, DockerEnvironmentAdapter } from "./env.ts";
+import {
+  AppleContainerEngine,
+  type BotEnvironmentAdapter,
+  DockerEnvironmentAdapter,
+  nodeDockerCli,
+} from "./env.ts";
 import { ModelAvailability } from "./limits.ts";
 import { MemoryExtractor, memorySection } from "./memory.ts";
 import { checkModelRoles, createPiBotModels } from "./models.ts";
@@ -91,15 +96,34 @@ export async function startPiBot(
     maxMessagesPerHourPerPair: config.bot_to_bot.max_messages_per_hour_per_pair,
     maxRoundsPerRequest: config.bot_to_bot.max_rounds_per_request,
   };
+  const environment = config.environment;
+  const envCommon = {
+    ...(environment.image ? { image: environment.image } : {}),
+    git: async () => (settings ? settings.gitMaterial() : {}),
+    log,
+  };
   const env =
     options.env ??
-    (config.environment.backend === "docker"
+    (environment.backend === "docker"
       ? new DockerEnvironmentAdapter({
-          ...(config.environment.image ? { image: config.environment.image } : {}),
-          git: async () => (settings ? settings.gitMaterial() : {}),
-          log,
+          ...envCommon,
+          ...(environment.binary ? { docker: nodeDockerCli(environment.binary) } : {}),
         })
-      : undefined);
+      : environment.backend === "container"
+        ? new DockerEnvironmentAdapter({
+            ...envCommon,
+            engine: new AppleContainerEngine({
+              ...(environment.binary ? { binary: environment.binary } : {}),
+              ...(environment.install_root ? { installRoot: environment.install_root } : {}),
+              ...(environment.app_root ? { appRoot: environment.app_root } : {}),
+              ...(environment.memory ? { memory: environment.memory } : {}),
+              ...(environment.cpus ? { cpus: environment.cpus } : {}),
+              log,
+            }),
+            lazy: true,
+            idleStopMs: environment.idle_stop_minutes * 60_000,
+          })
+        : undefined);
   const db = await openSharedDatabase(config.paths.database);
   try {
     const credentials = await openCredentialStore(config, db);
@@ -271,6 +295,7 @@ export async function startPiBot(
       manager: opened,
       settings,
       woven,
+      environment: env?.kind ?? "none",
       host: config.server.host,
       port: options.port ?? config.server.port,
       ...(webDir ? { webDir } : {}),
@@ -304,7 +329,8 @@ export async function startPiBot(
         await opened.close();
         availability?.close();
         await availability?.flushed();
-        env?.close?.();
+        if (env?.shutdown) await env.shutdown();
+        else env?.close?.();
         await db.close();
       },
     };

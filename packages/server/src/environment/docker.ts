@@ -1,70 +1,20 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { BotEnvironmentAdapter, HarnessEnvFactory } from "../env.ts";
 import { GITHUB_KNOWN_HOSTS } from "../settings/github-hosts.ts";
-import { AgentConnection, type AgentProcess, RemoteExecutionEnv } from "./remote.ts";
+import {
+  type ContainerEngine,
+  type ContainerState,
+  type DockerCli,
+  DockerEngine,
+  type DockerResult,
+  nodeDockerCli,
+} from "./engine.ts";
+import { AgentConnection, RemoteExecutionEnv } from "./remote.ts";
 
-export type DockerResult = {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-};
-
-/** The `docker` CLI. Tests substitute a fake; nothing here talks to the Docker socket directly. */
-export interface DockerCli {
-  run(
-    args: readonly string[],
-    options?: { readonly input?: string; readonly timeoutMs?: number },
-  ): Promise<DockerResult>;
-  /** A long-lived `docker exec -i …` whose stdio carries the environment agent. */
-  spawn(args: readonly string[]): AgentProcess;
-}
-
-/**
- * Only what the docker CLI itself needs. `docker exec` never forwards the server's environment
- * into a container, and this keeps the CLI child free of anything else the server holds.
- */
-function dockerCliEnv(): NodeJS.ProcessEnv {
-  const keep = ["PATH", "HOME", "USER", "XDG_RUNTIME_DIR", "DOCKER_HOST", "DOCKER_CONTEXT"];
-  return Object.fromEntries(
-    keep.flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
-  );
-}
-
-export function nodeDockerCli(binary = "docker"): DockerCli {
-  return {
-    run(args, options = {}) {
-      return new Promise((resolve, reject) => {
-        const child = spawn(binary, args, { env: dockerCliEnv(), stdio: "pipe" });
-        let stdout = "";
-        let stderr = "";
-        const timer = options.timeoutMs
-          ? setTimeout(() => child.kill("SIGTERM"), options.timeoutMs)
-          : undefined;
-        child.stdout.on("data", (chunk: Buffer) => {
-          stdout += chunk.toString();
-        });
-        child.stderr.on("data", (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-        child.on("error", (error) => {
-          if (timer) clearTimeout(timer);
-          reject(error);
-        });
-        child.on("close", (code) => {
-          if (timer) clearTimeout(timer);
-          resolve({ code: code ?? 1, stdout, stderr });
-        });
-        child.stdin.end(options.input ?? "");
-      });
-    },
-    spawn(args) {
-      return spawn(binary, args, { env: dockerCliEnv(), stdio: ["pipe", "pipe", "pipe"] });
-    },
-  };
-}
+export type { DockerCli, DockerResult } from "./engine.ts";
+export { nodeDockerCli } from "./engine.ts";
 
 /** The GitHub SSH key and git identity from Settings, written into every bot container. */
 export type GitMaterial = {
@@ -98,6 +48,15 @@ export function volumeName(botId: string): string {
 
 export type DockerEnvironmentOptions = {
   readonly docker?: DockerCli;
+  /** The container runtime; Docker through `docker` when absent. */
+  readonly engine?: ContainerEngine;
+  /**
+   * Stop a bot's container after this long with no tool call and nothing left running in it. Its
+   * memory goes back to the host, its files stay, and the next tool call starts it again.
+   */
+  readonly idleStopMs?: number;
+  /** Start containers on first use instead of at server startup. */
+  readonly lazy?: boolean;
   /** Image to run; defaults to `pi-bot-env:<hash of the build context>`, built when missing. */
   readonly image?: string;
   readonly contextDir?: string;
@@ -105,8 +64,6 @@ export type DockerEnvironmentOptions = {
   readonly git?: () => Promise<GitMaterial>;
   readonly log?: (message: string) => void;
 };
-
-type ContainerState = "missing" | "running" | "stopped";
 
 /**
  * One Docker container per bot: Ubuntu LTS with git, Node, Python, build tools and Playwright +
@@ -118,19 +75,23 @@ type ContainerState = "missing" | "running" | "stopped";
  * container through the environment agent; model and search credentials never enter it.
  */
 export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
-  readonly kind = "docker";
-  readonly #docker: DockerCli;
+  readonly kind: string;
+  readonly #engine: ContainerEngine;
   readonly #options: DockerEnvironmentOptions;
   readonly #log: (message: string) => void;
   readonly #connections = new Map<string, AgentConnection>();
   readonly #locks = new Map<string, Promise<unknown>>();
   /** Bots whose container this process has started or adopted (and synced git into). */
   readonly #ready = new Set<string>();
+  /** When each started bot last used its container; only kept while idle stopping is on. */
+  readonly #lastUse = new Map<string, number>();
+  #idleTimer: NodeJS.Timeout | undefined;
   #image: Promise<string> | undefined;
 
   constructor(options: DockerEnvironmentOptions = {}) {
     this.#options = options;
-    this.#docker = options.docker ?? nodeDockerCli();
+    this.#engine = options.engine ?? new DockerEngine(options.docker ?? nodeDockerCli());
+    this.kind = this.#engine.kind;
     this.#log = options.log ?? (() => {});
   }
 
@@ -140,26 +101,31 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
         target.cwd && (target.cwd === WORKSPACE || target.cwd.startsWith(`${WORKSPACE}/`))
           ? target.cwd
           : WORKSPACE;
-      return new RemoteExecutionEnv(`docker:${containerName(botId)}`, cwd, this.#connection(botId));
+      return new RemoteExecutionEnv(
+        `${this.kind}:${containerName(botId)}`,
+        cwd,
+        this.#connection(botId),
+      );
     };
   }
 
   #connection(botId: string): AgentConnection {
     let connection = this.#connections.get(botId);
     if (!connection) {
-      connection = new AgentConnection(async () => {
-        await this.ensure(botId);
-        return this.#docker.spawn([
-          "exec",
-          "-i",
-          "-u",
-          CONTAINER_USER,
-          "-w",
-          WORKSPACE,
-          containerName(botId),
-          ...AGENT_COMMAND,
-        ]);
-      }, this.#log);
+      connection = new AgentConnection(
+        async () => {
+          await this.ensure(botId);
+          return this.#engine.spawn(
+            this.#engine.execArgs(
+              containerName(botId),
+              { user: CONTAINER_USER, cwd: WORKSPACE },
+              AGENT_COMMAND,
+            ),
+          );
+        },
+        this.#log,
+        () => this.#touch(botId),
+      );
       this.#connections.set(botId, connection);
     }
     return connection;
@@ -202,32 +168,14 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
         .update("\0");
     }
     const tag = `pi-bot-env:${hash.digest("hex").slice(0, 12)}`;
-    if ((await this.#docker.run(["image", "inspect", tag])).code === 0) return tag;
+    if (await this.#engine.imageExists(tag)) return tag;
     this.#log(`building bot environment image ${tag} (first run takes a few minutes)`);
-    const built = await this.#docker.run(["build", "-t", tag, "-t", "pi-bot-env:latest", dir], {
-      timeoutMs: 60 * 60_000,
-    });
-    if (built.code !== 0) {
-      throw new Error(
-        `docker build failed: ${built.stderr.trim().split("\n").slice(-5).join(" ")}`,
-      );
-    }
+    await this.#engine.build([tag, "pi-bot-env:latest"], dir);
     return tag;
   }
 
-  async state(botId: string): Promise<ContainerState> {
-    const result = await this.#docker.run([
-      "container",
-      "inspect",
-      "-f",
-      "{{.State.Running}}",
-      containerName(botId),
-    ]);
-    if (result.code !== 0) {
-      if (/no such (container|object)/i.test(result.stderr)) return "missing";
-      throw new Error(`docker: ${result.stderr.trim() || "container inspect failed"}`);
-    }
-    return result.stdout.trim() === "true" ? "running" : "stopped";
+  state(botId: string): Promise<ContainerState> {
+    return this.#engine.state(containerName(botId));
   }
 
   /** Make sure the bot's container exists and runs; sync git into it the first time. */
@@ -237,41 +185,100 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
       const state = await this.state(botId);
       if (state === "missing") {
         const image = await this.image();
-        await this.#must(
-          [
-            "run",
-            "-d",
-            "--name",
-            name,
-            "--hostname",
-            `bot-${botId.slice(0, 8)}`,
-            "--restart",
-            "unless-stopped",
-            "--label",
-            `${BOT_LABEL}=${botId}`,
-            "--mount",
-            `type=volume,source=${volumeName(botId)},target=${WORKSPACE}`,
-            image,
-          ],
-          "create container",
-        );
+        await this.#engine.create({
+          name,
+          hostname: `bot-${botId.slice(0, 8)}`,
+          labelKey: BOT_LABEL,
+          labelValue: botId,
+          volume: volumeName(botId),
+          target: WORKSPACE,
+          image,
+          owner: CONTAINER_USER,
+        });
         this.#log(`bot ${botId}: created container ${name}`);
         this.#ready.delete(botId);
       } else if (state === "stopped") {
-        await this.#must(["start", name], "start container");
+        await this.#engine.start(name);
         this.#ready.delete(botId);
       }
       if (!this.#ready.has(botId)) {
         await this.#syncGit(botId);
         this.#ready.add(botId);
       }
+      this.#touch(botId);
     });
   }
 
   async #must(args: readonly string[], what: string, input?: string): Promise<DockerResult> {
-    const result = await this.#docker.run(args, input === undefined ? {} : { input });
-    if (result.code !== 0) throw new Error(`docker ${what}: ${result.stderr.trim() || "failed"}`);
+    const result = await this.#engine.run(args, input === undefined ? {} : { input });
+    if (result.code !== 0) {
+      throw new Error(`${this.#engine.cliName} ${what}: ${result.stderr.trim() || "failed"}`);
+    }
     return result;
+  }
+
+  #touch(botId: string): void {
+    const idle = this.#options.idleStopMs;
+    if (!idle) return;
+    this.#lastUse.set(botId, Date.now());
+    if (!this.#idleTimer) {
+      this.#idleTimer = setInterval(() => void this.#sweepIdle(), Math.min(idle, 60_000));
+      this.#idleTimer.unref();
+    }
+  }
+
+  /** Tests run the same sweep the timer does, without waiting for it. */
+  sweepIdleForTest(): Promise<void> {
+    return this.#sweepIdle();
+  }
+
+  async #sweepIdle(): Promise<void> {
+    for (const botId of [...this.#lastUse.keys()]) {
+      await this.#stopIfIdle(botId).catch((error: unknown) =>
+        this.#log(`bot ${botId}: idle stop: ${(error as Error).message}`),
+      );
+    }
+  }
+
+  /** Inside the bot's lock, so a tool call arriving now waits and then starts it again. */
+  #stopIfIdle(botId: string): Promise<void> {
+    const idle = this.#options.idleStopMs ?? 0;
+    const due = () => {
+      const last = this.#lastUse.get(botId);
+      return last !== undefined && Date.now() - last >= idle && !this.#connections.get(botId)?.busy;
+    };
+    if (!due()) return Promise.resolve();
+    return this.#locked(botId, async () => {
+      if (!due()) return;
+      const name = containerName(botId);
+      if (await this.#hasRunningWork(name)) {
+        this.#touch(botId); // A dev server or a long job: leave it alone and look again later.
+        return;
+      }
+      if (!due()) return;
+      this.#connections.get(botId)?.close();
+      this.#ready.delete(botId);
+      this.#lastUse.delete(botId);
+      await this.#engine.stop(name);
+      this.#log(`bot ${botId}: stopped idle container ${name}`);
+    });
+  }
+
+  /** Anything besides the container's init and the environment agent. */
+  async #hasRunningWork(name: string): Promise<boolean> {
+    const listed = await this.#engine.run(
+      this.#engine.execArgs(name, { user: "root" }, ["ps", "-eo", "pid=,args="]),
+    );
+    if (listed.code !== 0) return false; // Already stopped, or gone.
+    return listed.stdout.split("\n").some((line) => {
+      const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+      if (!match) return false;
+      const [, pid, command = ""] = match;
+      if (pid === "1") return false;
+      return !/^(\/usr\/bin\/tini\b|sleep infinity$|ps -eo |node \/opt\/pibot-env\/agent\.mjs)/.test(
+        command,
+      );
+    });
   }
 
   /** Soft delete: stop the container and its agent, keep the container and its volume. */
@@ -280,10 +287,8 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
     this.#connections.get(botId)?.close();
     return this.#locked(botId, async () => {
       this.#ready.delete(botId);
-      const result = await this.#docker.run(["stop", "-t", "10", containerName(botId)]);
-      if (result.code !== 0 && !/no such container/i.test(result.stderr)) {
-        throw new Error(`docker stop container: ${result.stderr.trim()}`);
-      }
+      this.#lastUse.delete(botId);
+      await this.#engine.stop(containerName(botId));
     });
   }
 
@@ -296,19 +301,17 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
     this.#connections.delete(botId);
     return this.#locked(botId, async () => {
       this.#ready.delete(botId);
+      this.#lastUse.delete(botId);
       const container = containerName(botId);
       const volume = volumeName(botId);
-      const remove = async (args: string[], missing: RegExp, what: string) => {
-        const result = await this.#docker.run(args).catch((error: unknown) => {
-          throw new Error(`docker remove ${what}: ${(error as Error).message}`);
+      const remove = async (what: string, run: () => Promise<void>) => {
+        await run().catch((error: unknown) => {
+          throw new Error(`${this.#engine.cliName} remove ${what}: ${(error as Error).message}`);
         });
-        if (result.code !== 0 && !missing.test(result.stderr)) {
-          throw new Error(`docker remove ${what}: ${result.stderr.trim() || "failed"}`);
-        }
       };
       // The container first: a volume in use cannot be removed.
-      await remove(["rm", "-f", container], /no such container/i, `container ${container}`);
-      await remove(["volume", "rm", volume], /no such volume/i, `volume ${volume}`);
+      await remove(`container ${container}`, () => this.#engine.remove(container));
+      await remove(`volume ${volume}`, () => this.#engine.removeVolume(volume));
       this.#log(`bot ${botId}: removed container ${container} and volume ${volume}`);
     });
   }
@@ -328,25 +331,26 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
     deletedBotIds: readonly string[] = [],
   ): Promise<void> {
     const deleted = new Set(deletedBotIds);
-    const ping = await this.#docker.run(["version", "--format", "{{.Server.Version}}"]);
-    if (ping.code !== 0) throw new Error(`docker is not reachable: ${ping.stderr.trim()}`);
-    for (const botId of activeBotIds) {
-      try {
-        await this.ensure(botId);
-      } catch (error) {
-        this.#log(`bot ${botId}: environment: ${(error as Error).message}`);
+    await this.#engine.ping();
+    if (this.#options.lazy) {
+      // Ready before the first tool call needs it, which then waits only for a container.
+      void this.image().catch((error: unknown) =>
+        this.#log(`environment image: ${(error as Error).message}`),
+      );
+    } else {
+      for (const botId of activeBotIds) {
+        try {
+          await this.ensure(botId);
+        } catch (error) {
+          this.#log(`bot ${botId}: environment: ${(error as Error).message}`);
+        }
       }
     }
-    const listed = await this.#docker.run([
-      "ps",
-      "--filter",
-      `label=${BOT_LABEL}`,
-      "--format",
-      `{{.Label "${BOT_LABEL}"}}`,
-    ]);
-    if (listed.code !== 0) return;
-    for (const botId of listed.stdout.split("\n").map((line) => line.trim())) {
-      if (botId && deleted.has(botId)) await this.dispose(botId).catch(() => {});
+    const active = new Set(activeBotIds);
+    for (const botId of await this.#engine.running(BOT_LABEL).catch(() => [])) {
+      if (deleted.has(botId)) await this.dispose(botId).catch(() => {});
+      // Left running by the last server: count it as just used, so idle stopping can reach it.
+      else if (active.has(botId)) this.#touch(botId);
     }
   }
 
@@ -365,7 +369,7 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
     const name = containerName(botId);
     const exec = (script: string, input?: string, ...args: string[]) =>
       this.#must(
-        ["exec", "-i", "-u", CONTAINER_USER, name, "sh", "-c", script, "sh", ...args],
+        this.#engine.execArgs(name, { user: CONTAINER_USER }, ["sh", "-c", script, "sh", ...args]),
         "git sync",
         input,
       );
@@ -405,8 +409,25 @@ export class DockerEnvironmentAdapter implements BotEnvironmentAdapter {
     await identity("user.email", material.email ?? "bot@pi-bot.invalid");
   }
 
+  /**
+   * Server shutdown with idle stopping on: the same stop that idle time would do, because nothing
+   * else would stop these containers while the server is down. They start again on next use.
+   */
+  async shutdown(): Promise<void> {
+    this.close();
+    const bots = [...this.#lastUse.keys()];
+    this.#lastUse.clear();
+    this.#ready.clear();
+    await Promise.race([
+      Promise.allSettled(bots.map((botId) => this.#engine.stop(containerName(botId)))),
+      new Promise((resolve) => setTimeout(resolve, 15_000).unref()),
+    ]);
+  }
+
   /** Stop every agent connection (server shutdown); containers keep running. */
   close(): void {
+    if (this.#idleTimer) clearInterval(this.#idleTimer);
+    this.#idleTimer = undefined;
     for (const connection of this.#connections.values()) connection.close();
     this.#connections.clear();
   }

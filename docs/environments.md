@@ -1,4 +1,4 @@
-# Per-bot environments (Docker)
+# Per-bot environments
 
 By default (`[environment] backend = "none"`) bots have no coding tools. With
 
@@ -11,6 +11,9 @@ backend = "docker"
 every bot gets its own Docker container, and its `bash`, `read`, `write` and `edit` tools run
 there. This also holds for Claude via the Agent SDK: Claude Code runs on the server with no
 built-in tools, and Pi Bot executes its tool calls in the container.
+
+On a Mac with macOS 26 or later, `backend = "container"` runs the same image through Apple's
+[`container`](https://github.com/apple/container) instead; see [below](#apple-container).
 
 ## Image
 
@@ -53,6 +56,40 @@ OpenSSH key) are written into every container: the private key at `~/.ssh/id_pib
 (0600), an `~/.ssh/config` entry, GitHub's pinned host keys, and `git config --global`
 `user.name`/`user.email`. This happens when the container starts and again whenever they change in
 Settings. Every bot can therefore use that key; give it only the access you want bots to have.
+
+## Apple container
+
+```toml
+[environment]
+backend = "container"
+# binary = "/usr/local/bin/container"   # when it isn't on PATH
+# memory = "4g"                         # each bot's VM limit; 2g, 4g or 8g by the Mac's memory
+# cpus = 8                              # each bot's VM; all of them by default
+# idle_stop_minutes = 5                 # 0: never
+```
+
+Each bot gets its own lightweight VM, and there is no shared VM to keep running. That is what
+makes it the choice for a Mac: measured on a 32 GB Mac mini with this image, Docker Desktop held
+3.8 GB with no containers and 6.9 GB after building the image, and kept it, while Apple's held
+22 MB with no containers and about 500 MB for each idle bot. File and CPU work ran at about the
+same speed in both.
+
+A VM keeps the memory it has touched until it stops, so a bot that has run a build holds on to it.
+The server therefore works differently than with Docker:
+
+- **Containers start on first use**, not at server startup.
+- **An idle container stops** after `idle_stop_minutes` with no tool call and nothing still running
+  in it, which gives its memory back. A dev server or a long job keeps it up. Its files stay, and
+  the next tool call starts it again in about a second, with `/tmp` and installed packages intact.
+- **Containers stop when the server does**, and there is no restart policy.
+- **The image builds at server startup**, in a builder VM that is removed afterward so it stops
+  holding memory.
+- **`--memory` limits each VM.** The default leaves room for Chromium and most builds. A build that
+  needs more can set `memory`.
+
+The services start on demand with `container system start`, which downloads Apple's recommended
+kernel the first time. A new volume starts empty and root-owned, so the server gives `/workspace`
+to `bot` itself; Docker copies that from the image.
 
 ## Runtime refresh — November 2, 2026
 

@@ -94,10 +94,18 @@ provider = "exa"
 
 [environment]
 # Where bots' tools (bash, read, write, edit, …) run. "none": no tools. "docker": one container per
-# bot (see docs/environments.md). Model and search credentials never enter a container; the
+# bot. "container": one lightweight VM per bot through Apple's `container`, on a Mac with macOS 26
+# or later (see docs/environments.md). Model and search credentials never enter a container; the
 # Settings → GitHub SSH key and git identity do.
 backend = "none"
 # image = "pi-bot-env:latest"   # default: built from packages/server/docker on first use
+# binary = "/usr/local/bin/container"   # the runtime's CLI, when it isn't on PATH
+# The rest are for "container":
+# memory = "4g"            # each bot's VM limit; by default 2g, 4g or 8g by the Mac's memory
+# cpus = 8                 # each bot's VM; by default all of them, which costs nothing while idle
+# idle_stop_minutes = 5    # stop a bot's idle VM, giving back its memory; 0: never
+# install_root = "…"       # helpers of a private copy of the runtime
+# app_root = "…"           # images and containers of a private copy of the runtime
 
 [credentials]
 # auto = the macOS Keychain on a Mac (via /usr/bin/security), encrypted SQLite elsewhere.

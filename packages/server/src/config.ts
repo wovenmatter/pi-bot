@@ -206,12 +206,28 @@ export const configSchema = z.strictObject({
       user_email: z.union([z.email().max(320), z.literal("")]).optional(),
     })
     .prefault({}),
-  /** Where a bot's tools run: `docker` gives each bot its own container; `none` gives no tools. */
+  /**
+   * Where a bot's tools run: `docker` gives each bot its own container, `container` its own
+   * lightweight VM through Apple's `container` on a Mac, and `none` gives no tools.
+   */
   environment: z
     .strictObject({
-      backend: z.enum(["none", "docker"]).default("none"),
+      backend: z.enum(["none", "docker", "container"]).default("none"),
       /** Image override; by default `pi-bot-env:<hash>` is built from packages/server/docker. */
       image: z.string().min(1).optional(),
+      /** The runtime's CLI, when it isn't on PATH. */
+      binary: z.string().min(1).optional(),
+      /** `container` only: helpers and data of a private copy of the runtime. */
+      install_root: z.string().min(1).optional(),
+      app_root: z.string().min(1).optional(),
+      /** `container` only: each bot's VM limit, like "4g". By default it scales with the Mac. */
+      memory: z
+        .string()
+        .regex(/^[1-9][0-9]*[mMgG]$/)
+        .optional(),
+      cpus: z.number().int().min(1).optional(),
+      /** `container` only: stop a bot's VM after this long idle, giving back its memory. 0: never. */
+      idle_stop_minutes: z.number().int().min(0).default(5),
     })
     .prefault({}),
   credentials: z

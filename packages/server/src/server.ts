@@ -35,6 +35,8 @@ const ctx = BACKGROUND_CONTEXT;
 const HISTORY_LIMIT = 200;
 
 export type PiBotServerOptions = {
+  /** Where bots' tools run: `none`, `docker`, or `container`. */
+  readonly environment?: string;
   readonly manager: BotManager;
   readonly host: string;
   /** 0 picks a free port (tests). */
@@ -721,7 +723,12 @@ class Server {
   readonly settings: SettingsService | undefined;
   readonly restart: (() => Promise<RestartAccepted>) | undefined;
   readonly connections = new Set<Connection>();
-  readonly identity: { protocol: number; installationId: string; capabilities: string[] };
+  readonly identity: {
+    protocol: number;
+    installationId: string;
+    capabilities: string[];
+    environment: string;
+  };
   readonly #deliveries = new Map<string, Promise<unknown>>();
   readonly woven: WovenMCP | undefined;
 
@@ -731,9 +738,15 @@ class Server {
     woven: WovenMCP | undefined,
     settings?: SettingsService,
     restart?: () => Promise<RestartAccepted>,
+    environment = "none",
   ) {
     this.manager = manager;
-    this.identity = { protocol: PROTOCOL, installationId, capabilities: [...CAPABILITIES] };
+    this.identity = {
+      protocol: PROTOCOL,
+      installationId,
+      capabilities: [...CAPABILITIES],
+      environment,
+    };
     this.woven = woven;
     this.settings = settings;
     this.restart = restart;
@@ -758,6 +771,7 @@ export async function startServer(options: PiBotServerOptions): Promise<PiBotSer
     options.woven,
     options.settings,
     options.restart,
+    options.environment,
   );
   const log = options.log ?? (() => {});
 

@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createBotHarnessOptions } from "../src/agent.ts";
 import { BotManager } from "../src/bots.ts";
 import type { BotEnvironmentAdapter } from "../src/env.ts";
+import { AppleContainerEngine, defaultMemory } from "../src/environment/apple-container.ts";
 import {
   containerName,
   type DockerCli,
@@ -457,6 +458,334 @@ describe("DockerEnvironmentAdapter", () => {
     await expect(adapter.reconcile([BOT_A])).rejects.toThrow(/not reachable/);
   });
 });
+
+/** A scripted `container` CLI: every call is recorded and `respond` decides the result. */
+function appleCli(respond: (args: readonly string[]) => Partial<DockerResult> | undefined) {
+  const calls: string[][] = [];
+  const cli: DockerCli = {
+    async run(args) {
+      calls.push([...args]);
+      return { code: 0, stdout: "", stderr: "", ...respond(args) };
+    },
+    spawn() {
+      throw new Error("not used");
+    },
+  };
+  return { cli, calls };
+}
+
+const running = (label?: string) =>
+  JSON.stringify([
+    {
+      status: { state: "running" },
+      configuration: { labels: label ? { "pi-bot.bot": label } : {} },
+    },
+  ]);
+
+describe("AppleContainerEngine", () => {
+  it("creates the volume, limits the VM, and gives the bot its volume", async () => {
+    const { cli, calls } = appleCli(() => undefined);
+    const engine = new AppleContainerEngine({ cli, memory: "4g", cpus: 6 });
+    await engine.create({
+      name: "pi-bot-x",
+      hostname: "bot-x",
+      labelKey: "pi-bot.bot",
+      labelValue: "x",
+      volume: "pi-bot-x-workspace",
+      target: "/workspace",
+      image: "pi-bot-env:abc",
+      owner: "bot",
+    });
+    expect(calls).toContainEqual(["volume", "create", "pi-bot-x-workspace"]);
+    const run = calls.find((call) => call[0] === "run") ?? [];
+    expect(run.join(" ")).toContain("--memory 4g --cpus 6");
+    expect(run.join(" ")).toContain(
+      "--mount type=volume,source=pi-bot-x-workspace,target=/workspace",
+    );
+    expect(run).not.toContain("--restart");
+    expect(calls.at(-1)).toEqual([
+      "exec",
+      "-u",
+      "root",
+      "pi-bot-x",
+      "chown",
+      "bot:bot",
+      "/workspace",
+    ]);
+  });
+
+  it("keeps an existing volume when a container is recreated", async () => {
+    const { cli, calls } = appleCli((args) =>
+      args[0] === "volume" ? { code: 1, stderr: "Error: volume 'v' already exists" } : undefined,
+    );
+    const spec = {
+      name: "n",
+      hostname: "h",
+      labelKey: "k",
+      labelValue: "v",
+      volume: "v",
+      target: "/w",
+      image: "i",
+      owner: "bot",
+    };
+    await new AppleContainerEngine({ cli }).create(spec);
+    expect(calls.some((call) => call[0] === "run")).toBe(true);
+    expect(calls.some((call) => call.includes("delete"))).toBe(false);
+  });
+
+  it("reads each container state, in both status shapes", async () => {
+    const answers: Record<string, Partial<DockerResult>> = {
+      up: { stdout: running() },
+      down: { stdout: JSON.stringify([{ status: { state: "stopped" } }]) },
+      old: { stdout: JSON.stringify([{ status: "running" }]) },
+      gone: { code: 1, stderr: "Error: container not found: gone" },
+    };
+    const { cli } = appleCli((args) => answers[args[1] ?? ""]);
+    const engine = new AppleContainerEngine({ cli });
+    expect(await engine.state("up")).toBe("running");
+    expect(await engine.state("down")).toBe("stopped");
+    expect(await engine.state("old")).toBe("running");
+    expect(await engine.state("gone")).toBe("missing");
+  });
+
+  it("starts its services when a state check finds them down, and installs the kernel", async () => {
+    let up = false;
+    const { cli, calls } = appleCli((args) => {
+      if (args[0] === "system" && args[1] === "start") {
+        up = true;
+        return undefined;
+      }
+      if (args[0] === "system" && args[1] === "status") return up ? undefined : { code: 1 };
+      if (args[0] === "inspect" && !up)
+        return { code: 1, stderr: 'interrupted: "XPC connection error: Connection invalid"' };
+      if (args[0] === "inspect") return { stdout: running() };
+      return undefined;
+    });
+    const engine = new AppleContainerEngine({ cli, installRoot: "/r/rt", appRoot: "/r/data" });
+    expect(await engine.state("x")).toBe("running");
+    expect(calls).toContainEqual([
+      "system",
+      "start",
+      "--enable-kernel-install",
+      "--install-root",
+      "/r/rt",
+      "--app-root",
+      "/r/data",
+    ]);
+  });
+
+  it("fails clearly when its services can't start", async () => {
+    const { cli } = appleCli((args) =>
+      args[0] === "system" ? { code: 1, stderr: "no kernel available" } : undefined,
+    );
+    await expect(new AppleContainerEngine({ cli }).ping()).rejects.toThrow(/no kernel available/);
+  });
+
+  it("treats missing containers and volumes as already removed, and reports other failures", async () => {
+    const missing = appleCli((args) => {
+      if (args[0] === "delete" || args[0] === "stop")
+        return { code: 1, stderr: 'internalError: "notFound: container with ID x not found"' };
+      if (args[0] === "volume") return { code: 1, stderr: "not there" };
+      return undefined;
+    });
+    const engine = new AppleContainerEngine({ cli: missing.cli });
+    await engine.stop("x");
+    await engine.remove("x");
+    await engine.removeVolume("v");
+    expect(missing.calls.some((call) => call[0] === "volume" && call[1] === "delete")).toBe(false);
+    const broken = appleCli((args) =>
+      args[0] === "delete" ? { code: 1, stderr: "disk error" } : undefined,
+    );
+    await expect(new AppleContainerEngine({ cli: broken.cli }).remove("x")).rejects.toThrow(
+      /disk error/,
+    );
+  });
+
+  it("removes the builder after a build, even a failed one, so it stops holding memory", async () => {
+    const { cli, calls } = appleCli((args) =>
+      args[0] === "build" ? { code: 1, stderr: "apt failed" } : undefined,
+    );
+    await expect(new AppleContainerEngine({ cli }).build(["a:1"], "/ctx")).rejects.toThrow(
+      /apt failed/,
+    );
+    const words = calls.map((call) => call.slice(0, 2).join(" "));
+    expect(words.indexOf("builder stop")).toBeGreaterThan(
+      words.findIndex((w) => w.startsWith("build ")),
+    );
+    expect(words).toContain("builder delete");
+  });
+
+  it("leaves a builder that was already running alone", async () => {
+    const { cli, calls } = appleCli((args) =>
+      args[0] === "builder" && args[1] === "status" ? { stdout: "buildkit running" } : undefined,
+    );
+    await new AppleContainerEngine({ cli }).build(["a:1"], "/ctx");
+    expect(calls.some((call) => call[0] === "builder" && call[1] !== "status")).toBe(false);
+  });
+
+  it("lists only its own running containers", async () => {
+    const records = JSON.stringify([
+      { status: { state: "running" }, configuration: { labels: { "pi-bot.bot": "a" } } },
+      { status: { state: "stopped" }, configuration: { labels: { "pi-bot.bot": "b" } } },
+      { status: { state: "running" }, configuration: { labels: {} } },
+    ]);
+    const { cli } = appleCli((args) => (args[0] === "list" ? { stdout: records } : undefined));
+    expect(await new AppleContainerEngine({ cli }).running("pi-bot.bot")).toEqual(["a"]);
+  });
+
+  it("scales each VM's limit with the Mac", () => {
+    const gib = 1024 ** 3;
+    expect(defaultMemory(8 * gib)).toBe("2g");
+    expect(defaultMemory(16 * gib)).toBe("4g");
+    expect(defaultMemory(32 * gib)).toBe("8g");
+  });
+});
+
+describe("idle stopping", () => {
+  /** An engine whose one container starts running, so stops and restarts are visible. */
+  function fakeEngine(work: string[] = [], agent = localAgent) {
+    const events: string[] = [];
+    let state: "missing" | "running" | "stopped" = "missing";
+    const engine = new AppleContainerEngine({
+      cli: {
+        async run(args) {
+          if (args[0] === "exec" && args.includes("ps")) {
+            return {
+              code: 0,
+              stderr: "",
+              stdout: [
+                "    1 /usr/bin/tini -- sleep infinity",
+                "    7 sleep infinity",
+                ...work,
+                "   40 ps -eo pid=,args=",
+              ].join("\n"),
+            };
+          }
+          return { code: 0, stdout: "", stderr: "" };
+        },
+        spawn: () => agent(),
+      },
+    });
+    engine.ping = async () => {};
+    engine.imageExists = async () => true;
+    engine.state = async () => state;
+    engine.create = async () => {
+      state = "running";
+      events.push("create");
+    };
+    engine.start = async () => {
+      state = "running";
+      events.push("start");
+    };
+    engine.stop = async () => {
+      state = "stopped";
+      events.push("stop");
+    };
+    return { engine, events, stateNow: () => state };
+  }
+
+  const settle = async (done: () => boolean) => {
+    for (let i = 0; i < 200 && !done(); i++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+  };
+
+  it("stops an idle container, and the next tool call starts it again", async () => {
+    const { engine, events, stateNow } = fakeEngine();
+    const adapter = new DockerEnvironmentAdapter({
+      engine,
+      image: "i",
+      idleStopMs: 20,
+      lazy: true,
+    });
+    await adapter.ensure("bot");
+    expect(events).toEqual(["create"]);
+    await (adapter as unknown as { reconcile: (a: string[]) => Promise<void> }).reconcile(["bot"]);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await invokeSweep(adapter);
+    await settle(() => stateNow() === "stopped");
+    expect(events).toEqual(["create", "stop"]);
+    await adapter.ensure("bot");
+    expect(events).toEqual(["create", "stop", "start"]);
+    adapter.close();
+  });
+
+  it("does not start any container at server startup", async () => {
+    const { engine, events } = fakeEngine();
+    const adapter = new DockerEnvironmentAdapter({
+      engine,
+      image: "i",
+      idleStopMs: 20,
+      lazy: true,
+    });
+    await adapter.reconcile(["a", "b"], []);
+    expect(events).toEqual([]);
+    adapter.close();
+  });
+
+  it("leaves a container alone while something still runs in it", async () => {
+    const { engine, events } = fakeEngine(["   12 node server.js"]);
+    const adapter = new DockerEnvironmentAdapter({
+      engine,
+      image: "i",
+      idleStopMs: 10,
+      lazy: true,
+    });
+    await adapter.ensure("bot");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    await invokeSweep(adapter);
+    expect(events).toEqual(["create"]);
+    adapter.close();
+  });
+
+  it("keeps a container that a tool call is using", async () => {
+    // An agent that never answers: the call stays in flight for as long as the test needs.
+    const { engine, events } = fakeEngine([], () => spawn("sleep", ["5"], { stdio: "pipe" }));
+    const adapter = new DockerEnvironmentAdapter({
+      engine,
+      image: "i",
+      idleStopMs: 10,
+      lazy: true,
+    });
+    const factory = adapter.harnessEnv("bot") as unknown as (target: {
+      cwd: string;
+    }) => RemoteExecutionEnv;
+    const inFlight = factory({ cwd: "/workspace" })
+      .exec("sleep 60", undefined, ctx)
+      .catch(() => undefined);
+    await settle(() => events.includes("create"));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await invokeSweep(adapter);
+    expect(events).toEqual(["create"]);
+    adapter.close();
+    await inFlight;
+  });
+
+  it("stops started containers when the server shuts down", async () => {
+    const { engine, events } = fakeEngine();
+    const adapter = new DockerEnvironmentAdapter({
+      engine,
+      image: "i",
+      idleStopMs: 60_000,
+      lazy: true,
+    });
+    await adapter.ensure("bot");
+    await adapter.shutdown();
+    expect(events).toEqual(["create", "stop"]);
+  });
+
+  it("does nothing with idle stopping off", async () => {
+    const { engine, events } = fakeEngine();
+    const adapter = new DockerEnvironmentAdapter({ engine, image: "i", lazy: true });
+    await adapter.ensure("bot");
+    await invokeSweep(adapter);
+    expect(events).toEqual(["create"]);
+    adapter.close();
+  });
+});
+
+function invokeSweep(adapter: DockerEnvironmentAdapter): Promise<void> {
+  return adapter.sweepIdleForTest();
+}
 
 describe("bot tools", () => {
   it("runs the model's bash tool call in the bot's environment", async () => {

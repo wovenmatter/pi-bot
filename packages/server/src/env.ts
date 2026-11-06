@@ -31,10 +31,14 @@ export interface BotEnvironmentAdapter {
   gitChanged?(): Promise<void>;
   /** Server shutdown: drop connections; runtimes keep running. */
   close?(): void;
+  /** Server shutdown for runtimes that hold memory until stopped: stop them as well. */
+  shutdown?(): Promise<void>;
 }
 
+export { AppleContainerEngine } from "./environment/apple-container.ts";
 export {
   DockerEnvironmentAdapter,
   type DockerEnvironmentOptions,
   type GitMaterial,
+  nodeDockerCli,
 } from "./environment/docker.ts";

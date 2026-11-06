@@ -44,10 +44,21 @@ export class AgentConnection {
   readonly #pending = new Map<number, Pending>();
   readonly #callbacks = new Map<number, (...args: unknown[]) => void>();
   readonly #handleCallbacks = new Map<number, number[]>();
+  readonly #onActivity: () => void;
 
-  constructor(start: () => Promise<AgentProcess>, log: (message: string) => void = () => {}) {
+  constructor(
+    start: () => Promise<AgentProcess>,
+    log: (message: string) => void = () => {},
+    onActivity: () => void = () => {},
+  ) {
     this.#start = start;
     this.#log = log;
+    this.#onActivity = onActivity;
+  }
+
+  /** A call in flight or a live watcher: stopping the agent now would lose it. */
+  get busy(): boolean {
+    return this.#pending.size > 0 || this.#handleCallbacks.size > 0;
   }
 
   /** Call `method` on the env for `cwd` (or on a handle); `context` is appended agent-side. */
@@ -59,6 +70,7 @@ export class AgentConnection {
     context: Context,
   ): Promise<unknown> {
     const id = this.#nextId++;
+    this.#onActivity();
     const callbacks: number[] = [];
     const encoded = args.map((arg) => this.#encode(arg, callbacks));
     return new Promise<unknown>((resolve, reject) => {
@@ -194,6 +206,7 @@ export class AgentConnection {
     const entry = this.#pending.get(message.id);
     if (!entry) return;
     this.#pending.delete(message.id);
+    this.#onActivity();
     if (message.thrown !== undefined) {
       this.#release(entry.callbacks);
       entry.reject(new Error(`environment: ${message.thrown}`));

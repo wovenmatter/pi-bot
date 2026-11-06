@@ -18,7 +18,7 @@ lists every key with its default. Unknown keys are rejected. Secrets never go in
 | `[extraction]`    | `enabled = true`, `schedule = "0 3 * * *"` (cron), `timezone = "UTC"`, `idle_minutes = 30`; see [memory](#memory)                  |
 | `[search]`        | `provider = "exa"` (or `brave`, `firecrawl`): tried first by `web_search`; keys in Settings → Search                               |
 | `[git]`           | `user_name`, `user_email`: commit identity in bot containers                                                                       |
-| `[environment]`   | `backend = "none"` or `"docker"`, optional `image`; see [environments](environments.md)                                            |
+| `[environment]`   | `backend = "none"`, `"docker"` or `"container"`, optional `image` and `binary`; see [environments](environments.md)                |
 | `[credentials]`   | `backend = "auto"` (always encrypted SQLite today), optional `key_file`; see [security](security.md)                               |
 
 ## Model profiles
