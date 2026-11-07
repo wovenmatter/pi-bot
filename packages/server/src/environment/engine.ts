@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { delimiter, dirname, isAbsolute } from "node:path";
 import type { AgentProcess } from "./remote.ts";
 
 export type DockerResult = {
@@ -24,11 +25,19 @@ export interface DockerCli {
  * Only what the runtime's CLI itself needs. `exec` never forwards the server's environment
  * into a container, and this keeps the CLI child free of anything else the server holds.
  */
-function cliEnv(): NodeJS.ProcessEnv {
+export function cliEnv(
+  binary: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
   const keep = ["PATH", "HOME", "USER", "XDG_RUNTIME_DIR", "DOCKER_HOST", "DOCKER_CONTEXT"];
-  return Object.fromEntries(
-    keep.flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
+  const env: NodeJS.ProcessEnv = Object.fromEntries(
+    keep.flatMap((key) => (environment[key] ? [[key, environment[key]]] : [])),
   );
+  // A CLI named by path finds its helpers beside it. Under launchd, PATH doesn't reach Docker
+  // Desktop's folder, and without its credential helper every image build fails.
+  if (isAbsolute(binary))
+    env.PATH = env.PATH ? `${dirname(binary)}${delimiter}${env.PATH}` : dirname(binary);
+  return env;
 }
 
 export function nodeDockerCli(binary = "docker"): DockerCli {
@@ -36,7 +45,7 @@ export function nodeDockerCli(binary = "docker"): DockerCli {
     run(args, options = {}) {
       return new Promise((resolve, reject) => {
         const child = spawn(binary, args, {
-          env: cliEnv(),
+          env: cliEnv(binary),
           stdio: "pipe",
           ...(options.signal ? { signal: options.signal } : {}),
         });
@@ -63,7 +72,7 @@ export function nodeDockerCli(binary = "docker"): DockerCli {
       });
     },
     spawn(args) {
-      return spawn(binary, args, { env: cliEnv(), stdio: ["pipe", "pipe", "pipe"] });
+      return spawn(binary, args, { env: cliEnv(binary), stdio: ["pipe", "pipe", "pipe"] });
     },
   };
 }
