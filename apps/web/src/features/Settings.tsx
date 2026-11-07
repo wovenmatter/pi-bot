@@ -41,7 +41,7 @@ export function formatDeletedAt(iso: string): string {
 export function purgeConfirmText(bot: Pick<DeletedBotSummary, "name">): string {
   return [
     `Delete ${bot.name} permanently?`,
-    `This removes its conversations, threads, memory and notes, its settings, and its Docker workspace volume and container.`,
+    `This removes its conversations, threads, memory and notes, its settings, and its workspace and container.`,
     "This can't be undone.",
   ].join("\n\n");
 }
@@ -572,7 +572,7 @@ function BotsSection({
       const result = await purgeDeletedBot(client, target);
       if (result?.environment && !result.environment.removed) {
         onError(
-          `${target.name} was deleted permanently, but its Docker workspace was not removed: ${result.environment.error ?? "unknown error"}`,
+          `${target.name} was deleted permanently, but its workspace was not removed: ${result.environment.error ?? "unknown error"}`,
         );
       }
       if (result) await refresh();

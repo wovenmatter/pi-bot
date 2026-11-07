@@ -69,7 +69,7 @@ describe("Settings → Bots → Deleted bots", () => {
       "threads",
       "memory and notes",
       "settings",
-      "Docker workspace volume and container",
+      "workspace and container",
       "can't be undone",
     ]) {
       expect(text).toContain(part);
