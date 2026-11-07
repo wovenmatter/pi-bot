@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -693,6 +693,21 @@ describe("AppleContainerEngine", () => {
     expect(calls.some((call) => call[0] === "builder")).toBe(false);
     expect(calls.some((call) => call[0] === "build")).toBe(false);
     rmSync(builderMarker(), { force: true });
+  });
+
+  it("gives up the builder when it can't remove it, so the next server isn't left waiting", async () => {
+    rmSync(builderMarker(), { force: true });
+    const failing = appleCli((args) =>
+      args[0] === "builder" && args[1] === "delete" ? { code: 1 } : undefined,
+    );
+    await new AppleContainerEngine({ cli: failing.cli }).build(["a:1"], "/ctx");
+    expect(readFileSync(builderMarker(), "utf8")).toBe("interrupted");
+    const next = appleCli((args) =>
+      args[0] === "builder" && args[1] === "status" ? { stdout: "buildkit running" } : undefined,
+    );
+    await new AppleContainerEngine({ cli: next.cli, builderPollMs: 1 }).build(["a:1"], "/ctx");
+    expect(next.calls.map((call) => call.slice(0, 2).join(" "))).toContain("builder start");
+    expect(existsSync(builderMarker())).toBe(false);
   });
 
   it("clears a builder its own interrupted build left on an installed container", async () => {

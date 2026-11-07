@@ -202,7 +202,9 @@ export class AppleContainerEngine implements ContainerEngine {
         // Forced: a builder still starting when its start was cancelled can't be stopped first.
         released = (await this.#cli.run(["builder", "delete", "--force"])).code === 0;
       }
+      // No longer this server's: the next build clears what this one couldn't.
       if (released) rmSync(builderMarker(), { force: true });
+      else writeFileSync(builderMarker(), "interrupted");
     }
   }
 
