@@ -3,7 +3,6 @@ import { Check, Copy } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { openHostExternal } from "../host.ts";
 import { Icon } from "./Icon.tsx";
 
 function textOf(node?: Element | ElementContent): string {
@@ -58,14 +57,7 @@ function CodeBlock({ node, children }: { node?: Element; children?: ReactNode })
 const components: Components = {
   a: ({ href, children }) =>
     href ? (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(event) => {
-          if (openHostExternal(href)) event.preventDefault();
-        }}
-      >
+      <a href={href} target="_blank" rel="noopener noreferrer">
         {children}
       </a>
     ) : (

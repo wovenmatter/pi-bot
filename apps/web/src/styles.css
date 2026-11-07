@@ -2901,20 +2901,3 @@ details.account-api-key > .settings-list {
 .transcript > .thread-origin ~ .empty {
   height: auto;
 }
-
-.shell-body.woven-host {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-}
-
-/* Native controls float over the outer corners of whichever headers reach them. */
-.woven-host .thread-header {
-  padding-left: calc(16px + var(--woven-inset-left, 0px));
-  padding-right: calc(10px + var(--woven-inset-right, 0px));
-}
-.woven-host .conversation-workspace.split .main-pane .thread-header {
-  padding-inline: calc(16px + var(--woven-inset-left, 0px)) 8px;
-}
-.woven-host .conversation-workspace.split .thread-pane .thread-header {
-  padding-inline: 16px calc(8px + var(--woven-inset-right, 0px));
-}

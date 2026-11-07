@@ -113,7 +113,7 @@ describe("Woven host protocol", () => {
     expect(health).toMatchObject({
       protocol: 1,
       installationId: expect.stringMatching(/^[a-f0-9-]{36}$/),
-      capabilities: ["host.embed", "groups", "woven.mcp", "message.context"],
+      capabilities: ["groups", "woven.mcp", "message.context"],
     });
     const hello = await client.waitFor((message) => message.type === "hello");
     expect(hello).toMatchObject({

@@ -47,9 +47,10 @@ it("packages identical bytes twice without advancing the preview build counter",
       "packages/server/dist/cli.js",
       "packages/server/docker/agent.mjs",
       "apps/web/package.json",
-      "apps/web/dist/index.html",
     ])
       expect(entries.has(path), path).toBe(true);
+    // Woven Matter has its own UI, so the web client stays out of the bundle.
+    expect([...entries.keys()].some((path) => path.startsWith("apps/web/dist"))).toBe(false);
     expect(
       [...entries.keys()].some((path) => /node_modules|\.sqlite|config\.toml|\.key$/.test(path)),
     ).toBe(false);

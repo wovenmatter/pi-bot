@@ -23,8 +23,7 @@ function previousBuild(): number {
 }
 
 export default defineConfig(({ command }) => {
-  const packaging = process.env.PI_BOT_PACKAGE_WOVEN === "1";
-  const buildNumber = command === "build" && !packaging ? previousBuild() + 1 : 0;
+  const buildNumber = command === "build" ? previousBuild() + 1 : 0;
   return {
     define: { __BUILD_NUMBER__: JSON.stringify(buildNumber) },
     plugins: [
@@ -33,7 +32,7 @@ export default defineConfig(({ command }) => {
         name: "preview-build-number",
         apply: "build",
         writeBundle() {
-          if (!packaging) writeFileSync(counterPath, `${buildNumber}\n`);
+          writeFileSync(counterPath, `${buildNumber}\n`);
         },
       },
     ],

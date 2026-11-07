@@ -11,9 +11,9 @@ if (args.length !== 2 || args[0] !== "--out" || !args[1]) {
   throw new Error("usage: pnpm package:woven --out <file>");
 }
 const out = resolve(args[1]);
-execFileSync("pnpm", ["build"], {
+execFileSync("pnpm", ["--filter", "@wovenmatter/pi-bot...", "build"], {
   cwd: root,
-  env: { ...process.env, NODE_ENV: "production", PI_BOT_PACKAGE_WOVEN: "1" },
+  env: { ...process.env, NODE_ENV: "production" },
   stdio: "inherit",
 });
 const manifest = {
@@ -48,8 +48,8 @@ for (const path of [
   "packages/server/package.json",
   "packages/server/dist",
   "packages/server/docker",
+  // Only its manifest, so the frozen workspace lockfile still resolves. Woven has its own UI.
   "apps/web/package.json",
-  "apps/web/dist",
 ])
   await collect(path);
 

@@ -555,7 +555,7 @@ describe("websocket server", () => {
       version: "0.1.0",
       protocol: 1,
       installationId: expect.any(String),
-      capabilities: ["host.embed", "groups", "woven.mcp", "message.context"],
+      capabilities: ["groups", "woven.mcp", "message.context"],
     });
   });
 });

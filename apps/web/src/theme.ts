@@ -23,11 +23,6 @@ export function isTheme(value: unknown): value is Theme {
 }
 
 export function storedTheme(): Theme {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("host") === "woven") {
-    const value = params.get("theme");
-    return isTheme(value) ? value : "green";
-  }
   try {
     const value = window.localStorage.getItem(THEME_STORAGE_KEY);
     return isTheme(value) ? value : "green";
@@ -46,7 +41,6 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
     applyTheme(next);
-    if (new URLSearchParams(window.location.search).get("host") === "woven") return;
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {

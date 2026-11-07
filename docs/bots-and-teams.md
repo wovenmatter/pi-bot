@@ -115,27 +115,19 @@ thread replies do not automatically copy between conversations. Existing threads
 
 Unsent text and text-file attachments also survive closing and switching threads within the
 client. Drafts stay in memory, are isolated by bot and conversation, and survive switching
-bots and settings in both standalone and embedded mode. An accepted send clears its draft;
+bots and settings. An accepted send clears its draft;
 reloading the page clears all drafts. New
 threads open at the top so their starting message remains visible before the first reply.
 
 
 ## Woven Matter host
 
-`/?host=woven&theme=green` (also `cognac` or `dark`) embeds the normal hash routes without
-Pi Bot's sidebar, toggle or branding. Settings display only the routed section, with no tab
-row or theme selector; General retains the build label. The host theme is authoritative and
-never writes browser theme storage. Standalone routes and layout are unchanged.
+Woven Matter runs this server as a dependency and draws everything itself in native SwiftUI over
+the WebSocket protocol. It never loads the web client, which stays this repo's standalone UI.
 
-`window.wovenPiBotHost` exposes `setTheme(theme)`, `navigate(hashRoute)`,
-`setContext(string | null)` and `focusComposer()`. The optional native handler
-`window.webkit.messageHandlers.wovenBots.postMessage` receives versioned (`v: 1`) `ready`
-(protocol and installation UUID), `route`, `connection`, and `openExternal` messages. HTTP(S)
-links in chat post `openExternal` instead of opening a new window. The bridge exposes no server
-RPC, credentials or files. Native hosts must validate the main frame and origin.
-
-Host context is at most 4000 characters and is attached only by the composer to `message.send`.
-The model sees it before that user turn; displayed transcripts strip it, as with fallback notes.
+`message.send` takes optional host context of at most 4000 characters: what the user has open
+beside the bot right now. The model sees it before that user turn; displayed transcripts strip it,
+as with fallback notes.
 Bot-to-bot messages cannot set host context. Woven notifications use ordinary `message.send`
 to a bot's main channel, with text labelled as coming from Woven Matter.
 
@@ -156,12 +148,12 @@ and HTML preview cancellation is forwarded to Woven's cancellation tools. Bots c
 manage agent sessions with `woven_sessions_*`, including coding when Docker is disabled.
 
 `hello` and `/health` advertise protocol 1, a database-persisted installation UUID and capabilities
-`host.embed`, `groups`, `woven.mcp`, `message.context`. Hosts should gate each feature on them.
+`groups`, `woven.mcp`, `message.context`. Hosts should gate each feature on them.
 
 `pnpm package:woven --out <file>` builds a deterministic gzip tar containing `manifest.json`
 (commit, server version, protocol and lockfile SHA-256), the root manifests/lockfile/LICENSE,
-server manifest/dist/docker and web manifest/dist. It contains no dependencies or runtime data.
+server manifest/dist/docker and the web manifest, which the workspace lockfile needs. It contains
+no web client, dependencies or runtime data.
 Install dependencies on the target with
 `pnpm install --prod --frozen-lockfile --filter @wovenmatter/pi-bot...`.
-Packaging uses `PI_BOT_PACKAGE_WOVEN=1` internally and never advances `.preview-build-number`;
-normal preview builds retain their existing counter behavior.
+Packaging builds only the server, so it never advances `.preview-build-number`.

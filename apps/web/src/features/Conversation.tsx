@@ -21,7 +21,6 @@ import { Icon } from "../components/Icon.tsx";
 import { ModelStatusBanner } from "../components/ModelStatusBanner.tsx";
 import { RichText } from "../components/RichText.tsx";
 import { Empty, ErrorNotice, Loading, MessageError } from "../components/ui.tsx";
-import { hostContext } from "../host.ts";
 import type { BotSummary, DisplayEntry, ThreadSummary } from "../protocol.ts";
 import { routeHref } from "../routes.ts";
 import { type ConversationDrafts, useConversationDrafts } from "./conversation-drafts.ts";
@@ -266,12 +265,10 @@ export function Conversation({
     follow.current = true;
     setFollowing(true);
     try {
-      const context = hostContext();
       await client.request("message.send", {
         botId: bot.id,
         conversationId: viewed,
         text,
-        ...(context ? { context } : {}),
       });
       setDraft((current) => (current.trim() === draftText ? "" : current));
       setAttachments((current) => current.filter((file) => !sentAttachments.includes(file)));

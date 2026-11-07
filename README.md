@@ -18,9 +18,9 @@ under his direction.
 - **Bots with roles.** **Admin Bot** is created on first start; it sets up accounts, profiles
   and other bots for you. An optional **Orchestrator** oversees everything. **Managers** lead
   one-level teams of regular **bots**. Bots can create bots and message each other.
-- **Woven Matter integration.** Embed chat and settings behind Woven Matter’s native sidebar,
-  organize bots into sidebar groups, and give bots Woven MCP tools for agent sessions and other
-  app actions. Standalone routes and layout remain available. See
+- **Woven Matter integration.** Run as the backend for Woven Matter’s native bot UI, organize
+  bots into sidebar groups, and give bots Woven MCP tools for agent sessions and other app
+  actions. The web client here stays the standalone UI. See
   [host integration](docs/bots-and-teams.md#woven-matter-host).
 - **Model profiles.** Each bot runs one profile: a main model, 0–5 fallback models, a model pool
   and model preferences for subagents (`run_subagent`; the main model can always use itself),

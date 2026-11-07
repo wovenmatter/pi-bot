@@ -6,7 +6,6 @@ import { ConversationDrafts } from "./features/conversation-drafts.ts";
 import { sortThreads } from "./features/conversation-state.ts";
 import { Onboarding } from "./features/Onboarding.tsx";
 import { Settings } from "./features/Settings.tsx";
-import { hostNavigation, installHostBridge, isWovenHost, postHost } from "./host.ts";
 import type { BotSummary, OnboardingStatus, ThreadSummary } from "./protocol.ts";
 import { parseRoute, type Route, routeHref } from "./routes.ts";
 import { Sidebar } from "./shell/Sidebar.tsx";
@@ -28,7 +27,6 @@ function navigate(route: Route) {
 }
 
 export function App() {
-  const host = isWovenHost();
   const [drafts] = useState(() => new ConversationDrafts());
   const [sidebarCollapsed, toggleSidebar] = useSidebarCollapsed();
   const client = useMemo(() => new PiBotClient(defaultSocketUrl()), []);
@@ -45,24 +43,11 @@ export function App() {
   const bot = bots?.find((item) => item.id === route.botId);
   const onboardingNeeded = onboarding?.needed === true && !route.settings;
 
-  useEffect(() => installHostBridge(setTheme), [setTheme]);
   useEffect(() => {
-    postHost({ kind: "connection", state: connection });
-  }, [connection]);
-  useEffect(() => {
-    postHost({ kind: "route", hash: window.location.hash, navigation: hostNavigation(), ...route });
-  }, [route]);
-
-  useEffect(() => {
-    const stopHello = client.onHello((hello) => {
-      if (hello.protocol && hello.installationId)
-        postHost({ kind: "ready", protocol: hello.protocol, installationId: hello.installationId });
-    });
     const stop = client.onState(setConnection);
     client.connect();
     return () => {
       stop();
-      stopHello();
       client.close();
     };
   }, [client]);
@@ -206,27 +191,21 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <div
-        className={`shell-body${host ? " woven-host" : sidebarCollapsed ? " sidebar-collapsed" : ""}`}
-      >
-        {host ? null : (
-          <>
-            <SidebarToggle collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
-            <Sidebar
-              collapsed={sidebarCollapsed}
-              bots={bots ?? []}
-              botId={route.botId}
-              conversationId={route.conversationId}
-              mainConversationId={mainConversationId}
-              threads={threads}
-              settings={route.settings}
-              connection={connection}
-              onCreate={createBot}
-              onDelete={(target) => void deleteBot(target)}
-              onPin={pinThread}
-            />
-          </>
-        )}
+      <div className={`shell-body${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+        <SidebarToggle collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          bots={bots ?? []}
+          botId={route.botId}
+          conversationId={route.conversationId}
+          mainConversationId={mainConversationId}
+          threads={threads}
+          settings={route.settings}
+          connection={connection}
+          onCreate={createBot}
+          onDelete={(target) => void deleteBot(target)}
+          onPin={pinThread}
+        />
         <main
           id="main"
           className={
@@ -236,7 +215,6 @@ export function App() {
           <ErrorNotice message={error} onDismiss={() => setError(undefined)} />
           {onboarding && onboardingNeeded ? (
             <Onboarding
-              host={host}
               client={client}
               connected={connection === "open"}
               status={onboarding}
@@ -249,7 +227,6 @@ export function App() {
             <Settings
               client={client}
               connected={connection === "open"}
-              host={host}
               section={route.section ?? "general"}
               theme={theme}
               onTheme={setTheme}
